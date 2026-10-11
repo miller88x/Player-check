@@ -1,6 +1,6 @@
 // Driver reports, Waze-style: police, accidents, hazards… plus NYC-only ones
 // (ticket agent on the block, tow truck, street sweeper already passed).
-// Saved in Supabase when it's set up (table road_reports); otherwise kept in memory on the server.
+// Saved in Supabase when it's set up (table pc_road_reports); otherwise kept in memory on the server.
 
 const SB_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY || "";
@@ -18,7 +18,7 @@ const rate = new Map();
 async function sb(path, opts = {}) {
   const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
     ...opts,
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...(opts.headers || {}) },
+    headers: { apikey: SB_KEY, ...(SB_KEY.startsWith("eyJ") ? { Authorization: `Bearer ${SB_KEY}` } : {}), "Content-Type": "application/json", Prefer: "return=representation", ...(opts.headers || {}) },
     signal: AbortSignal.timeout(10000),
   });
   const t = await res.text();
@@ -32,7 +32,7 @@ const meters = (a, b) => Math.hypot((a.lng - b.lng) * 84300, (a.lat - b.lat) * 1
 
 async function list(b) {
   if (useDb()) {
-    return sb(`road_reports?select=id,type,lat,lng,note,created_at,expires_at,up,down&expires_at=gt.${iso(now())}` +
+    return sb(`pc_road_reports?select=id,type,lat,lng,note,created_at,expires_at,up,down&expires_at=gt.${iso(now())}` +
       `&lng=gte.${b[0]}&lat=gte.${b[1]}&lng=lte.${b[2]}&lat=lte.${b[3]}&order=created_at.desc&limit=400`);
   }
   mem = mem.filter((r) => new Date(r.expires_at) > now());
@@ -45,20 +45,20 @@ async function add({ type, lat, lng, note }) {
     .find((r) => r.type === type && meters(r, { lat, lng }) < 120 && now() - new Date(r.created_at) < 15 * 60000);
   if (near) return vote(near.id, true);
   const row = { type, lat, lng, note: note || null, created_at: iso(now()), expires_at: iso(now() + TYPES[type] * 60000), up: 1, down: 0 };
-  if (useDb()) return (await sb("road_reports", { method: "POST", body: JSON.stringify(row) }))[0];
+  if (useDb()) return (await sb("pc_road_reports", { method: "POST", body: JSON.stringify(row) }))[0];
   row.id = `${now()}${Math.random().toString(36).slice(2, 7)}`;
   mem.unshift(row); mem = mem.slice(0, 5000);
   return row;
 }
 
 async function vote(id, up) {
-  const get = async () => (useDb() ? (await sb(`road_reports?id=eq.${encodeURIComponent(id)}&select=*`))[0] : mem.find((r) => String(r.id) === String(id)));
+  const get = async () => (useDb() ? (await sb(`pc_road_reports?id=eq.${encodeURIComponent(id)}&select=*`))[0] : mem.find((r) => String(r.id) === String(id)));
   const r = await get();
   if (!r) throw new Error("That report is gone.");
   const patch = up
     ? { up: r.up + 1, expires_at: iso(Math.max(new Date(r.expires_at).getTime(), now() + Math.min(TYPES[r.type], 60) * 60000)) } // "still there" keeps it alive
     : { down: r.down + 1, ...(r.down + 1 >= 2 && r.down + 1 >= r.up ? { expires_at: iso(now()) } : {}) };       // two "not there" votes remove it
-  if (useDb()) return (await sb(`road_reports?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }))[0];
+  if (useDb()) return (await sb(`pc_road_reports?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }))[0];
   Object.assign(r, patch); return r;
 }
 
