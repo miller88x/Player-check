@@ -30,7 +30,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 #map{position:fixed;inset:0}
 .maplibregl-ctrl-bottom-left{display:none}
 .maplibregl-ctrl-bottom-right{bottom:calc(var(--safeB) + 2px)}
-.maplibregl-ctrl-attrib{font-size:10px}
+.maplibregl-ctrl-attrib{display:none!important}
+#credit{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safeB) + 4px);z-index:8;font:500 9px/1 var(--body);color:rgba(120,120,120,.85);text-shadow:0 0 2px rgba(255,255,255,.6);white-space:nowrap;pointer-events:auto;text-decoration:none}
+body.navigating #credit{bottom:calc(var(--safeB) + 84px)}
 
 /* Top search */
 .top{position:fixed;left:0;right:0;top:0;z-index:10;padding:calc(var(--safeT) + 10px) 12px 0;display:flex;flex-direction:column;gap:10px;max-width:584px;margin:0 auto;pointer-events:none}
@@ -195,6 +197,7 @@ body.navigating #navTop,body.navigating #navBottom,body.navigating #speedo{displ
 </head>
 <body>
 <div id="map" aria-label="Map"></div>
+<a id="credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
 
 <div class="top" id="top">
   <div class="pill">
@@ -308,7 +311,7 @@ const repGeo = () => ({ type: "FeatureCollection", features: reports.filter((r) 
 // ================= MAP =================
 const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 let mapType = store.get("mapType", "map");
-const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: { compact: true } });
+const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: false });
 let layerOn = store.get("layers", { tickets: true, speed: true, redlight: true });
 let cams = [];
 
@@ -367,10 +370,12 @@ async function loadCams(tries = 0) {
 }
 loadCams();
 
+function paintCredit() { $("#credit").textContent = mapType === "sat" ? "© OpenStreetMap · Esri" : "© OpenStreetMap · OpenMapTiles"; }
+paintCredit();
 function setLook(t) {
   $("#layers").hidden = true;
   if (t === mapType) return;
-  mapType = t; store.set("mapType", t); map.setStyle(STYLES[t]); paintLayerBtns();
+  mapType = t; store.set("mapType", t); map.setStyle(STYLES[t]); paintLayerBtns(); paintCredit();
 }
 function paintLayerBtns() { document.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.style === mapType)); }
 paintLayerBtns();
