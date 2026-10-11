@@ -16,11 +16,17 @@ const BORO = { K: "3", BK: "3", Q: "4", QN: "4", BX: "2", NY: "1", MN: "1", R: "
 const state = { status: "idle", cameras: [], builtAt: null, stats: {} };
 
 async function soql(id, params) {
-  const res = await fetch(`https://data.cityofnewyork.us/resource/${id}.json?${new URLSearchParams(params)}`, {
-    headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(60000),
-  });
-  if (!res.ok) throw new Error(`${id} ${res.status}`);
-  return res.json();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  try {
+    const res = await fetch(`https://data.cityofnewyork.us/resource/${id}.json?${new URLSearchParams(params)}`, {
+      headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`${id} ${res.status} ${(await res.text()).slice(0, 160)}`);
+    return await res.json();
+  } catch (e) {
+    throw new Error(e.name === "AbortError" ? `${id} timed out` : e.message);
+  } finally { clearTimeout(timer); }
 }
 
 const SUFFIX = [
@@ -56,27 +62,35 @@ function parseLocation(street, cross) {
   return { dir, a, b };
 }
 
-// Ticket counts per camera location
+// Ticket counts per camera location. One light query per camera type, recent months only,
+// busiest locations first, so the city's API answers quickly.
 async function loadLocations() {
-  const where = `violation_code in(${Object.keys(CODES).map((c) => `'${c}'`).join(",")})`;
   const seen = new Map();
+  const since = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10) + "T00:00:00";
   for (const id of TICKETS) {
-    let rows = [];
-    try {
-      rows = await soql(id, {
-        $select: "street_name,intersecting_street,violation_county,violation_code,count(*) as n",
-        $where: where, $group: "street_name,intersecting_street,violation_county,violation_code",
-        $having: `count(*) >= ${MIN_TICKETS}`, $limit: "50000",
-      });
-    } catch (e) { state.stats[`err_${id}`] = e.message; continue; }
-    for (const r of rows) {
-      const loc = parseLocation(r.street_name, r.intersecting_street);
-      const boro = BORO[String(r.violation_county || "").toUpperCase()];
-      if (!loc || !boro) continue;
-      const key = `${CODES[r.violation_code]}|${boro}|${loc.dir}|${loc.a}|${loc.b}`;
-      if (!seen.has(key)) seen.set(key, { type: CODES[r.violation_code], boro, ...loc, n: Number(r.n) });
+    for (const [code, type] of Object.entries(CODES)) {
+      const t0 = Date.now();
+      state.stats.phase = `tickets ${id} code ${code}`;
+      let rows = [];
+      try {
+        rows = await soql(id, {
+          $select: "street_name,intersecting_street,violation_county,count(*) as n",
+          $where: `violation_code='${code}' AND issue_date >= '${since}'`,
+          $group: "street_name,intersecting_street,violation_county",
+          $order: "n DESC", $limit: "4000",
+        });
+      } catch (e) { state.stats[`err_${id}_${code}`] = e.message; }
+      state.stats[`rows_${id}_${code}`] = `${rows.length} in ${Math.round((Date.now() - t0) / 1000)}s`;
+      for (const r of rows) {
+        if (Number(r.n) < MIN_TICKETS) continue;
+        const loc = parseLocation(r.street_name, r.intersecting_street);
+        const boro = BORO[String(r.violation_county || "").toUpperCase()];
+        if (!loc || !boro) continue;
+        const key = `${type}|${boro}|${loc.dir}|${loc.a}|${loc.b}`;
+        if (!seen.has(key)) seen.set(key, { type, boro, ...loc, n: Number(r.n) });
+      }
     }
-    if (seen.size) break; // current year is enough once it has data
+    if (seen.size > 200) break; // current year is enough once it has data
   }
   return [...seen.values()];
 }
@@ -96,9 +110,11 @@ async function loadStreets(locs) {
     }
   }
   let done = 0;
+  const total = jobs.length;
   const worker = async () => {
     while (jobs.length) {
       const { boro, list } = jobs.shift();
+      state.stats.phase = `streets ${done + 1}/${total}`;
       try {
         const rows = await soql(CENTERLINE, {
           $select: "stname_label,the_geom,posted_speed",
@@ -173,7 +189,9 @@ function meet(A, B) {
 }
 
 async function build() {
-  if (state.status === "building") return;
+  // A build stuck for 10+ minutes is abandoned so a new one can start
+  if (state.status === "building" && Date.now() - (state.startedMs || 0) < 10 * 60 * 1000) return;
+  state.startedMs = Date.now();
   state.status = "building";
   state.stats = { startedAt: new Date().toISOString() };
   try {
@@ -197,6 +215,8 @@ async function build() {
     state.builtAt = new Date().toISOString();
     state.status = "ready";
     state.stats.placed = cams.length;
+    state.stats.phase = "done";
+    state.stats.seconds = Math.round((Date.now() - state.startedMs) / 1000);
     state.stats.unmatchedSample = unmatched;
     try { fs.writeFileSync(CACHE, JSON.stringify({ builtAt: state.builtAt, cameras: cams })); } catch {}
   } catch (e) {
