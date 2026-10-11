@@ -85,10 +85,27 @@ function parseSign(desc) {
 }
 
 // ---------- Is it in force now, and when next? ----------
+// Alternate side parking (street cleaning) suspension days — NYC DOT 2026 calendar.
+// Add the next year's list when the city publishes it (usually in December).
+const ASP_SUSPENDED = {
+  "2026-01-01": "New Year's Day", "2026-01-06": "Three Kings' Day", "2026-01-19": "Martin Luther King Jr. Day", "2026-02-12": "Lincoln's Birthday",
+  "2026-02-16": "Presidents' Day", "2026-02-17": "Lunar New Year", "2026-02-18": "Ash Wednesday", "2026-03-03": "Purim",
+  "2026-03-20": "Eid al-Fitr", "2026-03-21": "Eid al-Fitr", "2026-04-02": "Holy Thursday / Passover", "2026-04-03": "Good Friday / Passover",
+  "2026-04-08": "Passover", "2026-04-09": "Passover / Orthodox Holy Thursday", "2026-04-10": "Orthodox Good Friday", "2026-05-14": "Solemnity of the Ascension",
+  "2026-05-22": "Shavuot", "2026-05-23": "Shavuot", "2026-05-25": "Memorial Day", "2026-05-27": "Eid al-Adha", "2026-05-28": "Eid al-Adha",
+  "2026-06-19": "Juneteenth", "2026-07-03": "Independence Day", "2026-07-04": "Independence Day", "2026-07-23": "Tisha B'Av",
+  "2026-08-15": "Feast of the Assumption", "2026-09-07": "Labor Day", "2026-09-12": "Rosh Hashanah", "2026-09-13": "Rosh Hashanah",
+  "2026-09-21": "Yom Kippur", "2026-09-26": "Sukkot", "2026-09-27": "Sukkot", "2026-10-03": "Shemini Atzeret", "2026-10-04": "Simchat Torah",
+  "2026-10-12": "Italian Heritage / Indigenous Peoples' Day", "2026-11-01": "All Saints' Day", "2026-11-03": "Election Day", "2026-11-08": "Diwali",
+  "2026-11-11": "Veterans Day", "2026-11-26": "Thanksgiving", "2026-12-08": "Immaculate Conception", "2026-12-25": "Christmas",
+};
+const nyDate = (at) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+
 function nyNow(at = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     .formatToParts(at).map((x) => [x.type, x.value]));
-  return { day: DAYS.indexOf(p.weekday.toUpperCase()), min: (+p.hour % 24) * 60 + +p.minute };
+  const dates = Array.from({ length: 9 }, (_, k) => nyDate(new Date(at.getTime() + k * 864e5)));
+  return { day: DAYS.indexOf(p.weekday.toUpperCase()), min: (+p.hour % 24) * 60 + +p.minute, dates };
 }
 // minutes from now until each start/end over the next 7 days
 function schedule(rule, now) {
@@ -96,6 +113,7 @@ function schedule(rule, now) {
   for (let k = 0; k <= 7; k++) {
     const day = (now.day + k) % 7;
     if (!rule.days.includes(day)) continue;
+    if (rule.sweeping && now.dates && ASP_SUSPENDED[now.dates[k]]) continue; // street cleaning suspended that day
     for (const [s, e] of rule.windows) out.push({ start: k * 1440 + s - now.min, end: k * 1440 + e - now.min, day, s, e });
   }
   return out.sort((a, b) => a.start - b.start);
@@ -111,6 +129,14 @@ function describe(rule) {
   const days = rule.days.length === 7 ? "every day" : rule.days.length === 6 ? `except ${DAYNAME[DAYS[[0,1,2,3,4,5,6].find((x) => !rule.days.includes(x))]]}` :
     rule.days.join() === "1,2,3,4,5" ? "Mon–Fri" : rule.days.map((x) => DAYNAME[DAYS[x]]).join(", ");
   return `${rule.label} ${rule.windows.map(([s, e]) => `${fmtClock(s)}–${fmtClock(e)}`).join(", ")} · ${days}`;
+}
+
+function suspensionNote(rules, now) {
+  if (!rules.some((r) => r.sweeping)) return "";
+  const today = ASP_SUSPENDED[now.dates[0]];
+  if (today) return ` Street cleaning is suspended today (${today}).`;
+  const k = [1, 2, 3, 4, 5, 6].find((i) => ASP_SUSPENDED[now.dates[i]] && rules.some((r) => r.sweeping && r.days.includes((now.day + i) % 7)));
+  return k ? ` Street cleaning is suspended ${k === 1 ? "tomorrow" : DAYNAME[DAYS[(now.day + k) % 7]]} (${ASP_SUSPENDED[now.dates[k]]}).` : "";
 }
 
 async function signsNear(lat, lng, radiusFt = 260) {
@@ -172,7 +198,8 @@ async function check(lat, lng, at = new Date()) {
     } else { headline = "You can park here"; detail = "No restrictions found on this block's signs this week."; }
   }
   return {
-    status, headline, detail, moveBy, where,
+    status, headline, detail: detail + suspensionNote(rules, now), moveBy, where,
+    suspendedToday: rules.some((r) => r.sweeping) ? ASP_SUSPENDED[now.dates[0]] || null : null,
     rules: rules.map(describe),
     sweeping: rules.some((r) => r.sweeping),
     commercial: rules.some((r) => r.commercial),
@@ -205,4 +232,4 @@ function routes(url, res, sendJSON) {
   return true;
 }
 
-module.exports = { routes, parseSign, toStatePlane, toLatLng, check, schedule, nyNow, describe };
+module.exports = { ASP_SUSPENDED, routes, parseSign, toStatePlane, toLatLng, check, schedule, nyNow, describe };
