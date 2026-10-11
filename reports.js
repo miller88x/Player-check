@@ -2,8 +2,8 @@
 // (ticket agent on the block, tow truck, street sweeper already passed).
 // Saved in Supabase when it's set up (table pc_road_reports); otherwise kept in memory on the server.
 
-const SB_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const SB_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+const SB_URL = (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+const SB_KEY = (process.env.SUPABASE_SERVICE_KEY || "").trim();
 const useDb = () => !!(SB_URL && SB_KEY);
 
 // type -> how long a report stays on the map (minutes)
@@ -70,6 +70,13 @@ function limited(ip, max = 12) { // 12 reports/votes per 10 minutes per visitor
 
 function routes(url, res, sendJSON, readBody, req) {
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+  if (url.pathname === "/api/reports/health") {
+    const info = { db: useDb(), urlSet: !!SB_URL, urlHost: SB_URL.replace(/^https?:\/\//, ""), keyType: SB_KEY.startsWith("sb_secret_") ? "secret" : SB_KEY.startsWith("eyJ") ? "jwt" : SB_KEY ? "other" : "none" };
+    (useDb() ? sb("pc_road_reports?select=id&limit=1").then((r) => ({ ok: true, rows: r.length })) : Promise.resolve({ ok: true, memory: true }))
+      .then((r) => sendJSON(res, 200, { ...info, ...r }))
+      .catch((e) => sendJSON(res, 200, { ...info, ok: false, error: String(e.message).replace(SB_KEY, "[key]") }));
+    return true;
+  }
   if (url.pathname === "/api/reports" && req.method === "GET") {
     const b = (url.searchParams.get("bbox") || "").split(",").map(Number);
     if (b.length !== 4 || b.some(isNaN) || b[2] - b[0] > 0.6 || b[3] - b[1] > 0.6) { sendJSON(res, 200, { reports: [] }); return true; }
