@@ -511,6 +511,7 @@ function ticketsSheet() {
     <div class="seg">${[["all","All"],["open","Open"],["closed","Paid"],["expired","Expired"]].map(([k,l]) => `<button type="button" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join("")}</div>
     <ul class="tix">${vis.map((t) => `<li data-id="${esc(t.summons)}"><span class="vio">${esc(title(t.violation))}</span><span class="amt">${t.due > 0 ? money(t.due) : t.fine !== null ? money(t.fine) : "—"}</span>
       <span class="meta">${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</span><span class="chipS ${t.status}">${LABEL[t.status]}</span></li>`).join("") || '<li class="muted">No tickets here.</li>'}</ul>
+    ${alertsBox()}
     <button class="btn" type="button" id="chg">Change plate</button>
     <p class="note">Judgment and boot flags are estimates: unpaid tickets usually go into judgment about 100 days after issue, and NYC can boot or tow past $350 in judgments.</p>`, "tickets");
   document.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; ticketsSheet(); }));
@@ -519,6 +520,35 @@ function ticketsSheet() {
     closeSheet(); map.flyTo({ center: [t.location.lng, t.location.lat], zoom: 16.5, pitch: 45, duration: 800 }); setTimeout(() => showTicket(t), 850);
   }));
   $("#chg").onclick = plateSheet;
+  wireAlerts();
+}
+// ---------- Daily email alerts ----------
+function alertsBox() {
+  const on = store.get("alerts", {})[`${data.plate}|${data.state}`];
+  if (on) return `<div class="alert go"><b>Daily alerts on</b>We email ${esc(on)} about new tickets, upcoming penalties, judgment and boot risk. Use the link in any alert email to turn them off.</div>`;
+  return `<form id="af" class="alert warn" style="display:flex;flex-direction:column;gap:10px">
+    <div><b>Get daily alerts</b>Email me when a new ticket shows up, before late penalties and judgment, and if I'm at risk of a boot.</div>
+    <input id="aEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" aria-label="Email for alerts"
+      style="font:500 16px var(--body);border:0;border-radius:12px;padding:12px 14px;background:#202124;color:var(--ink)" value="${esc(store.get("alertEmail", ""))}">
+    <button class="btn primary" type="submit" id="aGo">Turn on alerts</button></form>`;
+}
+function wireAlerts() {
+  const f = $("#af"); if (!f) return;
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $("#aEmail").value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $("#aEmail").focus(); return; }
+    $("#aGo").disabled = true; $("#aGo").textContent = "Turning on…";
+    try {
+      const r = await fetch("/api/alerts/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plate: data.plate, state: data.state, email }) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error);
+      const all = store.get("alerts", {}); all[`${data.plate}|${data.state}`] = email; store.set("alerts", all); store.set("alertEmail", email);
+      f.outerHTML = `<div class="alert go"><b>Alerts on</b>Check ${esc(email)} for a confirmation email with your current tickets.</div>`;
+    } catch (err) {
+      $("#aGo").disabled = false; $("#aGo").textContent = "Turn on alerts";
+      const m = document.createElement("div"); m.className = "muted"; m.style.color = "#ff8a8d"; m.textContent = err.message || "Couldn't turn on alerts. Try again."; f.append(m);
+    }
+  };
 }
 $("#plateBtn").onclick = () => (data ? ticketsSheet() : plateSheet());
 $("#tixPill").onclick = ticketsSheet;

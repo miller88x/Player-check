@@ -4,6 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const cameras = require("./cameras");
+const alerts = require("./alerts");
 
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
@@ -104,7 +105,7 @@ function classify(t) {
   return "closed";
 }
 
-async function lookup(plate, state) {
+async function lookup(plate, state, opts = {}) {
   const params = new URLSearchParams({ plate, state, $limit: "5000" });
   const res = await fetch(`${DATASET}?${params}`, {
     headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {},
@@ -147,7 +148,7 @@ async function lookup(plate, state) {
   const judgmentDue = open.filter((t) => t.judgment).reduce((s, t) => s + (t.due || 0), 0);
 
   let mapped = 0;
-  try { await addLocations(tickets); mapped = tickets.filter((t) => t.location).length; } catch {}
+  if (opts.locations !== false) { try { await addLocations(tickets); mapped = tickets.filter((t) => t.location).length; } catch {} }
 
   return {
     plate,
@@ -165,6 +166,15 @@ async function lookup(plate, state) {
     },
     tickets,
   };
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let d = "";
+    req.on("data", (c) => { d += c; if (d.length > 1e4) req.destroy(); });
+    req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (e) { reject(e); } });
+    req.on("error", reject);
+  });
 }
 
 function send(res, code, body, type = "application/json") {
@@ -191,6 +201,7 @@ http
       const c = cameras.state;
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
     }
+    if (url.pathname.startsWith("/api/alerts/") && alerts.routes(url, res, send, readBody, req)) return;
     if (url.pathname === "/api/cameras/rebuild") { cameras.build(); return send(res, 200, { started: true }); }
     if (url.pathname === "/api/cameras/status") {
       const c = cameras.state;
@@ -204,3 +215,4 @@ http
     fs.readFile(file, (err, html) => (err ? send(res, 500, "Missing index.html", "text/plain") : send(res, 200, html, "text/html; charset=utf-8")));
   })
   .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); });
+alerts.init(lookup);
