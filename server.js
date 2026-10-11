@@ -1,4 +1,4 @@
-// Ticket app — Step 1: plate ticket lookup
+// Ticket app — Step 2: plate ticket lookup + ticket locations for the map
 // Zero dependencies. Needs Node 18+ (built-in fetch). Deploys to Render as a Web Service.
 const http = require("http");
 const fs = require("fs");
@@ -9,6 +9,84 @@ const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC O
 const DATASET = "https://data.cityofnewyork.us/resource/nc67-uf89.json"; // Open Parking and Camera Violations
 
 const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+
+// ---------- Step 2: ticket locations ----------
+// Yearly "Parking Violations Issued" datasets carry the street address for each summons.
+const FY_DATASETS = {
+  2022: "7mxj-7a6y", 2023: "869v-vr48", 2024: "8zf9-spf8",
+  2025: "m5vz-tzqv", 2026: "9mwx-gamw", 2027: "pvqr-7yc4",
+};
+const BORO = { K: "Brooklyn", BK: "Brooklyn", Q: "Queens", QN: "Queens", QNS: "Queens", BX: "Bronx", BRONX: "Bronx",
+  NY: "Manhattan", MN: "Manhattan", R: "Staten Island", ST: "Staten Island", RICH: "Staten Island" };
+const MAX_MAPPED = 150;              // most recent tickets to place on the map
+const geoCache = new Map();          // address -> {lat,lng} | null
+
+const timeout = (ms) => AbortSignal.timeout(ms);
+
+async function socrata(id, where, select) {
+  const params = new URLSearchParams({ $select: select, $where: where, $limit: "1000" });
+  const res = await fetch(`https://data.cityofnewyork.us/resource/${id}.json?${params}`, {
+    headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: timeout(12000),
+  });
+  if (!res.ok) throw new Error(`socrata ${res.status}`);
+  return res.json();
+}
+
+async function geocode(text) {
+  if (geoCache.has(text)) return geoCache.get(text);
+  let hit = null;
+  try {
+    const res = await fetch(`https://geosearch.planninglabs.nyc/v2/search?size=1&text=${encodeURIComponent(text)}`, { signal: timeout(6000) });
+    const f = (await res.json()).features?.[0];
+    if (f) hit = { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
+  } catch {}
+  geoCache.set(text, hit);
+  return hit;
+}
+
+async function pool(items, size, fn) {
+  const out = [];
+  let i = 0;
+  await Promise.all(Array.from({ length: size }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } }));
+  return out;
+}
+
+function addressFor(row, fallbackCounty) {
+  const boro = BORO[String(row.violation_county || fallbackCounty || "").toUpperCase()] || "";
+  let street = String(row.street_name || "").replace(/^(NB|SB|EB|WB)\s+/i, "").split("@")[0].trim();
+  if (!street) return null;
+  if (row.house_number) return { text: `${row.house_number} ${street}, ${boro}`.trim(), approx: false, label: `${row.house_number} ${street}` };
+  const cross = String(row.intersecting_street || "").replace(/^.*@\s*/, "").trim();
+  return { text: `${street}, ${boro}`.trim(), approx: true, label: cross ? `${street} near ${cross}` : street };
+}
+
+async function addLocations(tickets) {
+  const recent = tickets.filter((t) => t.issued).slice(0, MAX_MAPPED);
+  // A summons can land in the issue-date fiscal year or the next one, so check both.
+  const byDataset = {};
+  for (const t of recent) {
+    const [y, m] = t.issued.split("-").map(Number);
+    const fy = m >= 7 ? y + 1 : y;
+    for (const f of [fy, fy + 1]) if (FY_DATASETS[f]) (byDataset[FY_DATASETS[f]] ||= []).push(t.summons);
+  }
+  const rows = {};
+  const jobs = [];
+  for (const [id, list] of Object.entries(byDataset)) {
+    for (let i = 0; i < list.length; i += 100) {
+      const chunk = list.slice(i, i + 100).map((s) => `'${String(s).replace(/\D/g, "")}'`).join(",");
+      jobs.push(socrata(id, `summons_number in(${chunk})`, "summons_number,house_number,street_name,intersecting_street,violation_county")
+        .then((r) => r.forEach((x) => (rows[x.summons_number] ||= x))).catch(() => {}));
+    }
+  }
+  await Promise.all(jobs);
+
+  const withAddr = recent.map((t) => ({ t, a: rows[t.summons] ? addressFor(rows[t.summons], t.county) : null })).filter((x) => x.a);
+  await pool(withAddr, 6, async ({ t, a }) => {
+    const p = await geocode(a.text);
+    if (p) t.location = { ...p, address: a.label, approx: a.approx };
+  });
+  return withAddr.length;
+}
 
 function toDate(mmddyyyy) {
   const [m, d, y] = String(mmddyyyy || "").split("/");
@@ -67,6 +145,9 @@ async function lookup(plate, state) {
   const totalDue = open.reduce((s, t) => s + (t.due || 0), 0);
   const judgmentDue = open.filter((t) => t.judgment).reduce((s, t) => s + (t.due || 0), 0);
 
+  let mapped = 0;
+  try { await addLocations(tickets); mapped = tickets.filter((t) => t.location).length; } catch {}
+
   return {
     plate,
     state,
@@ -79,6 +160,7 @@ async function lookup(plate, state) {
       judgmentDue: Math.round(judgmentDue * 100) / 100,
       // NYC can boot or tow at more than $350 in parking-ticket judgments
       bootRisk: judgmentDue > 350,
+      mapped,
     },
     tickets,
   };
