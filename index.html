@@ -2,339 +2,706 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
-<meta name="theme-color" content="#0f1216">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#202124">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Plate Check</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <style>
-/* Layout: full-screen map; plate search floats on top; tickets live in a swipe-up bottom sheet */
+/* Layout: full-screen map. Search pill + chips float on top, round buttons on the right,
+   sheets slide up only when asked for. Navigation swaps in a green instruction banner and an ETA bar. */
 :root{
-  --asphalt:#0f1216; --lane:#181d23; --line:#262d36; --text:#e9edf1; --muted:#8a96a3;
-  --curb:#f2c230;
-  --go:#2fbf71; --stop:#e5484d; --warn:#f08a24; --gone:#6b7682;
+  --ui:#303134; --ui2:#3c4043; --ink:#e8eaed; --muted:#9aa0a6; --blue:#8ab4f8;
+  --curb:#f2c230; --go:#1e9e5a; --stop:#e5484d; --warn:#f08a24; --gone:#6b7682; --nav:#0b6e4f;
   --display:"Barlow Condensed","Arial Narrow",sans-serif;
   --body:"Barlow",system-ui,-apple-system,sans-serif;
-  --peek:210px;
+  --safeT:env(safe-area-inset-top,0px); --safeB:env(safe-area-inset-bottom,0px);
   color-scheme:dark;
 }
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow:hidden;background:var(--asphalt);color:var(--text);font:16px/1.45 var(--body)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#202124;color:var(--ink);font:16px/1.4 var(--body)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 #map{position:fixed;inset:0}
-.maplibregl-ctrl-attrib{font-size:10px}
-.maplibregl-ctrl-bottom-right{bottom:calc(var(--peek) + 4px)}
 .maplibregl-ctrl-bottom-left{display:none}
+.maplibregl-ctrl-bottom-right{bottom:calc(var(--safeB) + 2px)}
+.maplibregl-ctrl-attrib{font-size:10px}
 
-/* Floating search */
-.top{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 0;z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:10px;max-width:584px;margin:0 auto}
-form{pointer-events:auto;display:flex;gap:6px;align-items:center;background:#303134;border-radius:28px;padding:6px 6px 6px 16px;box-shadow:0 2px 6px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25)}
-.plate{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
-.plate svg{flex:0 0 auto}
-.plate input{all:unset;width:100%;font:600 20px/1.4 var(--display);letter-spacing:.14em;color:#fff;text-transform:uppercase}
-.plate input::placeholder{color:#9aa0a6;letter-spacing:.02em;font:500 17px var(--body);text-transform:none}
-select,button{font:600 15px var(--body);border-radius:20px;border:0;background:#3c4043;color:var(--text);padding:8px 10px}
-#go{background:var(--curb);color:#14110a;cursor:pointer;padding:9px 16px}
-.chips{display:flex;gap:8px;overflow-x:auto;pointer-events:auto;scrollbar-width:none}
+/* Top search */
+.top{position:fixed;left:0;right:0;top:0;z-index:10;padding:calc(var(--safeT) + 10px) 12px 0;display:flex;flex-direction:column;gap:10px;max-width:584px;margin:0 auto;pointer-events:none}
+.top > *{pointer-events:auto}
+.pill{display:flex;align-items:center;gap:10px;background:var(--ui);border-radius:28px;padding:6px 6px 6px 16px;box-shadow:0 2px 6px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25)}
+.pill input{all:unset;flex:1;min-width:0;font:500 17px var(--body);color:#fff;padding:8px 0}
+.pill input::placeholder{color:var(--muted)}
+.avatar{width:40px;height:40px;border-radius:50%;border:0;background:var(--curb);display:grid;place-items:center;flex:0 0 auto;position:relative}
+.avatar b{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;border-radius:9px;background:var(--stop);color:#fff;font:700 11px/18px var(--body);padding:0 4px;display:none}
+.avatar.alert b{display:block}
+.clear{border:0;background:none;color:var(--muted);padding:6px;display:none}
+.results{background:var(--ui);border-radius:16px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.results button{all:unset;display:flex;gap:12px;align-items:center;width:100%;padding:12px 16px;border-top:1px solid var(--ui2);cursor:pointer;box-sizing:border-box}
+.results button:first-child{border-top:0}
+.results .t{font-weight:600}.results .s{color:var(--muted);font-size:13px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
 .chips::-webkit-scrollbar{display:none}
-.chips button{flex:0 0 auto;background:#303134;color:#e8eaed;border-radius:18px;padding:7px 14px;font:500 14px var(--body);box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px;cursor:pointer}
-.chips button i{width:9px;height:9px;border-radius:50%;display:inline-block}
-.chips button[aria-pressed="true"]{background:#c2e7ff;color:#001d35}
-.fab{position:fixed;right:12px;z-index:5;width:48px;height:48px;border-radius:50%;background:#303134;border:0;box-shadow:0 2px 8px rgba(0,0,0,.4);display:grid;place-items:center;cursor:pointer;padding:0}
-#layersBtn{top:calc(env(safe-area-inset-top,0px) + 120px)}
-#locBtn{bottom:calc(var(--peek) + 16px)}
-.layers{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 176px);z-index:7;background:#303134;border-radius:16px;padding:12px;display:flex;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.45)}
-.layers button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;color:#e8eaed;font-size:12px}
-.layers button span{width:58px;height:58px;border-radius:12px;border:2px solid transparent;background-size:cover}
-.layers button[aria-pressed="true"] span{border-color:#8ab4f8}
-.layers button[aria-pressed="true"]{color:#8ab4f8}
-#go:disabled{opacity:.6}
-:focus-visible{outline:2px solid var(--curb);outline-offset:2px}
+.chip{flex:0 0 auto;border:0;background:var(--ui);color:var(--ink);border-radius:18px;padding:7px 14px;font:500 14px var(--body);box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;gap:7px}
+.chip[aria-pressed="true"]{background:#c2e7ff;color:#001d35}
 
-/* Bottom sheet */
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:6;max-width:600px;margin:0 auto;background:var(--asphalt);border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.5);height:calc(100% - 90px - env(safe-area-inset-top,0px));transform:translateY(calc(100% - var(--peek)));transition:transform .28s ease;display:flex;flex-direction:column}
-.sheet.open{transform:translateY(0)}
-.handle{all:unset;display:block;padding:10px 0 4px;cursor:pointer;width:100%}
-.handle::before{content:"";display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto}
-.sheet-body{flex:1;overflow-y:auto;padding:4px 16px calc(env(safe-area-inset-bottom,0px) + 24px);display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
-.head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.head h2{font:700 22px/1 var(--display);letter-spacing:.05em;text-transform:uppercase;margin:0}
-.head .due{font:700 26px/1 var(--display);color:var(--curb);font-variant-numeric:tabular-nums}
-.sub{color:var(--muted);font-size:14px;margin-top:-6px}
-.alert{border-radius:12px;padding:10px 14px;border:1px solid}
-.alert b{display:block;font:700 16px var(--display);letter-spacing:.05em;text-transform:uppercase}
-.alert.stop{border-color:var(--stop);background:color-mix(in srgb,var(--stop) 14%,var(--asphalt))}.alert.stop b{color:var(--stop)}
-.alert.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,var(--asphalt))}.alert.warn b{color:var(--warn)}
-.alert.go{border-color:var(--go);background:color-mix(in srgb,var(--go) 12%,var(--asphalt))}.alert.go b{color:var(--go)}
-.filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
-.filters button{flex:0 0 auto;background:transparent;color:var(--muted);padding:5px 12px;font-size:14px;border-radius:999px}
-.filters button[aria-pressed="true"]{color:var(--text);border-color:var(--text)}
-ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-li{background:var(--lane);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:3px 12px;cursor:pointer}
-li.sel{border-color:var(--curb)}
+/* Floating buttons */
+.fab{position:fixed;right:12px;z-index:9;width:50px;height:50px;border-radius:50%;background:var(--ui);border:0;box-shadow:0 2px 8px rgba(0,0,0,.45);display:grid;place-items:center;padding:0}
+#layersBtn{top:calc(var(--safeT) + 122px)}
+#locBtn{bottom:calc(var(--safeB) + 98px)}
+#dirBtn{bottom:calc(var(--safeB) + 28px);width:56px;height:56px;border-radius:16px;background:#4dd0e1}
+#recenter{bottom:calc(var(--safeB) + 110px);left:auto;right:12px;width:auto;height:44px;border-radius:22px;padding:0 16px;font-weight:600;color:var(--blue);display:none;z-index:15}
+.layers{position:fixed;right:12px;top:calc(var(--safeT) + 180px);z-index:11;background:var(--ui);border-radius:16px;padding:12px;display:flex;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.45)}
+.layers button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
+.layers button span{width:58px;height:58px;border-radius:12px;border:2px solid transparent}
+.layers button[aria-pressed="true"] span{border-color:var(--blue)}
+.layers button[aria-pressed="true"]{color:var(--blue)}
+#tixPill{position:fixed;left:12px;bottom:calc(var(--safeB) + 32px);z-index:9;border:0;border-radius:24px;background:var(--ui);box-shadow:0 2px 8px rgba(0,0,0,.45);padding:10px 16px;display:none;align-items:center;gap:10px;font-weight:600;max-width:calc(100% - 100px)}
+#tixPill i{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+#tixPill span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Sheet */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:12;max-width:600px;margin:0 auto;background:#202124;border-radius:20px 20px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.5);max-height:72%;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .25s ease}
+.sheet.show{transform:none}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;gap:12px}
+.sheet-head h2{margin:0;font:700 20px var(--body);min-width:0}
+.x{border:0;background:var(--ui2);width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto}
+.sheet-body{overflow-y:auto;padding:0 16px calc(var(--safeB) + 20px);display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
+.row{display:flex;gap:10px}
+.btn{border:0;border-radius:22px;padding:11px 18px;font-weight:600;background:var(--ui2);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.primary{background:var(--blue);color:#062e6f}
+.btn.green{background:#1e8e3e;color:#fff}
+.btn.grow{flex:1}
+.plateBox{background:#f4f2ea;border-radius:10px;border:3px solid #1d3a6e;padding:6px 12px 8px;display:flex;flex-direction:column;align-items:center}
+.plateBox small{font:700 12px var(--display);letter-spacing:.3em;color:#1d3a6e;text-transform:uppercase}
+.plateBox input{all:unset;width:100%;text-align:center;font:700 40px/1.1 var(--display);letter-spacing:.12em;color:#16243d;text-transform:uppercase}
+.plateBox input::placeholder{color:#b6b3a6}
+select{font:600 15px var(--body);border-radius:22px;border:0;background:var(--ui2);color:var(--ink);padding:10px 12px}
+.saved{display:flex;gap:8px;flex-wrap:wrap}
+.saved button{border:0;border-radius:18px;background:var(--ui);padding:6px 12px;font:700 15px var(--display);letter-spacing:.1em}
+.muted{color:var(--muted);font-size:14px}
+.big{font:700 28px var(--display);font-variant-numeric:tabular-nums}
+.alert{border-radius:12px;padding:10px 14px;font-size:14px}
+.alert b{display:block;font-size:15px}
+.alert.stop{background:color-mix(in srgb,var(--stop) 18%,#202124)}.alert.stop b{color:#ff8a8d}
+.alert.warn{background:color-mix(in srgb,var(--warn) 16%,#202124)}.alert.warn b{color:#ffb36b}
+.alert.go{background:color-mix(in srgb,var(--go) 18%,#202124)}.alert.go b{color:#6fdc9b}
+.seg{display:flex;gap:6px;overflow-x:auto}
+.seg button{flex:0 0 auto;border:1px solid var(--ui2);background:none;border-radius:16px;padding:5px 12px;font-size:14px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:#c2e7ff;color:#001d35;border-color:#c2e7ff}
+ul.tix{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.tix li{background:var(--ui);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:2px 12px;cursor:pointer}
 .vio{font-weight:600;min-width:0}
 .amt{font:700 19px var(--display);text-align:right;font-variant-numeric:tabular-nums}
 .meta{color:var(--muted);font-size:13px;min-width:0}
-.chip{justify-self:end;align-self:start;font:700 11px/1 var(--display);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:6px;white-space:nowrap}
-.chip.open{background:var(--warn);color:#1a0e02}.chip.penalty{background:var(--stop);color:#fff}
-.chip.closed,.chip.dismissed{background:color-mix(in srgb,var(--go) 22%,transparent);color:var(--go)}
-.chip.expired{background:var(--line);color:var(--muted)}
-.links{grid-column:1/-1;display:flex;gap:14px;font-size:13px;flex-wrap:wrap}
-.links a{color:var(--curb)}
-.empty{color:var(--muted);text-align:center;padding:12px 0}
-.err{color:var(--stop);text-align:center}
-.legend{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12px}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.chipS{justify-self:end;font:700 11px/1 var(--display);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:6px;white-space:nowrap;align-self:start}
+.chipS.open{background:var(--warn);color:#1a0e02}.chipS.penalty{background:var(--stop);color:#fff}
+.chipS.closed,.chipS.dismissed{background:color-mix(in srgb,var(--go) 25%,transparent);color:#6fdc9b}
+.chipS.expired{background:var(--ui2);color:var(--muted)}
+.links{display:flex;gap:14px;font-size:14px;flex-wrap:wrap}
+a{color:var(--blue)}
 .note{color:var(--muted);font-size:12px}
-.saved{display:flex;gap:8px;flex-wrap:wrap}
-.saved button{font:700 14px var(--display);letter-spacing:.1em;border-radius:999px;padding:6px 12px;background:var(--lane)}
+.stats{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+.camline{display:flex;align-items:center;gap:8px;color:#ffb36b;font-weight:600;font-size:14px}
 
-/* Map pins */
+/* Pins and popups */
 .pin{width:30px;height:40px;cursor:pointer;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
-.pin svg{display:block;width:100%;height:100%;transition:transform .15s;transform-origin:50% 100%}
-.pin.approx{opacity:.8}
-.pin.sel svg{transform:scale(1.4)}
-.pin.sel{z-index:3}
-.maplibregl-popup-content{background:var(--lane);color:var(--text);border-radius:10px;padding:8px 12px;font:14px var(--body)}
-.maplibregl-popup-tip{border-top-color:var(--lane)!important;border-bottom-color:var(--lane)!important}
-.maplibregl-popup-close-button{color:var(--muted)}
-@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+.pin svg{display:block;width:100%;height:100%;transform-origin:50% 100%;transition:transform .15s}
+.pin.sel svg{transform:scale(1.35)}
+.maplibregl-popup-content{background:var(--ui);color:var(--ink);border-radius:14px;padding:12px 14px;font:14px var(--body);box-shadow:0 6px 20px rgba(0,0,0,.45);min-width:220px}
+.maplibregl-popup-tip{border-top-color:var(--ui)!important;border-bottom-color:var(--ui)!important}
+.maplibregl-popup-close-button{color:var(--muted);font-size:20px;padding:2px 8px}
+.pop h3{margin:0 24px 2px 0;font-size:15px}
+.pop .amt{text-align:left;font-size:22px}
+.pop .links{margin-top:6px}
+.me{width:22px;height:22px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 6px rgba(66,133,244,.25),0 1px 4px rgba(0,0,0,.4);position:relative}
+.me.heading::after{content:"";position:absolute;left:50%;top:-16px;transform:translateX(-50%);border:7px solid transparent;border-bottom:12px solid #4285f4}
+.me.nav{width:30px;height:30px;background:none;border:0;box-shadow:none}
+.me.nav::after{display:none}
+.me.nav svg{display:block}
+
+/* Navigation */
+#navTop{position:fixed;left:0;right:0;top:0;z-index:14;padding:calc(var(--safeT) + 8px) 10px 0;display:none;flex-direction:column;gap:8px;max-width:600px;margin:0 auto}
+.instr{background:var(--nav);border-radius:16px;padding:14px 16px;display:flex;gap:14px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.instr svg{flex:0 0 auto}
+.instr .dist{font:700 26px var(--body);white-space:nowrap}
+.instr .street{font:600 20px/1.2 var(--body)}
+.instr .then{font-size:14px;opacity:.85}
+.camAlert{background:#d93025;border-radius:14px;padding:10px 14px;display:none;align-items:center;gap:12px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.4);animation:pulse 1s ease-in-out infinite alternate}
+.camAlert .lim{margin-left:auto;background:#fff;color:#111;border:3px solid #111;border-radius:6px;padding:2px 6px;text-align:center;font:700 10px/1.1 var(--body)}
+.camAlert .lim b{display:block;font-size:20px}
+@keyframes pulse{to{background:#b3261e}}
+#navBottom{position:fixed;left:0;right:0;bottom:0;z-index:14;background:#202124;border-radius:20px 20px 0 0;padding:14px 16px calc(var(--safeB) + 14px);display:none;align-items:center;gap:14px;box-shadow:0 -6px 20px rgba(0,0,0,.45);max-width:600px;margin:0 auto}
+#navBottom .eta{font:700 24px var(--body);color:#81c995}
+#navBottom .sub{color:var(--muted);font-size:14px}
+#navBottom .end{margin-left:auto;background:#d93025;color:#fff}
+#speedo{position:fixed;left:12px;bottom:calc(var(--safeB) + 110px);z-index:14;width:62px;height:62px;border-radius:50%;background:#fff;color:#111;display:none;flex-direction:column;align-items:center;justify-content:center;font:700 22px/1 var(--body);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#speedo small{font-size:10px;font-weight:600}
+#speedo.over{background:#d93025;color:#fff}
+body.navigating .top,body.navigating .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
+body.navigating #navTop,body.navigating #navBottom,body.navigating #speedo{display:flex}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}.camAlert{animation:none}}
 </style>
 </head>
 <body>
-<div id="map" aria-label="Map of NYC"></div>
+<div id="map" aria-label="Map"></div>
 
-<div class="top">
-  <form id="f">
-    <div class="plate">
-      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#f2c230"/><circle cx="12" cy="9" r="2.6" fill="#303134"/></svg>
-      <input id="plate" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="Enter your plate" aria-label="License plate">
-    </div>
-    <select id="state" aria-label="Plate state"><option>NY</option><option>NJ</option><option>CT</option><option>PA</option><option>MA</option><option>FL</option><option value="99">Other</option></select>
-    <button id="go" type="submit">Check</button>
-  </form>
+<div class="top" id="top">
+  <div class="pill">
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#9aa0a6" stroke-width="2.4"/><path d="m15.5 15.5 5 5" stroke="#9aa0a6" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <input id="q" type="search" placeholder="Search here" autocomplete="off" enterkeyhint="search" aria-label="Search for a place">
+    <button class="clear" id="qClear" type="button" aria-label="Clear search">✕</button>
+    <button class="avatar" id="plateBtn" type="button" aria-label="My plate and tickets">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11v6a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H8v1a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-6zm2.3-1h9.4l-1-3.2a.5.5 0 0 0-.5-.3H8.8a.5.5 0 0 0-.5.3l-1 3.2zM7.5 14a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4zm9 0a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z" fill="#14110a"/></svg>
+      <b id="badge"></b>
+    </button>
+  </div>
+  <div class="results" id="results" hidden></div>
   <div class="chips" id="chips">
-    <button type="button" data-f="all" aria-pressed="true">All tickets</button>
-    <button type="button" data-f="open"><i style="background:var(--warn)"></i>Open</button>
-    <button type="button" data-f="penalty"><i style="background:var(--stop)"></i>Penalties</button>
-    <button type="button" data-f="closed"><i style="background:var(--go)"></i>Paid</button>
-    <button type="button" data-f="expired"><i style="background:var(--gone)"></i>Expired</button>
+    <button class="chip" type="button" data-layer="tickets"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#e5484d"/></svg>My tickets</button>
+    <button class="chip" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cameras</button>
+    <button class="chip" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red light cameras</button>
   </div>
 </div>
 
-<button class="fab" id="layersBtn" type="button" aria-label="Map type">
-  <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8.5l10 5.5 10-5.5L12 3zm0 13.2L4.2 12 2 13.2l10 5.5 10-5.5-2.2-1.2L12 16.2z" fill="#8ab4f8"/></svg>
-</button>
+<button class="fab" id="layersBtn" type="button" aria-label="Map type"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8.5l10 5.5 10-5.5L12 3zm0 13.2L4.2 12 2 13.2l10 5.5 10-5.5-2.2-1.2L12 16.2z" fill="#8ab4f8"/></svg></button>
 <div class="layers" id="layers" hidden>
-  <button type="button" data-style="map" aria-pressed="true"><span style="background:linear-gradient(135deg,#f2efe9 40%,#aad3df 40% 55%,#f2efe9 55%),#f2efe9"></span>Default</button>
+  <button type="button" data-style="map"><span style="background:linear-gradient(135deg,#f2efe9 40%,#aad3df 40% 55%,#f2efe9 55%)"></span>Default</button>
   <button type="button" data-style="sat"><span style="background:linear-gradient(135deg,#3d5a3a,#6b6b55 50%,#2f4b5e)"></span>Satellite</button>
   <button type="button" data-style="dark"><span style="background:linear-gradient(135deg,#1d2633 40%,#0e1621 40% 55%,#1d2633 55%)"></span>Night</button>
 </div>
-<button class="fab" id="locBtn" type="button" aria-label="Show my location">
-  <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#8ab4f8"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3" stroke="#8ab4f8" stroke-width="2"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#8ab4f8" stroke-width="2"/></svg>
-</button>
+<button class="fab" id="locBtn" type="button" aria-label="Show my location"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.6" fill="#8ab4f8"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#8ab4f8" stroke-width="2"/><path d="M12 1.5v3.5m0 14v3.5M1.5 12H5m14 0h3.5" stroke="#8ab4f8" stroke-width="2"/></svg></button>
+<button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#062e33"/></svg></button>
+<button class="fab" id="recenter" type="button">Re-center</button>
+<button id="tixPill" type="button"><i></i><span></span></button>
 
-<section class="sheet" id="sheet">
-  <button class="handle" id="handle" type="button" aria-label="Expand ticket list"></button>
-  <div class="sheet-body" id="body">
-    <div class="head"><h2>Plate Check</h2></div>
-    <p class="sub">Enter a plate to see every NYC parking and camera ticket on it, pinned where it happened.</p>
-    <div class="saved" id="saved"></div>
-  </div>
+<section class="sheet" id="sheet" aria-live="polite">
+  <div class="sheet-head"><h2 id="sheetTitle"></h2><button class="x" id="sheetX" type="button" aria-label="Close">✕</button></div>
+  <div class="sheet-body" id="sheetBody"></div>
 </section>
+
+<div id="navTop">
+  <div class="instr">
+    <svg id="navArrow" width="44" height="44" viewBox="0 0 24 24" aria-hidden="true"></svg>
+    <div style="min-width:0"><div class="dist" id="navDist"></div><div class="street" id="navStreet"></div><div class="then" id="navThen"></div></div>
+  </div>
+  <div class="camAlert" id="camAlert">
+    <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 8.5h3l1.5-2h6l1.5 2h3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13.5" r="3" fill="#d93025"/></svg>
+    <div><div id="camText">Speed camera ahead</div><div id="camDist" style="font-weight:500;font-size:14px"></div></div>
+    <div class="lim" id="camLim">SPEED<br>LIMIT<b></b></div>
+  </div>
+</div>
+<div id="speedo"><span id="speedNum">0</span><small>mph</small></div>
+<div id="navBottom">
+  <div><div class="eta" id="navEta"></div><div class="sub" id="navSub"></div></div>
+  <button class="btn end" id="navEnd" type="button">Exit</button>
+</div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
-const LABEL = { open: "Open", penalty: "Penalty added", closed: "Paid", dismissed: "Dismissed", expired: "Expired" };
-const COLOR = { open: "var(--warn)", penalty: "var(--stop)", closed: "var(--go)", dismissed: "var(--go)", expired: "var(--gone)" };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-let data = null, filter = "all", selected = null, markers = {};
-
-// ----- Map -----
-const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
-let mapType = "map";
-try { mapType = localStorage.getItem("mapType") || "map"; } catch {}
-const map = new maplibregl.Map({
-  container: "map", style: STYLES[mapType],
-  center: [-73.95, 40.68], zoom: 11.2, attributionControl: { compact: true },
-});
-const geo = new maplibregl.GeolocateControl({ trackUserLocation: true, positionOptions: { enableHighAccuracy: true }, showUserLocation: true });
-map.addControl(geo, "bottom-right");
-document.querySelector(".maplibregl-ctrl-geolocate")?.closest(".maplibregl-ctrl-group")?.style.setProperty("display", "none");
-$("#locBtn").onclick = () => geo.trigger();
-
-// Satellite = Google-style hybrid: imagery under major roads and labels
-function applyLook() {
-  if (mapType !== "sat") return;
-  if (!map.getSource("esri")) map.addSource("esri", { type: "raster", tileSize: 256, maxzoom: 19,
-    tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-    attribution: "Imagery © Esri, Maxar, Earthstar Geographics" });
-  if (!map.getLayer("esri")) map.addLayer({ id: "esri", type: "raster", source: "esri" }, "tunnel_motorway_link_casing");
-  map.getStyle().layers.forEach((l) => {
-    if (/^(building|road_area|road_(minor|service|path|link)|tunnel_|bridge_(street|service|path|link))/.test(l.id) || /casing/.test(l.id))
-      map.setLayoutProperty(l.id, "visibility", "none");
-    else if (/^(road|bridge)_/.test(l.id) && l.type === "line") map.setPaintProperty(l.id, "line-opacity", 0.75);
-  });
-}
-map.on("style.load", applyLook);
-
-function setLook(type) {
-  if (type === mapType) return;
-  mapType = type;
-  try { localStorage.setItem("mapType", type); } catch {}
-  map.setStyle(STYLES[type]);
-  document.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.style === type));
-  $("#layers").hidden = true;
-}
-document.querySelectorAll("[data-style]").forEach((b) => {
-  b.setAttribute("aria-pressed", b.dataset.style === mapType);
-  b.onclick = () => setLook(b.dataset.style);
-});
-$("#layersBtn").onclick = (e) => { e.stopPropagation(); $("#layers").hidden = !$("#layers").hidden; };
-map.on("click", () => ($("#layers").hidden = true));
-
-// Google-style teardrop pins: $ for parking, camera for camera tickets
-const ICON = {
-  cash: '<text x="15" y="19.5" text-anchor="middle" font-family="Barlow,Arial" font-weight="700" font-size="13" fill="#fff">$</text>',
-  cam: '<path d="M9.5 11h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="15" cy="15" r="2.2" fill="COLOR"/>',
+const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
+const NYC = [-73.95, 40.7];
+const toRad = (d) => (d * Math.PI) / 180, toDeg = (r) => (r * 180) / Math.PI;
+function dist(a, b) {
+  const R = 6371000, dLat = toRad(b[1] - a[1]), dLng = toRad(b[0] - a[0]);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[1])) * Math.cos(toRad(b[1])) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function bearing(a, b) {
+  const y = Math.sin(toRad(b[0] - a[0])) * Math.cos(toRad(b[1]));
+  const x = Math.cos(toRad(a[1])) * Math.sin(toRad(b[1])) - Math.sin(toRad(a[1])) * Math.cos(toRad(b[1])) * Math.cos(toRad(b[0] - a[0]));
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+function fmtDist(m) { const mi = m / 1609.34; return mi >= 0.1 ? `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi` : `${Math.max(50, Math.round((m * 3.281) / 50) * 50)} ft`; }
+function sayDist(m) { const mi = m / 1609.34; return mi >= 0.2 ? `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} miles` : `${Math.max(100, Math.round((m * 3.281) / 100) * 100)} feet`; }
+function fmtMin(s) { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr ${m % 60} min`; }
+const clock = (secs) => new Date(Date.now() + secs * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+// ================= MAP =================
+const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
+let mapType = store.get("mapType", "map");
+const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: { compact: true } });
+let layerOn = store.get("layers", { tickets: true, speed: true, redlight: true });
+let cams = [];
+
+function camIcon(color, kind) {
+  const s = 56, c = document.createElement("canvas"); c.width = c.height = s; const g = c.getContext("2d");
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); };
+  g.fillStyle = "#fff"; g.beginPath(); g.arc(28, 28, 27, 0, 7); g.fill();
+  g.fillStyle = color; g.beginPath(); g.arc(28, 28, 23, 0, 7); g.fill();
+  g.fillStyle = "#fff";
+  if (kind === "speed") { rr(13, 21, 30, 19, 3); g.fillRect(22, 17, 12, 6); g.fillStyle = color; g.beginPath(); g.arc(28, 30.5, 5.5, 0, 7); g.fill(); }
+  else { rr(20, 12, 16, 32, 5); [[18, "#d93025"], [28, "#9aa0a6"], [38, "#9aa0a6"]].forEach(([y, col]) => { g.fillStyle = col; g.beginPath(); g.arc(28, y, 4, 0, 7); g.fill(); }); }
+  return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+}
+const camFilter = () => ["in", ["get", "type"], ["literal", ["speed", "redlight"].filter((t) => layerOn[t])]];
+const camGeo = () => ({ type: "FeatureCollection", features: cams.map((c, i) => ({ type: "Feature", properties: { i, type: c.type }, geometry: { type: "Point", coordinates: [c.lng, c.lat] } })) });
+
+function addOverlays() {
+  if (mapType === "sat") {
+    if (!map.getSource("esri")) map.addSource("esri", { type: "raster", tileSize: 256, maxzoom: 19, tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], attribution: "Imagery © Esri" });
+    if (!map.getLayer("esri")) map.addLayer({ id: "esri", type: "raster", source: "esri" }, map.getLayer("tunnel_motorway_link_casing") ? "tunnel_motorway_link_casing" : undefined);
+    map.getStyle().layers.forEach((l) => { if (/^(building|road_area|road_(minor|service|path|link)|tunnel_|bridge_(street|service|path|link))/.test(l.id) || /casing/.test(l.id)) map.setLayoutProperty(l.id, "visibility", "none"); });
+  }
+  if (!map.hasImage("cam-speed")) map.addImage("cam-speed", camIcon("#f08a24", "speed"), { pixelRatio: 2 });
+  if (!map.hasImage("cam-red")) map.addImage("cam-red", camIcon("#d93025", "red"), { pixelRatio: 2 });
+  if (!map.getSource("route")) map.addSource("route", { type: "geojson", data: routeGeo() });
+  if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#0b57d0", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
+  if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#4285f4", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
+  if (!map.getSource("cams")) map.addSource("cams", { type: "geojson", data: camGeo() });
+  if (!map.getLayer("cams")) map.addLayer({ id: "cams", type: "symbol", source: "cams", minzoom: 10.5, filter: camFilter(),
+    layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "cam-speed", "cam-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1], "icon-allow-overlap": true } });
+}
+map.on("style.load", addOverlays);
+
+const DIRNAME = { NB: "northbound", SB: "southbound", EB: "eastbound", WB: "westbound" };
+map.on("click", "cams", (e) => {
+  const c = cams[e.features[0].properties.i];
+  new maplibregl.Popup({ offset: 14 }).setLngLat([c.lng, c.lat]).setHTML(`<div class="pop"><h3>${c.type === "speed" ? "Speed camera" : "Red light camera"}</h3>
+    <div>${esc(title(c.name))}</div>
+    <div class="meta">${c.dir ? `Catches ${DIRNAME[c.dir]} traffic · ` : ""}${c.limit && c.type === "speed" ? `${c.limit} mph limit · ` : ""}${c.n.toLocaleString()} tickets this year</div></div>`).addTo(map);
+});
+map.on("mouseenter", "cams", () => (map.getCanvas().style.cursor = "pointer"));
+map.on("mouseleave", "cams", () => (map.getCanvas().style.cursor = ""));
+
+async function loadCams(tries = 0) {
+  try {
+    const j = await (await fetch("/api/cameras")).json();
+    if (j.status === "ready") { cams = j.cameras; map.getSource("cams")?.setData(camGeo()); if (route) route.camsOnRoute = camsAlong(route); return; }
+  } catch {}
+  if (tries < 40) setTimeout(() => loadCams(tries + 1), 10000);
+}
+loadCams();
+
+function setLook(t) {
+  $("#layers").hidden = true;
+  if (t === mapType) return;
+  mapType = t; store.set("mapType", t); map.setStyle(STYLES[t]); paintLayerBtns();
+}
+function paintLayerBtns() { document.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.style === mapType)); }
+paintLayerBtns();
+document.querySelectorAll("[data-style]").forEach((b) => (b.onclick = () => setLook(b.dataset.style)));
+$("#layersBtn").onclick = (e) => { e.stopPropagation(); $("#layers").hidden = !$("#layers").hidden; };
+map.on("click", () => { $("#layers").hidden = true; $("#results").hidden = true; });
+
+function paintChips() { document.querySelectorAll("[data-layer]").forEach((b) => b.setAttribute("aria-pressed", !!layerOn[b.dataset.layer])); }
+paintChips();
+document.querySelectorAll("[data-layer]").forEach((b) => (b.onclick = () => {
+  const k = b.dataset.layer; layerOn[k] = !layerOn[k]; store.set("layers", layerOn); paintChips();
+  if (k === "tickets") drawPins(false); else if (map.getLayer("cams")) map.setFilter("cams", camFilter());
+}));
+
+// ================= LOCATION =================
+let me = null, meMarker = null, heading = null, speedMps = 0, watchId = null, lastFix = null;
+const waiters = [];
+function startWatch() {
+  if (watchId !== null || !navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(
+    (p) => { if (!nav.sim) onFix({ lng: p.coords.longitude, lat: p.coords.latitude, heading: p.coords.heading, speed: p.coords.speed }); },
+    (err) => { if (err.code === 1) { watchId = null; } },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+}
+function onFix(f) {
+  const pos = [f.lng, f.lat];
+  if (lastFix) {
+    const moved = dist(lastFix.pos, pos), dt = (Date.now() - lastFix.t) / 1000;
+    if (f.speed == null && dt > 0) f.speed = moved / dt;
+    if ((f.heading == null || isNaN(f.heading)) && moved > 4) f.heading = bearing(lastFix.pos, pos);
+  }
+  if (f.heading != null && !isNaN(f.heading) && (f.speed || 0) > 1.5) heading = f.heading;
+  speedMps = f.speed || 0; lastFix = { pos, t: Date.now() }; me = pos;
+  if (!meMarker) { const d = document.createElement("div"); d.className = "me"; meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map" }).setLngLat(pos).addTo(map); }
+  meMarker.setLngLat(pos);
+  const el = meMarker.getElement();
+  if (nav.active) {
+    if (el.className !== "me nav") { el.className = "me nav"; el.innerHTML = '<svg width="30" height="30" viewBox="0 0 30 30"><path d="M15 2 26 27l-11-6-11 6z" fill="#4285f4" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg>'; }
+  } else { el.className = "me" + (heading != null ? " heading" : ""); el.innerHTML = ""; }
+  meMarker.setRotation(heading || 0);
+  if (nav.active) navTick(pos); else freeDriveCams(pos);
+  waiters.splice(0).forEach((fn) => fn(pos));
+}
+function getMe(timeout = 15000) {
+  if (me) return Promise.resolve(me);
+  startWatch();
+  return new Promise((res, rej) => { waiters.push(res); setTimeout(() => rej(new Error("no-fix")), timeout); });
+}
+$("#locBtn").onclick = async () => {
+  try { const p = await getMe(); map.flyTo({ center: p, zoom: 16, duration: 800 }); }
+  catch { notice("Location needed", "Allow location for this site. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using."); }
+};
+
+// ================= VOICE =================
+let voiceOn = store.get("voice", true);
+function speak(text) {
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.02; u.lang = "en-US"; speechSynthesis.speak(u); } catch {}
+}
+
+// ================= SHEET =================
+let sheetMode = null;
+function openSheet(t, html, mode = null) { sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; }
+function closeSheet() {
+  $("#sheet").classList.remove("show");
+  if (sheetMode === "route" && !nav.active) clearRoute();
+  if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
+  sheetMode = null;
+}
+$("#sheetX").onclick = closeSheet;
+function notice(h, msg) { openSheet(h, `<p class="muted" style="margin:0">${esc(msg)}</p><button class="btn primary" type="button" id="ok">OK</button>`); $("#ok").onclick = closeSheet; }
+
+// ================= TICKETS =================
+let data = null, filter = "all", markers = {}, popup = null;
+const LABEL = { open: "Open", penalty: "Penalty added", closed: "Paid", dismissed: "Dismissed", expired: "Expired" };
 const HEX = { open: "#f08a24", penalty: "#e5484d", closed: "#1e9e5a", dismissed: "#1e9e5a", expired: "#6b7682" };
+const isCamera = (v) => /PHTO|CAMERA|BUS LANE|RED LIGHT/i.test(v);
+const shortDate = (d) => (d ? new Date(d + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
+
 function pinSVG(t) {
   const c = HEX[t.status];
-  const camera = /PHTO|CAMERA|BUS LANE|RED LIGHT/i.test(t.violation);
-  const ring = t.location.approx ? `stroke="#fff" stroke-width="2" stroke-dasharray="3 2"` : `stroke="#fff" stroke-width="2"`;
-  return `<svg viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="${c}" ${ring}/>${(camera ? ICON.cam : ICON.cash).replace("COLOR", c)}</svg>`;
+  const ring = t.location.approx ? 'stroke="#fff" stroke-width="2" stroke-dasharray="3 2"' : 'stroke="#fff" stroke-width="2"';
+  const icon = isCamera(t.violation)
+    ? `<path d="M9.5 11h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="15" cy="15" r="2.2" fill="${c}"/>`
+    : '<text x="15" y="19.5" text-anchor="middle" font-family="Barlow,Arial" font-weight="700" font-size="13" fill="#fff">$</text>';
+  return `<svg viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="${c}" ${ring}/>${icon}</svg>`;
 }
-
-function drawPins() {
-  Object.values(markers).forEach((m) => m.remove());
-  markers = {};
-  if (!data) return;
-  const pts = visible().filter((t) => t.location);
-  const bounds = new maplibregl.LngLatBounds();
-  pts.forEach((t) => {
-    const el = document.createElement("div");
-    el.className = "pin" + (t.location.approx ? " approx" : "") + (selected === t.summons ? " sel" : "");
-    el.innerHTML = pinSVG(t);
-    el.title = t.violation;
-    el.onclick = (e) => { e.stopPropagation(); select(t.summons, false); };
-    markers[t.summons] = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([t.location.lng, t.location.lat]).addTo(map);
-    bounds.extend([t.location.lng, t.location.lat]);
-  });
-  if (pts.length && !selected) map.fitBounds(bounds, { padding: { top: 140, bottom: 250, left: 50, right: 50 }, maxZoom: 15, duration: 700 });
-}
-
-function select(id, fromList) {
-  selected = id;
-  const t = data.tickets.find((x) => x.summons === id);
+function showTicket(t) {
+  if (!t.location) return;
+  popup?.remove();
+  const amount = t.due > 0 ? money(t.due) + " due" : t.fine !== null ? money(t.fine) : "";
+  popup = new maplibregl.Popup({ offset: 38, maxWidth: "280px" }).setLngLat([t.location.lng, t.location.lat]).setHTML(`<div class="pop">
+    <h3>${esc(title(t.violation))}</h3><div class="amt">${amount}</div>
+    <div class="meta">${shortDate(t.issued)}${t.time ? " · " + esc(t.time) : ""}</div>
+    <div class="meta">${esc(title(t.location.address))}${t.location.approx ? " (approx.)" : ""}</div>
+    <div style="margin-top:6px"><span class="chipS ${t.status}">${LABEL[t.status]}</span>${t.judgment ? ' <span class="meta" style="color:#ff8a8d">Likely in judgment</span>' : ""}</div>
+    <div class="links">${t.image ? `<a href="${esc(t.image)}" target="_blank" rel="noopener">View ticket</a>` : ""}${t.due > 0 ? '<a href="https://a836-citypay.nyc.gov/citypay/Parking" target="_blank" rel="noopener">Pay</a><a href="https://www.nyc.gov/site/finance/vehicles/dispute-a-ticket.page" target="_blank" rel="noopener">Dispute</a>' : ""}</div></div>`).addTo(map);
   document.querySelectorAll(".pin.sel").forEach((p) => p.classList.remove("sel"));
-  markers[id]?.getElement().classList.add("sel");
-  document.querySelectorAll("li.sel").forEach((l) => l.classList.remove("sel"));
-  const li = document.querySelector(`li[data-id="${id}"]`);
-  li?.classList.add("sel");
-  if (t?.location) {
-    map.flyTo({ center: [t.location.lng, t.location.lat], zoom: 17, pitch: 55, bearing: -17, offset: [0, -80], duration: 900 });
-    document.querySelectorAll('.maplibregl-popup').forEach((p) => p.remove());
-    new maplibregl.Popup({ offset: 36, closeButton: false }).setLngLat([t.location.lng, t.location.lat])
-      .setHTML(`<b>${esc(t.violation)}</b><br>${esc(t.location.address)}${t.location.approx ? " (approx.)" : ""}`).addTo(map);
-  }
-  if (fromList) $("#sheet").classList.remove("open");
-  else li?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  markers[t.summons]?.getElement().classList.add("sel");
 }
-
-// ----- Sheet -----
-$("#handle").onclick = () => $("#sheet").classList.toggle("open");
-let y0 = null;
-$("#handle").addEventListener("touchstart", (e) => (y0 = e.touches[0].clientY), { passive: true });
-$("#handle").addEventListener("touchend", (e) => {
-  if (y0 === null) return;
-  const dy = e.changedTouches[0].clientY - y0;
-  if (dy < -30) $("#sheet").classList.add("open");
-  if (dy > 30) $("#sheet").classList.remove("open");
-  y0 = null;
-});
-
-// ----- Saved plates (this phone only) -----
-const store = {
-  get() { try { return JSON.parse(localStorage.getItem("plates") || "[]"); } catch { return []; } },
-  add(p, s) { try { const l = this.get().filter((x) => x.p !== p); l.unshift({ p, s }); localStorage.setItem("plates", JSON.stringify(l.slice(0, 5))); } catch {} },
-};
-function savedHTML() {
-  return store.get().map(({ p, s }) => `<button type="button" data-p="${esc(p)}" data-s="${esc(s)}">${esc(p)} · ${esc(s === "99" ? "Other" : s)}</button>`).join("");
+function drawPins(fit) {
+  Object.values(markers).forEach((m) => m.remove()); markers = {};
+  if (!data || !layerOn.tickets) return;
+  const pts = data.tickets.filter((t) => t.location);
+  const b = new maplibregl.LngLatBounds();
+  pts.forEach((t) => {
+    const el = document.createElement("div"); el.className = "pin"; el.innerHTML = pinSVG(t);
+    el.onclick = (e) => { e.stopPropagation(); showTicket(t); };
+    markers[t.summons] = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([t.location.lng, t.location.lat]).addTo(map);
+    b.extend([t.location.lng, t.location.lat]);
+  });
+  if (fit && pts.length) map.fitBounds(b, { padding: { top: 150, bottom: 110, left: 50, right: 70 }, maxZoom: 15, duration: 700 });
 }
-function wireSaved() {
-  document.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => { $("#plate").value = b.dataset.p; $("#state").value = b.dataset.s; check(); }));
+function paintPill() {
+  const pill = $("#tixPill");
+  if (!data) { pill.style.display = "none"; return; }
+  const s = data.summary;
+  pill.style.display = "flex";
+  pill.querySelector("i").style.background = s.bootRisk || s.penaltiesAdded ? "var(--stop)" : s.openCount ? "var(--warn)" : "var(--go)";
+  pill.querySelector("span").textContent = s.openCount ? `${data.plate} · ${s.openCount} open · ${money(s.totalDue)}` : `${data.plate} · Nothing due`;
+  $("#plateBtn").classList.toggle("alert", s.openCount > 0);
+  $("#badge").textContent = s.openCount || "";
 }
-
-// ----- Lookup -----
-$("#f").onsubmit = (e) => { e.preventDefault(); check(); };
-async function check() {
-  const plate = $("#plate").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const state = $("#state").value;
-  if (!plate) return $("#plate").focus();
-  $("#plate").blur();
-  $("#go").disabled = true; $("#go").textContent = "…";
-  $("#body").innerHTML = `<div class="head"><h2>${esc(plate)}</h2></div><p class="sub">Checking city records and placing tickets on the map. This can take up to 20 seconds.</p>`;
-  try {
-    const r = await fetch(`/api/tickets?plate=${encodeURIComponent(plate)}&state=${state}`);
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error);
-    data = j; filter = "all"; selected = null; store.add(plate, state); render(); drawPins();
-  } catch (e) {
-    $("#body").innerHTML = `<p class="err">${esc(e.message || "Something went wrong. Try again.")}</p><div class="saved">${savedHTML()}</div>`; wireSaved();
-  } finally { $("#go").disabled = false; $("#go").textContent = "Check"; }
+async function checkPlate(plate, st, fit = true) {
+  const r = await fetch(`/api/tickets?plate=${encodeURIComponent(plate)}&state=${st}`);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error);
+  data = j; store.set("plate", { p: plate, s: st });
+  const saved = store.get("plates", []).filter((x) => x.p !== plate); saved.unshift({ p: plate, s: st }); store.set("plates", saved.slice(0, 5));
+  drawPins(fit); paintPill();
 }
-
-function visible() {
-  return data.tickets.filter((t) => filter === "all" || (filter === "open" ? t.status === "open" || t.status === "penalty" : filter === "closed" ? t.status === "closed" || t.status === "dismissed" : t.status === filter));
+function plateSheet() {
+  const cur = store.get("plate", null), saved = store.get("plates", []);
+  openSheet("My plate", `
+    <form id="pf" style="display:flex;flex-direction:column;gap:12px">
+      <div class="plateBox"><small>New York</small><input id="pIn" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="ABC1234" value="${esc(cur?.p || "")}" aria-label="License plate"></div>
+      <div class="row"><select id="pSt" aria-label="Plate state">${["NY","NJ","CT","PA","MA","FL","99"].map((s) => `<option value="${s}" ${cur?.s === s ? "selected" : ""}>${s === "99" ? "Other" : s}</option>`).join("")}</select>
+      <button class="btn primary grow" id="pGo" type="submit">Check tickets</button></div>
+    </form>
+    ${saved.length ? `<div class="saved">${saved.map((x) => `<button type="button" data-p="${esc(x.p)}" data-s="${esc(x.s)}">${esc(x.p)}</button>`).join("")}</div>` : ""}
+    <p class="note">Your plate is saved on this phone, so your tickets load each time you open the app.</p>`, "plate");
+  const go = async (p, s) => {
+    $("#pGo").disabled = true; $("#pGo").textContent = "Checking…";
+    try { await checkPlate(p, s); closeSheet(); }
+    catch (e) { $("#pGo").disabled = false; $("#pGo").textContent = "Check tickets"; const d = document.createElement("div"); d.className = "alert stop"; d.innerHTML = `<b>Couldn't check</b>${esc(e.message)}`; $("#sheetBody").prepend(d); }
+  };
+  $("#pf").onsubmit = (e) => { e.preventDefault(); const p = $("#pIn").value.toUpperCase().replace(/[^A-Z0-9]/g, ""); if (p) go(p, $("#pSt").value); };
+  document.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => go(b.dataset.p, b.dataset.s)));
 }
-
-function render() {
-  const { summary: s, plate, state } = data;
-  const shown = visible();
-  let alert;
-  if (s.bootRisk) alert = `<div class="alert stop"><b>Boot / tow risk</b>${money(s.judgmentDue)} in tickets older than 100 days. Pay or dispute these first.</div>`;
-  else if (s.openCount) alert = `<div class="alert warn"><b>${s.openCount} open ticket${s.openCount > 1 ? "s" : ""}</b>${s.penaltiesAdded ? `Includes ${money(s.penaltiesAdded)} in penalties and interest.` : "No penalties added yet."}</div>`;
-  else alert = `<div class="alert go"><b>All clear</b>Nothing owed on this plate.</div>`;
-
-  $("#body").innerHTML = `
-    <div class="head"><h2>${esc(plate)} · ${esc(state === "99" ? "Other" : state)}</h2><span class="due">${money(s.totalDue)}</span></div>
-    <p class="sub">${s.count} ticket${s.count === 1 ? "" : "s"} all-time · ${s.openCount} open · ${s.mapped} on the map</p>
+function ticketsSheet() {
+  const s = data.summary;
+  const vis = data.tickets.filter((t) => filter === "all" || (filter === "open" ? t.status === "open" || t.status === "penalty" : filter === "closed" ? t.status === "closed" || t.status === "dismissed" : t.status === filter));
+  const alert = s.bootRisk ? `<div class="alert stop"><b>Boot / tow risk</b>${money(s.judgmentDue)} in tickets over 100 days old.</div>`
+    : s.penaltiesAdded ? `<div class="alert stop"><b>Penalties added</b>${money(s.penaltiesAdded)} in penalties and interest so far.</div>`
+    : s.openCount ? `<div class="alert warn"><b>${s.openCount} open</b>Pay or dispute before penalties kick in.</div>` : `<div class="alert go"><b>All clear</b>Nothing owed.</div>`;
+  openSheet(`${data.plate} · ${data.state === "99" ? "Other" : data.state}`, `
+    <div class="stats"><span class="big">${money(s.totalDue)}</span><span class="muted">owed · ${s.count} all-time · ${s.mapped} on map</span></div>
     ${alert}
-    <div class="legend"><span><i style="background:var(--stop)"></i>Penalty</span><span><i style="background:var(--warn)"></i>Open</span><span><i style="background:var(--go)"></i>Paid</span><span><i style="border:2px solid var(--muted)"></i>Approx. spot</span></div>
-    ${shown.length ? `<ul>${shown.map(card).join("")}</ul>` : `<p class="empty">No tickets in this view.</p>`}
-    <p class="note">Map shows the ${150} most recent tickets from mid-2021 on. Camera tickets list a street, not an address, so their pins are approximate. Judgment and boot flags are estimates: unpaid tickets usually go into judgment about 100 days after issue, and NYC can boot or tow once judgments pass $350.</p>
-    <div class="saved">${savedHTML()}</div>`;
-  document.querySelectorAll("#chips [data-f]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.f === filter));
-  document.querySelectorAll("li[data-id]").forEach((li) => (li.onclick = (e) => { if (e.target.closest("a")) return; select(li.dataset.id, true); }));
-  wireSaved();
+    <div class="seg">${[["all","All"],["open","Open"],["closed","Paid"],["expired","Expired"]].map(([k,l]) => `<button type="button" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join("")}</div>
+    <ul class="tix">${vis.map((t) => `<li data-id="${esc(t.summons)}"><span class="vio">${esc(title(t.violation))}</span><span class="amt">${t.due > 0 ? money(t.due) : t.fine !== null ? money(t.fine) : "—"}</span>
+      <span class="meta">${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</span><span class="chipS ${t.status}">${LABEL[t.status]}</span></li>`).join("") || '<li class="muted">No tickets here.</li>'}</ul>
+    <button class="btn" type="button" id="chg">Change plate</button>
+    <p class="note">Judgment and boot flags are estimates: unpaid tickets usually go into judgment about 100 days after issue, and NYC can boot or tow past $350 in judgments.</p>`, "tickets");
+  document.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; ticketsSheet(); }));
+  document.querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => {
+    const t = data.tickets.find((x) => x.summons === li.dataset.id); if (!t?.location) return;
+    closeSheet(); map.flyTo({ center: [t.location.lng, t.location.lat], zoom: 16.5, pitch: 45, duration: 800 }); setTimeout(() => showTicket(t), 850);
+  }));
+  $("#chg").onclick = plateSheet;
+}
+$("#plateBtn").onclick = () => (data ? ticketsSheet() : plateSheet());
+$("#tixPill").onclick = ticketsSheet;
+
+// ================= SEARCH =================
+let qTimer = null, destMarker = null, dest = null;
+$("#q").addEventListener("input", () => { $("#qClear").style.display = $("#q").value ? "block" : "none"; clearTimeout(qTimer); qTimer = setTimeout(() => search(false), 300); });
+$("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(qTimer); search(true); } });
+$("#qClear").onclick = () => { $("#q").value = ""; $("#qClear").style.display = "none"; $("#results").hidden = true; };
+async function search(pickFirst) {
+  const q = $("#q").value.trim();
+  if (q.length < 3) { $("#results").hidden = true; return; }
+  const c = me || [map.getCenter().lng, map.getCenter().lat];
+  try {
+    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=6&lang=en&bbox=-74.6,40.3,-73.2,41.2`)).json();
+    const list = (j.features || []).map((f) => {
+      const p = f.properties;
+      const name = p.name || [p.housenumber, p.street].filter(Boolean).join(" ") || p.city || "Place";
+      const line = [p.name && p.street ? [p.housenumber, p.street].filter(Boolean).join(" ") : "", p.district || p.locality, p.city, p.state].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i && x !== name).join(", ");
+      return { name, line, at: f.geometry.coordinates };
+    });
+    if (pickFirst && list[0]) return showPlace(list[0]);
+    $("#results").innerHTML = list.map((r, i) => `<button type="button" data-i="${i}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#9aa0a6"/></svg>
+      <span style="min-width:0"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.line)}${me ? " · " + fmtDist(dist(me, r.at)) : ""}</div></span></button>`).join("") || '<button type="button" disabled><span class="s">No places found</span></button>';
+    $("#results").hidden = false;
+    document.querySelectorAll("#results [data-i]").forEach((b) => (b.onclick = () => showPlace(list[+b.dataset.i])));
+  } catch { $("#results").innerHTML = '<button type="button" disabled><span class="s">Search is not reachable right now. Try again.</span></button>'; $("#results").hidden = false; }
+}
+function showPlace(r) {
+  dest = r; $("#results").hidden = true; $("#q").blur(); $("#q").value = r.name; $("#qClear").style.display = "block";
+  destMarker?.remove();
+  const el = document.createElement("div"); el.className = "pin";
+  el.innerHTML = '<svg viewBox="0 0 30 40"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#ea4335" stroke="#b31412" stroke-width="1.5"/><circle cx="15" cy="14" r="5" fill="#b31412"/></svg>';
+  destMarker = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.at).addTo(map);
+  map.flyTo({ center: r.at, zoom: 15.5, offset: [0, -60], duration: 800 });
+  openSheet(r.name, `${r.line ? `<div class="muted">${esc(r.line)}</div>` : ""}
+    <button class="btn primary" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>`, "place");
+  $("#goDir").onclick = () => planRoute(r);
+}
+$("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeholder = "Where to?"; $("#q").focus(); } };
+
+// ================= ROUTING =================
+let route = null;
+const routeGeo = () => ({ type: "FeatureCollection", features: route ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route.coords } }] : [] });
+function clearRoute() { route = null; map.getSource("route")?.setData(routeGeo()); }
+async function fetchRoute(from, to) {
+  const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true`)).json();
+  if (j.code !== "Ok" || !j.routes?.length) throw new Error("No route");
+  const r = j.routes[0], coords = r.geometry.coordinates;
+  const cum = [0]; for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + dist(coords[i - 1], coords[i]));
+  let acc = 0;
+  const steps = r.legs[0].steps.map((s) => { const st = { ...s, at: acc }; acc += s.distance; return st; });
+  const R = { coords, cum, steps, duration: r.duration, distance: r.distance, total: cum[cum.length - 1] || 1 };
+  R.camsOnRoute = camsAlong(R);
+  return R;
+}
+const KX = 84300, KY = 111200; // meters per degree near NYC
+function project(R, p, hint = 0, wide = false) {
+  let best = { along: 0, off: Infinity, idx: 0 };
+  const scan = (a, b) => {
+    for (let i = a; i < b; i++) {
+      const A = R.coords[i], B = R.coords[i + 1];
+      const ax = (B[0] - A[0]) * KX, ay = (B[1] - A[1]) * KY, px = (p[0] - A[0]) * KX, py = (p[1] - A[1]) * KY;
+      const L = ax * ax + ay * ay, t = L ? Math.max(0, Math.min(1, (px * ax + py * ay) / L)) : 0;
+      const off = Math.hypot(px - t * ax, py - t * ay);
+      if (off < best.off) best = { along: R.cum[i] + t * Math.sqrt(L), off, idx: i };
+    }
+  };
+  const n = R.coords.length - 1;
+  if (wide) scan(0, n); else { scan(Math.max(0, hint - 30), Math.min(n, hint + 300)); if (best.off > 80) scan(0, n); }
+  return best;
+}
+const DIRB = { NB: 0, EB: 90, SB: 180, WB: 270 };
+function camsAlong(R) {
+  if (!cams.length) return [];
+  let minX = 180, minY = 90, maxX = -180, maxY = -90;
+  R.coords.forEach(([x, y]) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); });
+  const out = [];
+  for (const c of cams) {
+    if (c.lng < minX - 0.001 || c.lng > maxX + 0.001 || c.lat < minY - 0.001 || c.lat > maxY + 0.001) continue;
+    const pr = project(R, [c.lng, c.lat], 0, true);
+    if (pr.off > 35) continue;
+    const i = pr.idx, rb = bearing(R.coords[i], R.coords[Math.min(i + 1, R.coords.length - 1)]);
+    if (c.dir && angDiff(rb, DIRB[c.dir]) > 70) continue; // that camera watches the other direction
+    out.push({ ...c, along: pr.along });
+  }
+  return out.sort((a, b) => a.along - b.along);
+}
+async function planRoute(to) {
+  openSheet("Directions", '<p class="muted" style="margin:0">Finding your location and the fastest route…</p>', "route");
+  let from;
+  try { from = await getMe(); }
+  catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
+  try { route = await fetchRoute(from, to.at); }
+  catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
+  map.getSource("route")?.setData(routeGeo());
+  const b = new maplibregl.LngLatBounds(); route.coords.forEach((c) => b.extend(c));
+  map.fitBounds(b, { padding: { top: 140, bottom: 280, left: 50, right: 70 }, duration: 700 });
+  routeSheet(to);
+}
+function routeSheet(to) {
+  const sp = route.camsOnRoute.filter((c) => c.type === "speed").length, rl = route.camsOnRoute.length - sp;
+  openSheet(to.name, `
+    <div class="stats"><span class="big" style="color:#81c995">${fmtMin(route.duration)}</span><span class="muted">${fmtDist(route.distance)} · arrive ${clock(route.duration)}</span></div>
+    <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
+      ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
+    <div class="row"><button class="btn green grow" type="button" id="startNav">Start</button><button class="btn" type="button" id="simNav">Test drive</button></div>
+    <label class="muted" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="voiceT" ${voiceOn ? "checked" : ""}> Voice guidance</label>
+    <p class="note">Test drive plays the trip on the map so you can hear the turn and camera warnings from home. Keep the app open while driving.</p>`, "route");
+  $("#voiceT").onchange = (e) => { voiceOn = e.target.checked; store.set("voice", voiceOn); };
+  $("#startNav").onclick = () => startNav(false);
+  $("#simNav").onclick = () => startNav(true);
 }
 
-function card(t) {
-  const amount = t.due > 0 ? money(t.due) : t.fine !== null ? money(t.fine) : "—";
-  const date = t.issued ? new Date(t.issued + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Unknown date";
-  const where = t.location ? t.location.address + (t.location.approx ? " (approx.)" : "") : [t.county, t.precinct && t.precinct !== "000" ? "Pct " + t.precinct : null].filter(Boolean).join(" · ");
-  return `<li data-id="${esc(t.summons)}" class="${selected === t.summons ? "sel" : ""}">
-    <span class="vio">${esc(t.violation)}</span><span class="amt">${amount}</span>
-    <span class="meta">${date}${t.time ? " · " + esc(t.time) : ""}${where ? " · " + esc(where) : ""}</span>
-    <span class="chip ${t.status}">${LABEL[t.status]}</span>
-    ${t.judgment ? `<span class="meta" style="grid-column:1/-1;color:var(--stop)">Likely in judgment (${t.ageDays} days old)</span>` : ""}
-    <span class="links">
-      <span class="meta">#${esc(t.summons)}</span>
-      ${t.image ? `<a href="${esc(t.image)}" target="_blank" rel="noopener">View ticket</a>` : ""}
-      ${t.due > 0 ? `<a href="https://a836-citypay.nyc.gov/citypay/Parking" target="_blank" rel="noopener">Pay</a><a href="https://www.nyc.gov/site/finance/vehicles/dispute-a-ticket.page" target="_blank" rel="noopener">Dispute</a>` : ""}
-    </span>
-  </li>`;
+// ================= NAVIGATION =================
+const nav = { active: false, sim: null, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, lastReroute: 0 };
+function startNav(sim) {
+  if (!route) return;
+  speak(sim ? "Starting test drive" : "Starting route"); // also unlocks speech on iPhone
+  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true });
+  $("#sheet").classList.remove("show"); sheetMode = null;
+  document.body.classList.add("navigating"); popup?.remove();
+  try { navigator.wakeLock?.request("screen").then((l) => (nav.lock = l)).catch(() => {}); } catch {}
+  if (sim) {
+    let d = 0; const v = 20; // about 45 mph
+    nav.sim = setInterval(() => {
+      d = Math.min(route.total, d + v);
+      const p = pointAt(route, d), p2 = pointAt(route, Math.min(route.total, d + 15));
+      onFix({ lng: p[0], lat: p[1], heading: bearing(p, p2), speed: v });
+      if (d >= route.total) { clearInterval(nav.sim); }
+    }, 1000);
+  } else { startWatch(); if (me) navTick(me); }
+}
+function pointAt(R, d) {
+  let i = 0; while (i < R.cum.length - 2 && R.cum[i + 1] < d) i++;
+  const seg = R.cum[i + 1] - R.cum[i] || 1, t = Math.min(1, (d - R.cum[i]) / seg);
+  return [R.coords[i][0] + (R.coords[i + 1][0] - R.coords[i][0]) * t, R.coords[i][1] + (R.coords[i + 1][1] - R.coords[i][1]) * t];
+}
+function endNav() {
+  const wasSim = !!nav.sim;
+  nav.active = false; clearInterval(nav.sim); nav.sim = null;
+  try { nav.lock?.release(); } catch {}
+  document.body.classList.remove("navigating"); $("#camAlert").style.display = "none"; $("#recenter").style.display = "none";
+  try { speechSynthesis.cancel(); } catch {}
+  clearRoute(); destMarker?.remove(); destMarker = null;
+  map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0 }, zoom: 14, duration: 600 });
+  if (meMarker) { const el = meMarker.getElement(); el.className = "me"; el.innerHTML = ""; }
+  if (wasSim) { me = null; meMarker?.remove(); meMarker = null; lastFix = null; heading = null; }
+}
+$("#navEnd").onclick = endNav;
+map.on("dragstart", () => { if (nav.active) { nav.follow = false; $("#recenter").style.display = "block"; } });
+$("#recenter").onclick = () => { nav.follow = true; $("#recenter").style.display = "none"; if (me) navTick(me); };
+
+function instruction(s) {
+  const m = s.maneuver, name = s.name || s.ref || "the road", mod = m.modifier || "";
+  const turn = { left: "Turn left", right: "Turn right", "slight left": "Bear left", "slight right": "Bear right", "sharp left": "Make a sharp left", "sharp right": "Make a sharp right", uturn: "Make a U-turn", straight: "Continue straight" }[mod] || "Continue";
+  const toward = s.destinations ? s.destinations.split(",")[0] : name;
+  switch (m.type) {
+    case "depart": return `Head ${["north", "east", "south", "west"][Math.round((m.bearing_after || 0) / 90) % 4]} on ${name}`;
+    case "arrive": return "You have arrived";
+    case "merge": return `Merge onto ${name}`;
+    case "on ramp": return `Take the ramp toward ${toward}`;
+    case "off ramp": return `Take the exit${s.exits ? " " + s.exits.split(";")[0] : ""} toward ${toward}`;
+    case "fork": return `Keep ${mod.includes("left") ? "left" : "right"} toward ${toward}`;
+    case "roundabout": case "rotary": return `At the roundabout, take exit ${m.exit || 1} onto ${name}`;
+    case "new name": case "continue": return mod === "straight" || !mod ? `Continue onto ${name}` : `${turn} to stay on ${name}`;
+    default: return `${turn} onto ${name}`;
+  }
+}
+function arrowSVG(s) {
+  if (s?.maneuver?.type === "arrive") return '<path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z" fill="#fff"/><circle cx="12" cy="9" r="2.6" fill="#0b6e4f"/>';
+  const mod = s?.maneuver?.modifier || "straight";
+  const rot = { straight: 0, "slight right": 35, right: 90, "sharp right": 135, uturn: 180, "sharp left": -135, left: -90, "slight left": -35 }[mod] ?? 0;
+  return `<g transform="rotate(${rot} 12 12)"><path d="M12 2.5 5 10.5h4.5v11h5v-11H19z" fill="#fff"/></g>`;
+}
+function navTick(pos) {
+  const R = route; if (!R) return;
+  const pr = project(R, pos, nav.idx);
+  nav.idx = pr.idx; nav.along = Math.max(nav.along - 30, pr.along);
+  if (pr.off > 50) nav.offCount++; else nav.offCount = 0;
+  if (nav.offCount >= 3 && Date.now() - nav.lastReroute > 15000 && !nav.sim) {
+    nav.lastReroute = Date.now(); speak("Rerouting");
+    fetchRoute(pos, R.coords[R.coords.length - 1]).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; map.getSource("route")?.setData(routeGeo()); }).catch(() => {});
+  }
+  let k = R.steps.findIndex((s) => s.at > nav.along + 5); if (k < 0) k = R.steps.length - 1;
+  const next = R.steps[k], after = R.steps[k + 1];
+  const toNext = Math.max(0, next.at - nav.along);
+  $("#navArrow").innerHTML = arrowSVG(next);
+  $("#navDist").textContent = fmtDist(toNext);
+  $("#navStreet").textContent = next.maneuver.type === "arrive" ? "Destination" : next.name || next.ref || instruction(next);
+  $("#navThen").textContent = after && toNext < 400 ? `Then: ${instruction(after)}` : "";
+  const spk = (key, txt) => { if (!nav.spoken[key]) { nav.spoken[key] = 1; speak(txt); } };
+  if (toNext < 600 && toNext > 250) spk(`f${k}`, `In ${sayDist(toNext)}, ${instruction(next)}`);
+  if (toNext <= 90) spk(`n${k}`, instruction(next));
+  const left = Math.max(0, R.total - nav.along), secs = R.duration * (left / R.total);
+  $("#navEta").textContent = fmtMin(secs);
+  $("#navSub").textContent = `${fmtDist(left)} · ${clock(secs)}`;
+  const ahead = R.camsOnRoute.find((c) => c.along > nav.along - 10 && c.along - nav.along < 500);
+  showCam(ahead ? { ...ahead, meters: ahead.along - nav.along } : null);
+  updateSpeedo(ahead?.type === "speed" ? ahead.limit : null);
+  if (left < 25) { spk("arr", "You have arrived"); setTimeout(() => nav.active && endNav(), 3000); }
+  if (nav.follow) map.easeTo({ center: pos, bearing: heading ?? 0, pitch: 60, zoom: 17, padding: { top: 260, bottom: 60 }, duration: 950, easing: (t) => t });
+}
+function showCam(c) {
+  const box = $("#camAlert");
+  if (!c) { box.style.display = "none"; return; }
+  box.style.display = "flex";
+  $("#camText").textContent = c.type === "speed" ? "Speed camera ahead" : "Red light camera ahead";
+  $("#camDist").textContent = c.meters > 15 ? fmtDist(c.meters) : "Now";
+  const showLim = c.type === "speed" && c.limit;
+  $("#camLim").style.display = showLim ? "block" : "none";
+  $("#camLim b").textContent = c.limit || "";
+  const key = `${c.lng},${c.lat}`;
+  if (Date.now() - (nav.camWarned[key] || 0) > 5 * 60 * 1000) {
+    nav.camWarned[key] = Date.now();
+    speak(c.type === "speed" ? `Speed camera ahead${showLim ? `. Speed limit ${c.limit}` : ""}` : "Red light camera ahead");
+  }
+}
+function updateSpeedo(limit) {
+  const mph = Math.round(speedMps * 2.237);
+  $("#speedNum").textContent = mph;
+  $("#speedo").classList.toggle("over", !!limit && mph > limit + 2);
+}
+const freeWarned = {};
+function freeDriveCams(pos) {
+  if (heading == null || speedMps < 4 || !cams.length) return;
+  for (const c of cams) {
+    if (!layerOn[c.type]) continue;
+    if (Math.abs(c.lat - pos[1]) > 0.004 || Math.abs(c.lng - pos[0]) > 0.005) continue;
+    const p = [c.lng, c.lat], d = dist(pos, p);
+    if (d > 300 || angDiff(bearing(pos, p), heading) > 30) continue;
+    if (c.dir && angDiff(heading, DIRB[c.dir]) > 60) continue;
+    const key = `${c.lng},${c.lat}`;
+    if (Date.now() - (freeWarned[key] || 0) < 5 * 60 * 1000) continue;
+    freeWarned[key] = Date.now();
+    speak(c.type === "speed" ? `Speed camera ahead${c.limit ? `. Limit ${c.limit}` : ""}` : "Red light camera ahead");
+    break;
+  }
 }
 
-document.querySelectorAll("#chips [data-f]").forEach((b) => (b.onclick = () => {
-  filter = b.dataset.f; selected = null;
-  document.querySelectorAll("#chips [data-f]").forEach((x) => x.setAttribute("aria-pressed", x === b));
-  if (data) { render(); drawPins(); }
-}));
-$("#saved").innerHTML = savedHTML(); wireSaved();
+// ================= START =================
+const savedPlate = store.get("plate", null);
+if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
+if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocation" }).then((p) => { if (p.state === "granted") startWatch(); }).catch(() => {});
 </script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const cameras = require("./cameras");
 
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
@@ -186,10 +187,19 @@ http
       }
     }
 
+    if (url.pathname === "/api/cameras") {
+      const c = cameras.state;
+      return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
+    }
+    if (url.pathname === "/api/cameras/status") {
+      const c = cameras.state;
+      return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, stats: c.stats, sample: c.cameras.slice(0, 5) });
+    }
+
     if (url.pathname === "/health") return send(res, 200, { ok: true });
 
     // Serve the app
     const file = path.join(__dirname, "index.html");
     fs.readFile(file, (err, html) => (err ? send(res, 500, "Missing index.html", "text/plain") : send(res, 200, html, "text/html; charset=utf-8")));
   })
-  .listen(PORT, () => console.log(`Ticket app running on port ${PORT}`));
+  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); });
