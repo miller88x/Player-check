@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const cameras = require("./cameras");
 const alerts = require("./alerts");
+const dispute = require("./dispute");
 
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
@@ -138,7 +139,7 @@ async function lookup(plate, state, opts = {}) {
         ageDays,
         status,
         // NYC unpaid tickets typically go into judgment ~100 days after issue
-        judgment: (status === "open" || status === "penalty") && ageDays !== null && ageDays >= 100,
+        judgment: (status === "open" || status === "penalty") && ageDays !== null && ageDays >= (/PHTO|CAMERA|BUS LANE|RED LIGHT/i.test(t.violation || "") ? 75 : 100), // camera tickets: ~75 days, parking: ~100
       };
     })
     .sort((a, b) => String(b.issued).localeCompare(String(a.issued)));
@@ -201,6 +202,7 @@ http
       const c = cameras.state;
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
     }
+    if (url.pathname.startsWith("/api/dispute") && dispute.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/alerts/") && alerts.routes(url, res, send, readBody, req)) return;
     if (url.pathname === "/api/cameras/rebuild") { cameras.build(); return send(res, 200, { started: true }); }
     if (url.pathname === "/api/cameras/status") {

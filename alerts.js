@@ -81,6 +81,8 @@ const STEPS = [
   { key: "p90", from: 83, to: 90, msg: (d) => `Third late penalty in about ${d} day${d === 1 ? "" : "s"}` },
   { key: "j100", from: 93, to: 100, msg: (d) => `Goes into judgment in about ${d} day${d === 1 ? "" : "s"}` },
 ];
+const CAM_STEPS = [STEPS[0], STEPS[1], { key: "j75", from: 68, to: 75, msg: STEPS[3].msg }]; // camera tickets go into judgment ~day 75
+const isCam = (t) => /PHTO|CAMERA|BUS LANE|RED LIGHT/i.test(t.violation || "");
 const isOpen = (t) => t.status === "open" || t.status === "penalty";
 
 function findAlerts(sub, data) {
@@ -96,10 +98,10 @@ function findAlerts(sub, data) {
       continue; // a brand-new ticket gets one email, not a stack of them
     }
     if (!isOpen(t) || t.ageDays == null) continue;
-    for (const s of STEPS) {
+    for (const s of (isCam(t) ? CAM_STEPS : STEPS)) {
       const k = `${t.summons}:${s.key}`;
       if (t.ageDays >= s.from && t.ageDays < s.to && !sent[k]) {
-        items.push({ kind: s.key, title: `${s.msg(s.to - t.ageDays)}: ${money(t.due)}`, detail: what, color: s.key === "j100" ? "#c5221f" : "#b06000" });
+        items.push({ kind: s.key, title: `${s.msg(s.to - t.ageDays)}: ${money(t.due)}`, detail: what, color: s.key[0] === "j" ? "#c5221f" : "#b06000" });
         newSent[k] = new Date().toISOString();
       }
     }
