@@ -62,6 +62,17 @@ button{font:inherit;color:inherit;cursor:pointer}
 .layers button span{width:58px;height:58px;border-radius:12px;border:2px solid transparent}
 .layers button[aria-pressed="true"] span{border-color:var(--blue)}
 .layers button[aria-pressed="true"]{color:var(--blue)}
+.inAlert{position:fixed;left:12px;right:12px;top:calc(var(--safeT) + 116px);z-index:11;max-width:560px;margin:0 auto;border-radius:18px;background:#fff;color:#202124;box-shadow:0 8px 28px rgba(0,0,0,.35);display:flex;gap:12px;align-items:flex-start;padding:14px 14px 14px 16px;cursor:pointer;animation:drop .35s ease both}
+.inAlert .ico{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto}
+.inAlert b{display:block;font-size:16px}
+.inAlert .sub{font-size:14px;color:#5f6368;margin-top:2px}
+.inAlert .more{font-size:13px;color:#1a73e8;font-weight:600;margin-top:4px}
+.inAlert .xx{margin-left:auto;border:0;background:#f1f3f4;color:#5f6368;width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center}
+@keyframes drop{from{opacity:0;transform:translateY(-16px)}}
+ul.alist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.alist li{background:var(--ui);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+ul.alist .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;flex:0 0 auto}
+ul.alist .t{font-weight:600}
 #tixPill{position:fixed;left:12px;bottom:calc(var(--safeB) + 32px);z-index:9;border:0;border-radius:24px;background:var(--ui);box-shadow:0 2px 8px rgba(0,0,0,.45);padding:10px 16px;display:none;align-items:center;gap:10px;font-weight:600;max-width:calc(100% - 100px)}
 #tixPill i{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
 #tixPill span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -145,7 +156,7 @@ a{color:var(--blue)}
 #speedo{position:fixed;left:12px;bottom:calc(var(--safeB) + 110px);z-index:14;width:62px;height:62px;border-radius:50%;background:#fff;color:#111;display:none;flex-direction:column;align-items:center;justify-content:center;font:700 22px/1 var(--body);box-shadow:0 2px 8px rgba(0,0,0,.4)}
 #speedo small{font-size:10px;font-weight:600}
 #speedo.over{background:#d93025;color:#fff}
-body.navigating .top,body.navigating .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
+body.navigating .inAlert,body.navigating .top,body.navigating .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
 body.navigating #navTop,body.navigating #navBottom,body.navigating #speedo{display:flex}
 @media (prefers-reduced-motion:reduce){.sheet{transition:none}.camAlert{animation:none}}
 </style>
@@ -181,6 +192,7 @@ body.navigating #navTop,body.navigating #navBottom,body.navigating #speedo{displ
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#062e33"/></svg></button>
 <button class="fab" id="recenter" type="button">Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
+<div class="inAlert" id="inAlert" role="alert" hidden></div>
 
 <section class="sheet" id="sheet" aria-live="polite">
   <div class="sheet-head"><h2 id="sheetTitle"></h2><button class="x" id="sheetX" type="button" aria-label="Close">✕</button></div>
@@ -479,7 +491,7 @@ async function checkPlate(plate, st, fit = true) {
   if (!r.ok) throw new Error(j.error);
   data = j; store.set("plate", { p: plate, s: st });
   const saved = store.get("plates", []).filter((x) => x.p !== plate); saved.unshift({ p: plate, s: st }); store.set("plates", saved.slice(0, 5));
-  drawPins(fit); paintPill();
+  drawPins(fit); paintPill(); checkInAppAlerts();
 }
 function plateSheet() {
   const cur = store.get("plate", null), saved = store.get("plates", []);
@@ -523,7 +535,10 @@ function ticketsSheet() {
   wireAlerts();
 }
 // ---------- Daily email alerts ----------
+let emailReady = false;
+fetch("/api/alerts/status").then((r) => r.json()).then((j) => { emailReady = !!(j.ready && j.ready.supabase && j.ready.email); }).catch(() => {});
 function alertsBox() {
+  if (!emailReady) return "";
   const on = store.get("alerts", {})[`${data.plate}|${data.state}`];
   if (on) return `<div class="alert go"><b>Daily alerts on</b>We email ${esc(on)} about new tickets, upcoming penalties, judgment and boot risk. Use the link in any alert email to turn them off.</div>`;
   return `<form id="af" class="alert warn" style="display:flex;flex-direction:column;gap:10px">
@@ -550,7 +565,7 @@ function wireAlerts() {
     }
   };
 }
-$("#plateBtn").onclick = () => (data ? ticketsSheet() : plateSheet());
+$("#plateBtn").onclick = () => (!data ? plateSheet() : pending.length ? alertsSheet() : ticketsSheet());
 $("#tixPill").onclick = ticketsSheet;
 
 // ================= SEARCH =================
@@ -798,6 +813,83 @@ function freeDriveCams(pos) {
     break;
   }
 }
+
+// ================= IN-APP ALERTS =================
+// Compares what the city shows now with what this phone saw last time.
+// Same rules as the email alerts: new tickets, late penalties coming up, judgment, boot risk.
+const STEPS = [
+  { key: "p30", from: 23, to: 30, msg: (d) => `Late penalty in ${d} day${d === 1 ? "" : "s"}` },
+  { key: "p60", from: 53, to: 60, msg: (d) => `Another late penalty in ${d} day${d === 1 ? "" : "s"}` },
+  { key: "p90", from: 83, to: 90, msg: (d) => `Third late penalty in ${d} day${d === 1 ? "" : "s"}` },
+  { key: "j100", from: 93, to: 100, msg: (d) => `Goes into judgment in ${d} day${d === 1 ? "" : "s"}` },
+];
+let pending = [];
+function buildAlerts(d) {
+  const pk = `${d.plate}|${d.state}`;
+  const known = store.get("known", {})[pk];               // tickets this phone has already seen
+  const seen = store.get("seenAlerts", {})[pk] || {};      // alerts already dismissed
+  const out = [];
+  const isOpen = (t) => t.status === "open" || t.status === "penalty";
+  if (d.summary.bootRisk && !seen.boot) out.push({ key: "boot", color: "#d93025", icon: "!", title: `Boot / tow risk · ${money(d.summary.judgmentDue)}`, sub: "Over $350 in judgments. Pay or dispute these first." });
+  for (const t of d.tickets) {
+    const what = `${title(t.violation)} · ${shortDate(t.issued)}`;
+    if (known && !(t.summons in known) && isOpen(t)) {
+      const k = `${t.summons}:new`;
+      if (!seen[k]) out.push({ key: k, t, color: "#d93025", icon: "$", title: `New ticket · ${money(t.due ?? t.fine)}`, sub: what });
+      continue;
+    }
+    if (!isOpen(t) || t.ageDays == null) continue;
+    for (const s of STEPS) {
+      const k = `${t.summons}:${s.key}`;
+      if (t.ageDays >= s.from && t.ageDays < s.to && !seen[k]) out.push({ key: k, t, color: s.key === "j100" ? "#d93025" : "#e37400", icon: "⏱", title: `${s.msg(s.to - t.ageDays)} · ${money(t.due)}`, sub: what });
+    }
+    const jk = `${t.summons}:judgment`;
+    if (t.judgment && !seen[jk]) out.push({ key: jk, t, color: "#d93025", icon: "⚖", title: `Likely in judgment · ${money(t.due)}`, sub: what });
+  }
+  // Remember today's tickets for next time
+  const all = store.get("known", {}); all[pk] = Object.fromEntries(d.tickets.map((t) => [t.summons, t.status])); store.set("known", all);
+  return out;
+}
+function checkInAppAlerts() {
+  if (!data) return;
+  pending = buildAlerts(data);
+  const box = $("#inAlert");
+  if (!pending.length) { box.hidden = true; return; }
+  const a = pending[0];
+  box.innerHTML = `<div class="ico" style="background:${a.color};color:#fff;font-weight:700">${esc(a.icon)}</div>
+    <div style="min-width:0"><b>${esc(a.title)}</b><div class="sub">${esc(a.sub)}</div>${pending.length > 1 ? `<div class="more">+${pending.length - 1} more alert${pending.length > 2 ? "s" : ""}</div>` : ""}</div>
+    <button class="xx" type="button" aria-label="Dismiss">✕</button>`;
+  box.hidden = false;
+  box.querySelector(".xx").onclick = (e) => { e.stopPropagation(); markSeen(pending); box.hidden = true; };
+  box.onclick = () => { box.hidden = true; alertsSheet(); };
+  $("#badge").textContent = pending.length; $("#plateBtn").classList.add("alert");
+}
+function markSeen(list) {
+  const pk = `${data.plate}|${data.state}`, all = store.get("seenAlerts", {}), m = all[pk] || {};
+  list.forEach((a) => (m[a.key] = Date.now())); all[pk] = m; store.set("seenAlerts", all);
+}
+function alertsSheet() {
+  const list = pending.slice();
+  openSheet(`Alerts · ${data.plate}`, `
+    <ul class="alist">${list.map((a, i) => `<li><span class="dot" style="background:${a.color}"></span>
+      <div style="min-width:0;flex:1"><div class="t">${esc(a.title)}</div><div class="meta">${esc(a.sub)}</div>
+      <div class="links" style="margin-top:4px">${a.t?.location ? `<a href="#" data-map="${i}">Show on map</a>` : ""}
+      ${a.t?.due > 0 ? '<a href="https://a836-citypay.nyc.gov/citypay/Parking" target="_blank" rel="noopener">Pay</a><a href="https://www.nyc.gov/site/finance/vehicles/dispute-a-ticket.page" target="_blank" rel="noopener">Dispute</a>' : ""}</div></div></li>`).join("")}</ul>
+    <button class="btn primary" type="button" id="gotIt">Got it</button>
+    <p class="note">Penalty and judgment dates are estimates from the ticket's issue date. Your tickets are rechecked each time you open the app.</p>`, "alerts");
+  $("#gotIt").onclick = () => { markSeen(list); pending = []; paintPill(); closeSheet(); };
+  document.querySelectorAll("[data-map]").forEach((a) => (a.onclick = (e) => {
+    e.preventDefault(); const t = list[+a.dataset.map].t; closeSheet();
+    map.flyTo({ center: [t.location.lng, t.location.lat], zoom: 16.5, pitch: 45, duration: 800 }); setTimeout(() => showTicket(t), 850);
+  }));
+}
+// Recheck when the app comes back to the screen after a while
+let lastCheck = Date.now();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || nav.active) return;
+  const p = store.get("plate", null);
+  if (p && Date.now() - lastCheck > 15 * 60 * 1000) { lastCheck = Date.now(); checkPlate(p.p, p.s, false).catch(() => {}); }
+});
 
 // ================= START =================
 const savedPlate = store.get("plate", null);
