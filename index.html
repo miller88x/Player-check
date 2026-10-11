@@ -68,6 +68,14 @@ button{font:inherit;color:inherit;cursor:pointer}
 textarea.inp,input.inp{font:500 16px var(--body);border:0;border-radius:12px;padding:12px 14px;background:var(--ui);color:var(--ink);width:100%;resize:vertical}
 pre.letter{white-space:pre-wrap;font:15px/1.5 var(--body);background:#fff;color:#202124;border-radius:14px;padding:16px;margin:0;max-height:none;user-select:text;-webkit-user-select:text}
 ol.ev{margin:0;padding-left:20px;color:var(--ink);font-size:14px;display:flex;flex-direction:column;gap:4px}
+#reportBtn{left:12px;right:auto;bottom:calc(var(--safeB) + 92px);background:#f29900;width:56px;height:56px}
+body.navigating #reportBtn{display:grid!important;bottom:calc(var(--safeB) + 96px);left:auto;right:12px;z-index:15}
+.rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.rgrid button{all:unset;cursor:pointer;background:var(--ui);border-radius:16px;padding:14px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:13px;font-weight:600;line-height:1.2}
+.rgrid button i{font-style:normal;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-size:24px}
+.rgrid button:active{transform:scale(.96)}
+.votes{display:flex;gap:8px;margin-top:8px}
+.votes button{flex:1;border:0;border-radius:16px;padding:8px;font-weight:600;background:var(--ui2);color:var(--ink)}
 #parkBtn{bottom:calc(var(--safeB) + 168px);background:#1a73e8}
 #parkBtn span{font:800 24px/1 var(--body);color:#fff}
 .verdict{border-radius:16px;padding:16px;display:flex;gap:14px;align-items:center}
@@ -213,6 +221,7 @@ body.navigating #navTop,body.navigating #navBottom,body.navigating #speedo{displ
   <button type="button" data-style="dark"><span style="background:linear-gradient(135deg,#1d2633 40%,#0e1621 40% 55%,#1d2633 55%)"></span>Night</button>
 </div>
 <button class="fab" id="locBtn" type="button" aria-label="Show my location"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.6" fill="#8ab4f8"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#8ab4f8" stroke-width="2"/><path d="M12 1.5v3.5m0 14v3.5M1.5 12H5m14 0h3.5" stroke="#8ab4f8" stroke-width="2"/></svg></button>
+<button class="fab" id="reportBtn" type="button" aria-label="Report something on the road"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#fff"/></svg></button>
 <button class="fab" id="parkBtn" type="button" aria-label="Can I park here?"><span>P</span></button>
 <button id="parkedPill" type="button" hidden></button>
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#062e33"/></svg></button>
@@ -270,6 +279,32 @@ function sayDist(m) { const mi = m / 1609.34; return mi >= 0.2 ? `${mi < 10 ? mi
 function fmtMin(s) { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr ${m % 60} min`; }
 const clock = (secs) => new Date(Date.now() + secs * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
+// ================= DRIVER REPORTS (types) =================
+const RTYPES = {
+  police: { label: "Police", e: "👮", c: "#1a73e8", warn: "Police reported ahead" },
+  agent: { label: "Ticket agent", e: "🧾", c: "#d93025", warn: "Ticket agent reported nearby" },
+  tow: { label: "Tow truck", e: "🛻", c: "#d93025", warn: "Tow truck reported nearby" },
+  sweeper: { label: "Sweeper passed", e: "🧹", c: "#1e8e3e", warn: null },
+  accident: { label: "Accident", e: "💥", c: "#d93025", warn: "Accident reported ahead" },
+  hazard: { label: "Hazard", e: "⚠️", c: "#f29900", warn: "Hazard reported ahead" },
+  traffic: { label: "Traffic jam", e: "🚗", c: "#e8710a", warn: "Traffic jam reported ahead" },
+  construction: { label: "Construction", e: "🚧", c: "#f29900", warn: "Construction reported ahead" },
+  closed: { label: "Road closed", e: "⛔", c: "#a50e0e", warn: "Road closure reported ahead" },
+  pothole: { label: "Pothole", e: "🕳️", c: "#5f6368", warn: "Pothole reported ahead" },
+  camera: { label: "New camera", e: "📷", c: "#9334e6", warn: "Camera reported ahead" },
+  spot: { label: "Open spot", e: "🅿️", c: "#1e8e3e", warn: null },
+};
+let reports = [];
+function repIcon(t) {
+  const W = 64, H = 76, cv = document.createElement("canvas"); cv.width = W; cv.height = H; const g = cv.getContext("2d");
+  g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.ellipse(32, 72, 10, 3, 0, 0, 7); g.fill();
+  g.fillStyle = "#fff"; g.beginPath(); g.arc(32, 30, 29, 0, 7); g.fill(); g.beginPath(); g.moveTo(22, 54); g.lineTo(32, 70); g.lineTo(42, 54); g.fill();
+  g.fillStyle = t.c; g.beginPath(); g.arc(32, 30, 25, 0, 7); g.fill();
+  g.font = "30px system-ui, Apple Color Emoji, Segoe UI Emoji"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(t.e, 32, 32);
+  return { width: W, height: H, data: g.getImageData(0, 0, W, H).data };
+}
+const repGeo = () => ({ type: "FeatureCollection", features: reports.filter((r) => RTYPES[r.type]).map((r) => ({ type: "Feature", properties: { id: r.id, type: r.type }, geometry: { type: "Point", coordinates: [r.lng, r.lat] } })) });
+
 // ================= MAP =================
 const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 let mapType = store.get("mapType", "map");
@@ -303,6 +338,10 @@ function addOverlays() {
   if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#0b57d0", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
   if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#4285f4", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
   if (!map.getLayer("done-line")) map.addLayer({ id: "done-line", type: "line", source: "done", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#9aa0a6", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 12] } });
+  for (const [k, t] of Object.entries(RTYPES)) if (!map.hasImage(`rep-${k}`)) map.addImage(`rep-${k}`, repIcon(t), { pixelRatio: 2 });
+  if (!map.getSource("reports")) map.addSource("reports", { type: "geojson", data: repGeo() });
+  if (!map.getLayer("reports")) map.addLayer({ id: "reports", type: "symbol", source: "reports", minzoom: 10,
+    layout: { "icon-image": ["concat", "rep-", ["get", "type"]], "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 0.85], "icon-allow-overlap": true, "icon-anchor": "bottom" } });
   if (!map.getSource("cams")) map.addSource("cams", { type: "geojson", data: camGeo() });
   if (!map.getLayer("cams")) map.addLayer({ id: "cams", type: "symbol", source: "cams", minzoom: 10.5, filter: camFilter(),
     layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "cam-speed", "cam-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1], "icon-allow-overlap": true } });
@@ -798,7 +837,12 @@ function navTick(pos) {
   $("#navEta").textContent = fmtMin(secs);
   $("#navSub").textContent = `${fmtDist(left)} · ${clock(secs)}`;
   const ahead = R.camsOnRoute.find((c) => c.along > nav.along - 10 && c.along - nav.along < 500);
-  showCam(ahead ? { ...ahead, meters: ahead.along - nav.along } : null);
+  if (ahead) showCam({ ...ahead, meters: ahead.along - nav.along });
+  else {
+    const ra = reportsAhead(pos, heading, R);
+    if (ra) { const t = RTYPES[ra.r.type]; const box = $("#camAlert"); box.style.display = "flex"; $("#camText").textContent = `${t.e} ${t.label} reported`; $("#camDist").textContent = `${fmtDist(ra.d)} ahead · ${ago(ra.r.created_at)}`; $("#camLim").style.display = "none"; }
+    else showCam(null);
+  }
   updateSpeedo(ahead?.type === "speed" ? ahead.limit : null);
   if (left < 25) { spk("arr", "You have arrived"); setTimeout(() => nav.active && endNav(), 3000); }
   const doneCoords = R.coords.slice(0, nav.idx + 1).concat([pointAt(R, nav.along)]);
@@ -826,6 +870,7 @@ function updateSpeedo(limit) {
 }
 const freeWarned = {};
 function freeDriveCams(pos) {
+  if (heading != null && speedMps > 4) reportsAhead(pos, heading, null);
   if (heading == null || speedMps < 4 || !cams.length) return;
   for (const c of cams) {
     if (!layerOn[c.type]) continue;
@@ -975,6 +1020,66 @@ function letterSheet(t, j) {
     catch { const r = document.createRange(); r.selectNodeContents($("#letter")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $("#copyL").textContent = "Selected. Tap Copy"; }
   };
   $("#backL").onclick = () => disputeSheet(t);
+}
+
+// ================= DRIVER REPORTS (UI) =================
+const ago = (t) => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} hr ago`; };
+let repTimer = null;
+async function loadReports() {
+  if (map.getZoom() < 10) return;
+  const b = map.getBounds();
+  try {
+    const j = await (await fetch(`/api/reports?bbox=${[b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(5)).join(",")}`)).json();
+    reports = j.reports || []; map.getSource("reports")?.setData(repGeo());
+  } catch {}
+}
+map.on("moveend", () => { clearTimeout(repTimer); repTimer = setTimeout(loadReports, 400); });
+map.on("load", loadReports);
+setInterval(loadReports, 60000);
+map.on("mouseenter", "reports", () => (map.getCanvas().style.cursor = "pointer"));
+map.on("mouseleave", "reports", () => (map.getCanvas().style.cursor = ""));
+map.on("click", "reports", (e) => {
+  const r = reports.find((x) => String(x.id) === String(e.features[0].properties.id)); if (!r) return;
+  const t = RTYPES[r.type];
+  const pop = new maplibregl.Popup({ offset: 30 }).setLngLat([r.lng, r.lat]).setHTML(`<div class="pop"><h3>${t.e} ${esc(t.label)}</h3>
+    <div class="meta">Reported ${ago(r.created_at)}${r.up > 1 ? ` · confirmed by ${r.up - 1}` : ""}</div>${r.note ? `<div>${esc(r.note)}</div>` : ""}
+    <div class="votes"><button type="button" data-v="1">👍 Still there</button><button type="button" data-v="0">👎 Not there</button></div></div>`).addTo(map);
+  pop.getElement().querySelectorAll("[data-v]").forEach((b) => (b.onclick = async () => {
+    try { await fetch("/api/reports/vote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id, up: b.dataset.v === "1" }) }); } catch {}
+    pop.setHTML(`<div class="pop"><h3>Thanks!</h3><div class="meta">That helps other drivers.</div></div>`); setTimeout(() => pop.remove(), 1200); loadReports();
+  }));
+});
+function reportSheet() {
+  openSheet("What do you see?", `<div class="rgrid">${Object.entries(RTYPES).map(([k, t]) => `<button type="button" data-rt="${k}"><i style="background:${t.c}">${t.e}</i>${esc(t.label)}</button>`).join("")}</div>
+    <p class="note">Reports go on the map at your location for other drivers. They disappear on their own when they're old or when drivers mark them "not there".</p>`, "report");
+  document.querySelectorAll("[data-rt]").forEach((b) => (b.onclick = () => sendReport(b.dataset.rt)));
+}
+async function sendReport(type) {
+  let at;
+  try { at = await getMe(6000); } catch { const c = map.getCenter(); at = [c.lng, c.lat]; }
+  try {
+    const r = await fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, lat: at[1], lng: at[0] }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    closeSheet(); loadReports();
+    const box = $("#inAlert"); const t = RTYPES[type];
+    box.innerHTML = `<div class="ico" style="background:${t.c};font-size:20px">${t.e}</div><div><b>${esc(t.label)} reported</b><div class="sub">Thanks for warning other drivers.</div></div>`;
+    box.hidden = false; box.onclick = () => (box.hidden = true); setTimeout(() => (box.hidden = true), 2500);
+  } catch (e) { openSheet("Couldn't send report", `<p class="muted">${esc(e.message || "Try again.")}</p>`); }
+}
+$("#reportBtn").onclick = reportSheet;
+// Reports ahead while driving
+const repWarned = {};
+function reportsAhead(pos, brg, R) {
+  let best = null;
+  for (const r of reports) {
+    const t = RTYPES[r.type]; if (!t?.warn) continue;
+    let d;
+    if (R) { const pr = project(R, [r.lng, r.lat], 0, true); if (pr.off > 40) continue; d = pr.along - nav.along; if (d < 0 || d > 800) continue; }
+    else { if (brg == null) continue; d = dist(pos, [r.lng, r.lat]); if (d > 500 || angDiff(bearing(pos, [r.lng, r.lat]), brg) > 35) continue; }
+    if (!best || d < best.d) best = { r, d };
+  }
+  if (best && Date.now() - (repWarned[best.r.id] || 0) > 10 * 60000) { repWarned[best.r.id] = Date.now(); speak(RTYPES[best.r.type].warn); }
+  return best;
 }
 
 // ================= CAN I PARK HERE? =================
