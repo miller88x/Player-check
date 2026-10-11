@@ -68,6 +68,24 @@ button{font:inherit;color:inherit;cursor:pointer}
 textarea.inp,input.inp{font:500 16px var(--body);border:0;border-radius:12px;padding:12px 14px;background:var(--ui);color:var(--ink);width:100%;resize:vertical}
 pre.letter{white-space:pre-wrap;font:15px/1.5 var(--body);background:#fff;color:#202124;border-radius:14px;padding:16px;margin:0;max-height:none;user-select:text;-webkit-user-select:text}
 ol.ev{margin:0;padding-left:20px;color:var(--ink);font-size:14px;display:flex;flex-direction:column;gap:4px}
+#parkBtn{bottom:calc(var(--safeB) + 168px);background:#1a73e8}
+#parkBtn span{font:800 24px/1 var(--body);color:#fff}
+.verdict{border-radius:16px;padding:16px;display:flex;gap:14px;align-items:center}
+.verdict .big2{font:700 21px/1.2 var(--body)}
+.verdict .ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font:800 24px var(--body);color:#fff;flex:0 0 auto}
+.verdict.green{background:color-mix(in srgb,#1e8e3e 22%,#202124)}.verdict.green .ic{background:#1e8e3e}
+.verdict.yellow{background:color-mix(in srgb,#f29900 22%,#202124)}.verdict.yellow .ic{background:#f29900}
+.verdict.red{background:color-mix(in srgb,#d93025 24%,#202124)}.verdict.red .ic{background:#d93025}
+.verdict.unknown{background:var(--ui)}.verdict.unknown .ic{background:#5f6368}
+ul.rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.rules li{background:var(--ui);border-radius:10px;padding:10px 12px;font-size:14px}
+#parkedPill{position:fixed;left:50%;transform:translateX(-50%);top:calc(var(--safeT) + 116px);z-index:10;border:0;border-radius:22px;background:#1a73e8;color:#fff;font-weight:700;padding:9px 16px;box-shadow:0 3px 12px rgba(0,0,0,.4);white-space:nowrap;display:flex;gap:8px;align-items:center}
+#parkedPill.soon{background:#d93025;animation:pulse2 1.2s ease-in-out infinite alternate}
+@keyframes pulse2{to{background:#a50e0e}}
+.carPin{width:34px;height:34px;border-radius:9px;background:#1a73e8;border:3px solid #fff;color:#fff;font:800 17px var(--body);display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+.signDot{width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid #d93025;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.checkPin{width:22px;height:22px;border-radius:50%;background:#1a73e8;border:4px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+body.navigating #parkBtn,body.navigating #parkedPill{display:none!important}
 .inAlert{position:fixed;left:12px;right:12px;top:calc(var(--safeT) + 116px);z-index:11;max-width:560px;margin:0 auto;border-radius:18px;background:#fff;color:#202124;box-shadow:0 8px 28px rgba(0,0,0,.35);display:flex;gap:12px;align-items:flex-start;padding:14px 14px 14px 16px;cursor:pointer;animation:drop .35s ease both}
 .inAlert .ico{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto}
 .inAlert b{display:block;font-size:16px}
@@ -195,6 +213,8 @@ body.navigating #navTop,body.navigating #navBottom,body.navigating #speedo{displ
   <button type="button" data-style="dark"><span style="background:linear-gradient(135deg,#1d2633 40%,#0e1621 40% 55%,#1d2633 55%)"></span>Night</button>
 </div>
 <button class="fab" id="locBtn" type="button" aria-label="Show my location"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.6" fill="#8ab4f8"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#8ab4f8" stroke-width="2"/><path d="M12 1.5v3.5m0 14v3.5M1.5 12H5m14 0h3.5" stroke="#8ab4f8" stroke-width="2"/></svg></button>
+<button class="fab" id="parkBtn" type="button" aria-label="Can I park here?"><span>P</span></button>
+<button id="parkedPill" type="button" hidden></button>
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#062e33"/></svg></button>
 <button class="fab" id="recenter" type="button">Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
@@ -437,7 +457,7 @@ function closeSheet() {
   if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
   sheetMode = null;
 }
-$("#sheetX").onclick = closeSheet;
+$("#sheetX").onclick = () => closeSheet();
 function notice(h, msg) { openSheet(h, `<p class="muted" style="margin:0">${esc(msg)}</p><button class="btn primary" type="button" id="ok">OK</button>`); $("#ok").onclick = closeSheet; }
 
 // ================= TICKETS =================
@@ -956,6 +976,95 @@ function letterSheet(t, j) {
   };
   $("#backL").onclick = () => disputeSheet(t);
 }
+
+// ================= CAN I PARK HERE? =================
+let checkMarker = null, signMarkers = [], parkedMarker = null, lastPark = null;
+const ICON_P = { green: "✓", yellow: "$", red: "✕", unknown: "?" };
+function clearCheck() { checkMarker?.remove(); checkMarker = null; signMarkers.forEach((m) => m.remove()); signMarkers = []; }
+async function parkCheck(at, fromTap) {
+  clearCheck();
+  const el = document.createElement("div"); el.className = "checkPin";
+  checkMarker = new maplibregl.Marker({ element: el }).setLngLat(at).addTo(map);
+  map.easeTo({ center: at, zoom: Math.max(map.getZoom(), 17), offset: [0, -120], duration: 600 });
+  openSheet("Can I park here?", '<p class="muted" style="margin:0">Reading the parking signs on this block…</p>', "park");
+  try {
+    const r = await fetch(`/api/park?lat=${at[1]}&lng=${at[0]}`); const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    lastPark = { ...j, at };
+    j.signs.forEach((sg) => { const d = document.createElement("div"); d.className = "signDot"; d.title = sg.text; signMarkers.push(new maplibregl.Marker({ element: d }).setLngLat([sg.lng, sg.lat]).addTo(map)); });
+    const moveTxt = j.moveBy ? new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
+    openSheet("Can I park here?", `
+      <div class="verdict ${j.status}"><div class="ic">${ICON_P[j.status]}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink);opacity:.85">${esc(j.detail)}</div></div></div>
+      ${j.where ? `<div class="muted">📍 ${esc(j.where)}</div>` : ""}
+      ${j.rules.length ? `<div><b>Signs on this block</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
+      <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Long-press anywhere on the map to check another spot."}</p>`, "park");
+    $("#parkHere")?.addEventListener("click", () => saveParked(j, at));
+  } catch (e) { openSheet("Can I park here?", `<div class="alert stop"><b>Couldn't check this spot</b>${esc(e.message || "Try again.")}</div>`, "park"); }
+}
+$("#parkBtn").onclick = async () => {
+  try { const p = await getMe(); parkCheck(p, false); }
+  catch { const c = map.getCenter(); parkCheck([c.lng, c.lat], false); }
+};
+// Long-press (or right-click) anywhere on the map to check that spot
+map.on("contextmenu", (e) => { if (!nav.active) parkCheck([e.lngLat.lng, e.lngLat.lat], true); });
+let pressT = null;
+map.on("touchstart", (e) => { if (e.originalEvent.touches.length !== 1 || nav.active) return; const ll = e.lngLat; pressT = setTimeout(() => parkCheck([ll.lng, ll.lat], true), 650); });
+["touchend", "touchmove", "dragstart", "zoomstart"].forEach((ev) => map.on(ev, () => clearTimeout(pressT)));
+
+// ---------- Parked car + move-by countdown ----------
+function saveParked(j, at) {
+  const car = { at, moveBy: j.moveBy, where: j.where, headline: j.headline, savedAt: Date.now() };
+  store.set("parked", car); clearCheck(); closeSheet(); drawParked();
+  if (j.moveBy) {
+    openSheet("Parked ✓", `
+      <div class="verdict green"><div class="ic">P</div><div><div class="big2">Move by ${esc(new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div><div class="muted" style="color:var(--ink)">The app will warn you 30 minutes before when it's open.</div></div></div>
+      <a class="btn primary" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(j.moveBy)}&w=${encodeURIComponent(j.where || "")}">Add phone reminder</a>
+      <p class="note">The phone reminder goes in your Calendar app and alerts you 30 and 5 minutes before, even when this app is closed.</p>`, "parked");
+  }
+}
+function drawParked() {
+  parkedMarker?.remove(); parkedMarker = null;
+  const car = store.get("parked", null), pill = $("#parkedPill");
+  if (!car) { pill.hidden = true; return; }
+  const el = document.createElement("div"); el.className = "carPin"; el.textContent = "P";
+  el.onclick = (e) => { e.stopPropagation(); parkedSheet(); };
+  parkedMarker = new maplibregl.Marker({ element: el }).setLngLat(car.at).addTo(map);
+  tickParked();
+}
+function tickParked() {
+  const car = store.get("parked", null), pill = $("#parkedPill");
+  if (!car) { pill.hidden = true; return; }
+  pill.hidden = false;
+  if (!car.moveBy) { pill.textContent = "🅿️ Parked"; pill.classList.remove("soon"); return; }
+  const mins = Math.round((new Date(car.moveBy) - Date.now()) / 60000);
+  const left = mins <= 0 ? "Move your car now" : mins < 60 ? `Move in ${mins} min` : mins < 1440 ? `Move in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Move by ${new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+  pill.textContent = `🅿️ ${left}`;
+  pill.classList.toggle("soon", mins <= 30);
+  if (mins <= 30 && !car.warned) {
+    car.warned = true; store.set("parked", car);
+    const box = $("#inAlert");
+    box.innerHTML = `<div class="ico" style="background:#d93025;color:#fff;font-weight:800">P</div><div style="min-width:0"><b>${mins <= 0 ? "Move your car now" : `Move your car in ${mins} min`}</b><div class="sub">${esc(car.where || "")} · parking rules start soon</div></div><button class="xx" type="button" aria-label="Dismiss">✕</button>`;
+    box.hidden = false; box.querySelector(".xx").onclick = (e) => { e.stopPropagation(); box.hidden = true; };
+    box.onclick = () => { box.hidden = true; parkedSheet(); };
+    speak(mins <= 0 ? "Move your car now. Parking rules are in effect." : `Move your car in ${mins} minutes.`);
+  }
+}
+function parkedSheet() {
+  const car = store.get("parked", null); if (!car) return;
+  map.flyTo({ center: car.at, zoom: 17, duration: 700 });
+  openSheet("Your car", `
+    <div class="muted">📍 ${esc(car.where || "Saved spot")} · parked ${new Date(car.savedAt).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</div>
+    ${car.moveBy ? `<div class="verdict ${new Date(car.moveBy) - Date.now() < 1800000 ? "red" : "green"}"><div class="ic">P</div><div class="big2">Move by ${esc(new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div></div>
+      <a class="btn" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(car.moveBy)}&w=${encodeURIComponent(car.where || "")}">Add phone reminder</a>` : ""}
+    <div class="row"><button class="btn primary grow" type="button" id="walkCar">Directions to my car</button><button class="btn" type="button" id="movedCar">I moved it</button></div>`, "parked");
+  $("#movedCar").onclick = () => { store.set("parked", null); parkedMarker?.remove(); parkedMarker = null; $("#parkedPill").hidden = true; closeSheet(); };
+  $("#walkCar").onclick = () => { dest = { name: "My car", line: car.where || "", at: car.at }; planRoute(dest); };
+}
+$("#parkedPill").onclick = parkedSheet;
+drawParked();
+setInterval(tickParked, 30000);
+const _closeSheet = closeSheet;
+closeSheet = function () { if (sheetMode === "park") clearCheck(); _closeSheet(); };
 
 // ================= START =================
 const savedPlate = store.get("plate", null);
