@@ -41,23 +41,41 @@ function norm(s) {
   for (const [re, to] of SUFFIX) n = n.replace(re, to);
   return n.replace(/\s+/g, " ").trim();
 }
-// Lettered avenues are "AVENUE T" on the city map but "AVE T" on tickets
+// Ticket names and city-map names are spelled differently ("212TH ST" vs "212 ST",
+// "THIRD AVE" vs "3 AVE", "B 140TH ST" vs "BEACH 140 ST", "REIDAVE" vs "REID AVE").
+// Build every reasonable spelling and try them all.
+const WORDNUM = { FIRST: 1, SECOND: 2, THIRD: 3, FOURTH: 4, FIFTH: 5, SIXTH: 6, SEVENTH: 7, EIGHTH: 8, NINTH: 9, TENTH: 10, ELEVENTH: 11, TWELFTH: 12 };
+const TRANSFORMS = [
+  (n) => n.replace(/\b(\d+)(ST|ND|RD|TH)\b/g, "$1"),                       // 212TH ST -> 212 ST
+  (n) => n.replace(/\b(\d+)\b(?=\s+(ST|AVE|RD|PL|DR|TER|CT|LN|WAY)\b)/g, (m, d) => d + ({ 1: "ST", 2: "ND", 3: "RD" }[d % 100 > 10 && d % 100 < 14 ? 0 : d % 10] || "TH")), // 212 ST -> 212TH ST
+  (n) => n.replace(/\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH)\b/g, (w) => WORDNUM[w]),
+  (n) => n.replace(/^B (\d)/, "BEACH $1"),
+  (n) => n.replace(/^AVENUE ([A-Z])$/, "AVE $1"),
+  (n) => n.replace(/^AVE ([A-Z])$/, "AVENUE $1"),
+  (n) => n.replace(/^([A-Z])\s+AVE$/, "AVE $1"),                                // S AVE -> AVE S
+  (n) => n.replace(/([A-Z]{3,})(AVE|PKWY|BLVD|ST|RD)$/, (m, a, b) => (["EAST", "WEST", "FIRST", "BROAD", "MAIN"].some((w) => a.endsWith(w)) && b === "ST" ? m : `${a} ${b}`)),
+  (n) => n.replace(/^LENOX AVE$/, "MALCOLM X BLVD"),
+  (n) => n.replace(/^([NSEW]) (ST|AVE|RD|DR|BLVD|LOOP)$/, (m, d, t) => `${{ N: "NORTH", S: "SOUTH", E: "EAST", W: "WEST" }[d]} ${t}`),
+  (n) => n.replace(/^ADAM CLAYTON POWELL( JR)? BLVD$/, "7 AVE"),
+  (n) => n.replace(/\s+(SVC|SERVICE) RD\b.*$/, ""),
+];
 function variants(n) {
   const out = new Set([n]);
-  const m = n.match(/^AVE ([A-Z])$/);
-  if (m) out.add(`AVENUE ${m[1]}`);
-  if (/^\d+(ST|ND|RD|TH)$/.test(n)) out.add(`${n} ST`);
-  return [...out];
+  for (let round = 0; round < 3; round++)
+    for (const v of [...out]) for (const f of TRANSFORMS) { const x = f(v).replace(/\s+/g, " ").trim(); if (x) out.add(x); }
+  return [...out].slice(0, 12);
 }
 
 // "WB N. CONDUIT AVE @" + "143RD RD"  ->  {dir:"WB", a:"N CONDUIT AVE", b:"143RD RD"}
 function parseLocation(street, cross) {
   const s = String(street || ""), c = String(cross || "");
-  const joined = (s.length >= 20 ? s + c : `${s} ${c}`).replace(/\s+/g, " ").trim();
+  let joined = (s.length >= 20 ? s + c : `${s} ${c}`).replace(/\s+/g, " ").trim();
+  let dir = null;
   const m = joined.match(/^(NB|SB|EB|WB)\s+(.*)$/i);
-  const dir = m ? m[1].toUpperCase() : null;
-  const rest = m ? m[2] : joined;
-  const [a, b] = rest.split("@").map((x) => norm(x));
+  if (m) { dir = m[1].toUpperCase(); joined = m[2]; }
+  // "(W/B)", "(S/B)", "E/B" written inside the name
+  joined = joined.replace(/\(?\b([NSEW])\s*\/\s*B\b\)?/gi, (x, d) => { if (!dir) dir = d.toUpperCase() + "B"; return " "; });
+  const [a, b] = joined.split("@").map((x) => norm(x));
   if (!a || !b) return null;
   return { dir, a, b };
 }
@@ -199,17 +217,18 @@ async function build() {
     state.stats.locations = locs.length;
     const { geom, speed } = await loadStreets(locs);
     const pick = (boro, name) => {
-      for (const v of variants(name)) if (geom[`${boro}|${v}`]) return { pts: geom[`${boro}|${v}`], k: `${boro}|${v}` };
-      return null;
+      let pts = [], k = null;
+      for (const v of variants(name)) if (geom[`${boro}|${v}`]) { pts = pts.concat(geom[`${boro}|${v}`]); k ||= `${boro}|${v}`; }
+      return k ? { pts, k } : null;
     };
     const cams = [];
     const unmatched = [];
     for (const l of locs) {
       const A = pick(l.boro, l.a), B = pick(l.boro, l.b);
       const at = A && B ? meet(A.pts, B.pts) : null;
-      if (!at) { if (unmatched.length < 40) unmatched.push(`${l.a} @ ${l.b}`); continue; }
+      if (!at) { if (unmatched.length < 80) unmatched.push(`${l.a} @ ${l.b}`); continue; }
       cams.push({ type: l.type, dir: l.dir, lng: +at[0].toFixed(6), lat: +at[1].toFixed(6),
-        name: `${l.a} @ ${l.b}`, limit: speed[A.k] || null, n: l.n });
+        name: `${l.a} @ ${l.b}`, limit: speed[A.k] || speed[B.k] || null, n: l.n });
     }
     state.cameras = cams;
     state.builtAt = new Date().toISOString();
@@ -234,4 +253,4 @@ function start() {
   setInterval(build, 7 * 24 * 3600 * 1000).unref(); // refresh weekly
 }
 
-module.exports = { state, start, build, parseLocation, norm, meet };
+module.exports = { state, start, build, parseLocation, norm, meet, variants };
