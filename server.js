@@ -10,6 +10,7 @@ const park = require("./park");
 const reports = require("./reports");
 const uscams = require("./uscams");
 const auth = require("./auth");
+const tts = require("./tts");
 
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
@@ -207,6 +208,7 @@ http
       const c = cameras.state;
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
     }
+    if (url.pathname.startsWith("/api/tts") && tts.routes(url, res, send, req)) return;
     if ((url.pathname.startsWith("/api/auth/") || url.pathname === "/api/me") && auth.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/reports") && reports.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/park") && park.routes(url, res, send)) return;

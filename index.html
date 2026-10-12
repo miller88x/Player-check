@@ -598,10 +598,40 @@ $("#locBtn").onclick = async () => {
 
 // ================= VOICE =================
 let voiceOn = store.get("voice", true);
-function speak(text) {
-  if (!voiceOn || !("speechSynthesis" in window)) return;
-  try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.02; u.lang = "en-US"; speechSynthesis.speak(u); } catch {}
+// Natural AI voice from the server when it's set up; the phone's best built-in voice otherwise
+let ttsReady = false, ttsBusy = false, ttsTimer = null;
+const ttsQ = [], ttsAudio = new Audio();
+ttsAudio.preload = "auto";
+fetch("/api/tts/status").then((r) => r.json()).then((j) => { ttsReady = !!j.ready; }).catch(() => {});
+const ttsUrl = (t) => `/api/tts?t=${encodeURIComponent(t)}`;
+function ttsPrefetch(t) { if (ttsReady && t) fetch(ttsUrl(t)).catch(() => {}); }
+function bestVoice() {
+  const vs = (speechSynthesis.getVoices?.() || []).filter((v) => /^en[-_]US/i.test(v.lang));
+  return vs.find((v) => /premium/i.test(v.name)) || vs.find((v) => /enhanced|natural|neural/i.test(v.name)) || vs.find((v) => /Google US English|Samantha|Ava|Zoe/i.test(v.name)) || vs[0] || null;
 }
+function phoneSpeak(text) {
+  if (!("speechSynthesis" in window)) return;
+  try { const u = new SpeechSynthesisUtterance(text); const v = bestVoice(); if (v) u.voice = v; u.rate = 1.02; u.lang = "en-US"; speechSynthesis.speak(u); } catch {}
+}
+function ttsNext() {
+  if (ttsBusy || !ttsQ.length) return;
+  const t = ttsQ.shift(); ttsBusy = true;
+  let done = false;
+  const finish = (fallback) => { if (done) return; done = true; clearTimeout(ttsTimer); ttsBusy = false; if (fallback && voiceOn) phoneSpeak(t); ttsNext(); };
+  ttsAudio.onended = () => finish(false);
+  ttsAudio.onerror = () => finish(true);
+  ttsTimer = setTimeout(() => { if (ttsAudio.paused) { ttsAudio.pause(); finish(true); } }, 4000); // slow network: don't miss the turn
+  ttsAudio.src = ttsUrl(t);
+  ttsAudio.play().catch(() => finish(true));
+}
+function speak(text) {
+  if (!voiceOn) return;
+  if (ttsReady) { if (ttsQ.length > 2) ttsQ.shift(); ttsQ.push(text); ttsNext(); }
+  else phoneSpeak(text);
+}
+function stopVoice() { ttsQ.length = 0; try { ttsAudio.pause(); } catch {} ttsBusy = false; clearTimeout(ttsTimer); try { speechSynthesis.cancel(); } catch {} }
+// iPhone only lets sound play after a tap: call this from a tap (Start / Test drive)
+function unlockVoice() { try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch {} }
 
 // ================= SHEET =================
 let sheetMode = null;
@@ -871,7 +901,8 @@ function routeSheet(to) {
 const nav = { active: false, sim: null, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, lastReroute: 0 };
 function startNav(sim) {
   if (!route) return;
-  speak(sim ? "Starting test drive" : "Starting route"); // also unlocks speech on iPhone
+  unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
+  (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
   Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
@@ -898,7 +929,7 @@ function endNav() {
   nav.active = false; clearInterval(nav.sim); nav.sim = null;
   try { nav.lock?.release(); } catch {}
   document.body.classList.remove("navigating"); $("#camAlert").style.display = "none"; $("#recenter").classList.remove("on"); nav.northUp = false;
-  try { speechSynthesis.cancel(); } catch {}
+  stopVoice();
   clearRoute(); destMarker?.remove(); destMarker = null;
   map.getSource("done")?.setData({ type: "FeatureCollection", features: [] });
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0 }, zoom: 14, duration: 600 });
@@ -911,13 +942,16 @@ $("#recenter").onclick = () => { nav.follow = true; $("#recenter").classList.rem
 $("#navCompass").onclick = () => { nav.northUp = !nav.northUp; nav.follow = true; $("#recenter").classList.remove("on"); startAnim(); };
 map.on("rotate", () => { $("#navCompass svg").style.transform = `rotate(${-map.getBearing()}deg)`; });
 function paintMute() { const b = $("#navMute"); b.setAttribute("aria-label", voiceOn ? "Mute voice" : "Unmute voice"); b.style.color = voiceOn ? "#e8eaed" : "#e5484d"; b.querySelector(".wave").style.display = voiceOn ? "" : "none"; b.querySelector(".slash").style.display = voiceOn ? "none" : ""; }
-$("#navMute").onclick = () => { voiceOn = !voiceOn; store.set("voice", voiceOn); try { if (!voiceOn) speechSynthesis.cancel(); } catch {} paintMute(); };
+$("#navMute").onclick = () => { voiceOn = !voiceOn; store.set("voice", voiceOn); if (!voiceOn) stopVoice(); paintMute(); };
 paintMute();
 $("#navOv").onclick = () => {
   if (!route) return;
+  if (!nav.follow) { $("#recenter").click(); return; } // tap again to go back to driving view
   nav.follow = false; $("#recenter").classList.add("on");
   const b = new maplibregl.LngLatBounds(); route.coords.forEach((c) => b.extend(c));
-  map.fitBounds(b, { padding: { top: 200, bottom: 140, left: 50, right: 50 }, pitch: 0, bearing: 0, duration: 800 });
+  map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 }); // the driving camera's padding would squeeze the whole-route view
+  const top = ($("#navTop").getBoundingClientRect().bottom || 200) + 30, bottom = innerHeight - ($("#navBottom").getBoundingClientRect().top || innerHeight - 120) + 30;
+  map.fitBounds(b, { padding: { top, bottom, left: 40, right: 90 }, pitch: 0, bearing: 0, duration: 900, maxZoom: 17 });
 };
 
 function instruction(s) {
