@@ -3,8 +3,9 @@
 // Once a day Supabase calls /api/alerts/run, we re-check every plate and email anything new.
 const crypto = require("crypto");
 
-const SB_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const SB_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+const SB_URL = (process.env.SUPABASE_URL || "").replace(/[\s\u200B-\u200D\uFEFF\u00A0]/g, "").replace(/\/+$/, "");
+// Keys never contain spaces, line breaks or invisible characters — strip any picked up while copying on a phone
+const SB_KEY = (process.env.SUPABASE_SERVICE_KEY || "").replace(/[\s\u200B-\u200D\uFEFF\u00A0]/g, "");
 const RUN_KEY = process.env.ALERTS_KEY || "";
 const APP_URL = process.env.APP_URL || "https://player-check.onrender.com";
 const GMAIL_USER = process.env.GMAIL_USER || "";
