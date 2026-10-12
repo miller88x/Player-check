@@ -201,7 +201,7 @@ http
       }
     }
 
-    if (url.pathname === "/api/cameras/area" && uscams.routes(url, res, send)) return;
+    if (url.pathname.startsWith("/api/cameras/area") && uscams.routes(url, res, send)) return;
     if (url.pathname === "/api/cameras") {
       const c = cameras.state;
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });

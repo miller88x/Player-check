@@ -2,7 +2,13 @@
 // Fetched per map area on demand and cached on the server, in 0.5° tiles (~35 miles).
 // NYC keeps its own, more complete list built from city ticket data (cameras.js).
 
-const MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+const MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
+const lastErrors = {};
 const TILE = 0.5;
 const cache = new Map(); // "lat|lng" -> { at, cams }
 const inflight = new Map();
@@ -43,10 +49,12 @@ async function fetchTile(lat0, lng0) {
   let lastErr;
   for (const url of MIRRORS) {
     try {
-      const res = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "PlateCheck/1.0" }, signal: AbortSignal.timeout(30000) });
-      if (!res.ok) throw new Error(`overpass ${res.status}`);
-      return parse(await res.json());
-    } catch (e) { lastErr = e; }
+      const res = await fetch(`${url}?data=${encodeURIComponent(q)}`, { headers: { "User-Agent": "PlateCheck/1.0 (player-check.onrender.com)", Accept: "application/json" }, signal: AbortSignal.timeout(25000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 120)}`);
+      const cams = parse(await res.json());
+      delete lastErrors[url];
+      return cams;
+    } catch (e) { lastErr = e; lastErrors[url] = `${new Date().toISOString()} ${e.name === "TimeoutError" ? "timed out" : e.message}`; }
   }
   throw lastErr;
 }
@@ -73,6 +81,7 @@ async function area(s, w, n, e) {
 }
 
 function routes(url, res, sendJSON) {
+  if (url.pathname === "/api/cameras/area/status") { sendJSON(res, 200, { cachedTiles: cache.size, errors: lastErrors }); return true; }
   if (url.pathname !== "/api/cameras/area") return false;
   const b = (url.searchParams.get("bbox") || "").split(",").map(Number);
   if (b.length !== 4 || b.some(isNaN)) { sendJSON(res, 400, { error: "bbox=w,s,e,n" }); return true; }
