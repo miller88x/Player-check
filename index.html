@@ -369,8 +369,52 @@ function mergeCams(list) {
   for (const c of list) { const k = `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`; if (camKeys.has(k)) continue; camKeys.add(k); cams.push(c); added++; }
   if (added) { map.getSource("cams")?.setData(camGeo()); if (route) route.camsOnRoute = camsAlong(route); }
 }
+// Each phone asks OpenStreetMap directly (shared server addresses get rate-limited).
+// Areas are split into 0.5° tiles (~35 miles) and saved on the phone for 7 days.
+const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+const tileBusy = new Set();
+function parseOSM(osm) {
+  const nodes = new Map(), out = [];
+  for (const el of osm.elements || []) if (el.type === "node") nodes.set(el.id, el);
+  const add = (lat, lng, type, t = {}) => {
+    if (lat == null || inNYC(lng, lat)) return;
+    out.push({ type, lat: +lat.toFixed(6), lng: +lng.toFixed(6), heading: /^\d+$/.test(t.direction || "") ? +t.direction : null, limit: parseInt(t.maxspeed, 10) || null, name: t.name || "", n: 0, src: "osm" });
+  };
+  for (const el of osm.elements || []) {
+    const t = el.tags || {};
+    if (el.type === "node" && t.highway === "speed_camera") add(el.lat, el.lon, "speed", t);
+    if (el.type === "node" && /traffic_signals|red_light/.test(t.enforcement || "")) add(el.lat, el.lon, "redlight", t);
+    if (el.type === "relation" && t.type === "enforcement") {
+      const type = /traffic_signals/.test(t.enforcement || "") ? "redlight" : /maxspeed|average_speed/.test(t.enforcement || "") ? "speed" : null;
+      const m = (el.members || []).find((x) => x.type === "node" && x.role === "device") || (el.members || []).find((x) => x.type === "node");
+      const nd = type && m && nodes.get(m.ref);
+      if (nd) add(nd.lat, nd.lon, type, { ...nd.tags, ...t });
+    }
+  }
+  return out;
+}
+async function camTile(la, ln) {
+  const key = `osm:${la}|${ln}`;
+  const hit = store.get(key, null);
+  if (hit && Date.now() - hit.at < 7 * 864e5) { mergeCams(hit.c); return; }
+  if (tileBusy.has(key)) return; tileBusy.add(key);
+  const [s, w, n, e] = [la, ln, la + 0.5, ln + 0.5];
+  const q = `[out:json][timeout:25];(node["highway"="speed_camera"](${s},${w},${n},${e});node["enforcement"~"traffic_signals|red_light"](${s},${w},${n},${e});relation["type"="enforcement"]["enforcement"~"maxspeed|traffic_signals|average_speed"](${s},${w},${n},${e}););out body;>;out skel qt;`;
+  for (const url of OVERPASS) {
+    try {
+      const r = await fetch(`${url}?data=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(25000) : undefined });
+      if (!r.ok) continue;
+      const c = parseOSM(await r.json());
+      store.set(key, { at: Date.now(), c }); mergeCams(c); break;
+    } catch {}
+  }
+  tileBusy.delete(key);
+}
 async function camsForBox(w, s, e, n) {
-  try { const j = await (await fetch(`/api/cameras/area?bbox=${[w, s, e, n].map((v) => v.toFixed(3)).join(",")}`)).json(); mergeCams(j.cameras || []); } catch {}
+  const tiles = [];
+  for (let la = Math.floor(s * 2) / 2; la < n; la += 0.5) for (let ln = Math.floor(w * 2) / 2; ln < e; ln += 0.5) tiles.push([+la.toFixed(1), +ln.toFixed(1)]);
+  if (tiles.length > 6) return;
+  await Promise.all(tiles.map(([a, b]) => camTile(a, b)));
 }
 let areaT = null;
 map.on("moveend", () => {
@@ -388,7 +432,7 @@ async function camsForRoute(R) {
   for (let i = 0; i < R.coords.length; i += 8) { const [x, y] = R.coords[i]; if (!inNYC(x, y)) tiles.add(`${Math.floor(y * 2) / 2}|${Math.floor(x * 2) / 2}`); }
   const list = [...tiles].slice(0, 40);
   for (let i = 0; i < list.length; i += 4)
-    await Promise.all(list.slice(i, i + 4).map((t) => { const [la, ln] = t.split("|").map(Number); return camsForBox(ln + 0.01, la + 0.01, ln + 0.49, la + 0.49); }));
+    await Promise.all(list.slice(i, i + 4).map((t) => { const [la, ln] = t.split("|").map(Number); return camTile(+la.toFixed(1), +ln.toFixed(1)); }));
 }
 
 async function loadCams(tries = 0) {
