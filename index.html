@@ -152,6 +152,11 @@ ul.tix li{background:var(--ui);border-radius:12px;padding:12px 14px;display:grid
 .links{display:flex;gap:14px;font-size:14px;flex-wrap:wrap}
 a{color:var(--blue)}
 .note{color:var(--muted);font-size:12px}
+.acct{display:flex;align-items:center;gap:12px;width:100%;border:0;border-radius:14px;padding:12px 14px;background:var(--ui2);color:var(--ink);text-align:left;font:500 15px var(--body)}
+.acct .av{width:34px;height:34px;border-radius:50%;background:var(--blue);color:#062e6f;display:grid;place-items:center;font-weight:800;flex:0 0 auto}
+.acct small{display:block;color:var(--muted);font-size:13px}
+.plan{display:inline-block;border-radius:10px;padding:2px 8px;font:700 12px var(--body);background:var(--ui2);color:var(--ink);text-transform:uppercase;letter-spacing:.04em}
+label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
 .stats{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
 .camline{display:flex;align-items:center;gap:8px;color:#ffb36b;font-weight:600;font-size:14px}
 
@@ -260,9 +265,12 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
+// Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts"];
+let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} if (account && SYNC.includes(k)) queueSync(); },
 };
 const NYC = [-73.95, 40.7];
 const toRad = (d) => (d * Math.PI) / 180, toDeg = (r) => (r * 180) / Math.PI;
@@ -646,7 +654,9 @@ function plateSheet() {
       <button class="btn primary grow" id="pGo" type="submit">Check tickets</button></div>
     </form>
     ${saved.length ? `<div class="saved">${saved.map((x) => `<button type="button" data-p="${esc(x.p)}" data-s="${esc(x.s)}">${esc(x.p)}</button>`).join("")}</div>` : ""}
-    <p class="note">Your plate is saved on this phone, so your tickets load each time you open the app.</p>`, "plate");
+    ${acctRow()}
+    <p class="note">${account ? "Your plates are saved to your account, so they load on any phone you sign in on." : "Your plate is saved on this phone. Sign in to keep it on every phone."}</p>`, "plate");
+  wireAcct();
   const go = async (p, s) => {
     $("#pGo").disabled = true; $("#pGo").textContent = "Checking…";
     try { await checkPlate(p, s); closeSheet(); }
@@ -669,6 +679,7 @@ function ticketsSheet() {
       <span class="meta">${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</span><span class="chipS ${t.status}">${LABEL[t.status]}</span>${t.due > 0 ? `<span class="links" style="grid-column:1/-1"><a href="#" data-dispute="${esc(t.summons)}">Dispute this ticket</a></span>` : ""}</li>`).join("") || '<li class="muted">No tickets here.</li>'}</ul>
     ${alertsBox()}
     <button class="btn" type="button" id="chg">Change plate</button>
+    ${acctRow()}
     <p class="note">Judgment and boot flags are estimates: unpaid tickets usually go into judgment about 100 days after issue, and NYC can boot or tow past $350 in judgments.</p>`, "tickets");
   document.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; ticketsSheet(); }));
   document.querySelectorAll("li[data-id]").forEach((li) => (li.onclick = (e) => {
@@ -677,7 +688,7 @@ function ticketsSheet() {
     closeSheet(); map.flyTo({ center: [t.location.lng, t.location.lat], zoom: 16.5, pitch: 45, duration: 800 }); setTimeout(() => showTicket(t), 850);
   }));
   $("#chg").onclick = plateSheet;
-  wireAlerts();
+  wireAlerts(); wireAcct();
 }
 // ---------- Daily email alerts ----------
 let emailReady = false;
@@ -1251,9 +1262,94 @@ setInterval(tickParked, 30000);
 const _closeSheet = closeSheet;
 closeSheet = function () { if (sheetMode === "park") clearCheck(); _closeSheet(); };
 
+// ================= ACCOUNT =================
+const tok = () => store.get("tok", null);
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(tok() ? { Authorization: `Bearer ${tok()}` } : {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || "Something went wrong. Try again."); e.status = r.status; throw e; }
+  return j;
+}
+function queueSync() { clearTimeout(syncT); syncT = setTimeout(pushSync, 1500); }
+function pushSync() {
+  if (!account) return;
+  const data = {}; for (const k of SYNC) data[k] = store.get(k, null);
+  api("/api/me", { method: "PUT", body: JSON.stringify({ data }) }).catch((e) => { if (e.status === 401) signedOut(); });
+}
+// Combine what's on this phone with what's saved in the account (nothing gets lost)
+function mergeIn(sv) {
+  for (const k of SYNC) {
+    const s = sv?.[k], l = store.get(k, null);
+    if (s == null) continue;
+    let v = s;
+    if (k === "plates") { const all = [...s, ...(l || [])]; v = all.filter((x, i) => all.findIndex((y) => y.p === x.p && y.s === x.s) === i).slice(0, 5); }
+    else if ((k === "known" || k === "seenAlerts" || k === "alerts") && l && typeof l === "object") {
+      v = { ...l }; for (const pk in s) v[pk] = s[pk] && typeof s[pk] === "object" && l[pk] && typeof l[pk] === "object" ? { ...l[pk], ...s[pk] } : s[pk];
+    } else if (k === "parked" && l && (l.savedAt || 0) > (s.savedAt || 0)) v = l;
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
+  }
+  voiceOn = store.get("voice", true);
+  drawParked();
+  const p = store.get("plate", null);
+  if (p && (!data || data.plate !== p.p)) checkPlate(p.p, p.s, false).catch(() => {});
+}
+function signedOut() {
+  account = null; store.set("tok", null);
+  for (const k of SYNC) try { localStorage.removeItem(k); } catch {}
+  location.reload();
+}
+const PLAN_NAME = { free: "Free", bronze: "Bronze", silver: "Silver", gold: "Gold", fleet: "Fleet" };
+function acctRow() {
+  return account
+    ? `<button class="acct" type="button" id="acctBtn"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0;flex:1"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>${PLAN_NAME[account.plan]} plan · synced</small></span></button>`
+    : `<button class="acct" type="button" id="acctBtn"><span class="av">?</span><span><span style="display:block">Sign in or create an account</span><small>Keep your plates, tickets and parked car on every phone</small></span></button>`;
+}
+function wireAcct() { const b = $("#acctBtn"); if (b) b.onclick = accountSheet; }
+function accountSheet(mode) {
+  if (account) {
+    openSheet("Your account", `
+      <div class="acct" style="cursor:default"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>Member since ${new Date(account.since).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</small></span></div>
+      <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
+      <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
+      <button class="btn" type="button" id="outBtn">Sign out</button>
+      <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>`, "account");
+    $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
+    return;
+  }
+  const signup = mode !== "login";
+  openSheet(signup ? "Create account" : "Sign in", `
+    <div class="seg"><button type="button" data-m="signup" aria-pressed="${signup}">Create account</button><button type="button" data-m="login" aria-pressed="${!signup}">Sign in</button></div>
+    <form id="authF" style="display:flex;flex-direction:column;gap:12px">
+      <label class="lb">Email<input class="inp" id="aEm" type="email" inputmode="email" autocomplete="email" autocapitalize="off" required></label>
+      <label class="lb">Password<input class="inp" id="aPw" type="password" autocomplete="${signup ? "new-password" : "current-password"}" minlength="${signup ? 8 : 1}" required></label>
+      ${signup ? '<span class="note" style="margin-top:-4px">At least 8 characters.</span>' : ""}
+      <button class="btn primary" type="submit" id="aBtn">${signup ? "Create free account" : "Sign in"}</button>
+    </form>
+    <p class="note">${signup ? "Free forever. Your plates, tickets and parked car follow you to any phone." : "Forgot your password? Password reset by email is coming soon."}</p>`, "account");
+  document.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => accountSheet(b.dataset.m)));
+  $("#authF").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("#aBtn"), label = btn.textContent; btn.disabled = true; btn.textContent = signup ? "Creating…" : "Signing in…";
+    $("#aErr")?.remove();
+    try {
+      const j = await api(`/api/auth/${signup ? "signup" : "login"}`, { method: "POST", body: JSON.stringify({ email: $("#aEm").value, password: $("#aPw").value }) });
+      store.set("tok", j.token); account = j.user;
+      mergeIn(account.data); pushSync();
+      openSheet(signup ? "You're in" : "Welcome back", `<div class="alert go"><b>${signup ? "Account created" : "Signed in"}</b>${esc(account.email)} · everything on this phone is now saved to your account.</div><button class="btn primary" type="button" id="ok">Done</button>`, "account");
+      $("#ok").onclick = () => closeSheet();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = label;
+      const d = document.createElement("div"); d.id = "aErr"; d.className = "alert stop"; d.innerHTML = `<b>${err.status === 409 ? "Already signed up" : "Couldn't do that"}</b>${esc(err.message)}`;
+      $("#authF").prepend(d);
+      if (err.status === 409) { const a = document.createElement("button"); a.type = "button"; a.className = "btn"; a.textContent = "Sign in instead"; a.onclick = () => accountSheet("login"); d.after(a); }
+    }
+  };
+}
+
 // ================= START =================
 const savedPlate = store.get("plate", null);
 if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
+if (tok()) api("/api/me").then((j) => { account = j.user; mergeIn(account.data); pushSync(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
 if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocation" }).then((p) => { if (p.state === "granted") startWatch(); }).catch(() => {});
 </script>
 </body>
