@@ -227,7 +227,7 @@ function routes(url, res, sendJSON) {
   if (url.pathname === "/api/park/reminder.ics") { ics(url, res); return true; }
   if (url.pathname !== "/api/park") return false;
   const lat = +url.searchParams.get("lat"), lng = +url.searchParams.get("lng");
-  if (!(lat > 40.4 && lat < 41) || !(lng > -74.3 && lng < -73.6)) { sendJSON(res, 400, { error: "That spot is outside New York City." }); return true; }
+  if (!(lat > 40.4 && lat < 41) || !(lng > -74.3 && lng < -73.6)) { sendJSON(res, 400, { error: "Parking sign checks cover New York City for now. More cities are coming." }); return true; }
   check(lat, lng).then((r) => sendJSON(res, 200, r)).catch((e) => { console.error("park:", e.message); sendJSON(res, 502, { error: "Couldn't reach the city's sign data. Try again." }); });
   return true;
 }

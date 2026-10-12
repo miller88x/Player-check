@@ -356,15 +356,45 @@ map.on("click", "cams", (e) => {
   const c = cams[e.features[0].properties.i];
   new maplibregl.Popup({ offset: 14 }).setLngLat([c.lng, c.lat]).setHTML(`<div class="pop"><h3>${c.type === "speed" ? "Speed camera" : "Red light camera"}</h3>
     <div>${esc(title(c.name))}</div>
-    <div class="meta">${c.dir ? `Catches ${DIRNAME[c.dir]} traffic · ` : ""}${c.limit && c.type === "speed" ? `${c.limit} mph limit · ` : ""}${c.n.toLocaleString()} tickets this year</div></div>`).addTo(map);
+    <div class="meta">${c.dir ? `Catches ${DIRNAME[c.dir]} traffic · ` : ""}${c.limit && c.type === "speed" ? `${c.limit} mph limit · ` : ""}${c.src === "osm" ? "Mapped by drivers on OpenStreetMap" : `${c.n.toLocaleString()} tickets this year`}</div></div>`).addTo(map);
 });
 map.on("mouseenter", "cams", () => (map.getCanvas().style.cursor = "pointer"));
 map.on("mouseleave", "cams", () => (map.getCanvas().style.cursor = ""));
 
+// Cameras outside NYC come from OpenStreetMap, loaded for wherever the map is
+const camKeys = new Set();
+const inNYC = (lng, lat) => lat > 40.47 && lat < 40.93 && lng > -74.27 && lng < -73.68;
+function mergeCams(list) {
+  let added = 0;
+  for (const c of list) { const k = `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`; if (camKeys.has(k)) continue; camKeys.add(k); cams.push(c); added++; }
+  if (added) { map.getSource("cams")?.setData(camGeo()); if (route) route.camsOnRoute = camsAlong(route); }
+}
+async function camsForBox(w, s, e, n) {
+  try { const j = await (await fetch(`/api/cameras/area?bbox=${[w, s, e, n].map((v) => v.toFixed(3)).join(",")}`)).json(); mergeCams(j.cameras || []); } catch {}
+}
+let areaT = null;
+map.on("moveend", () => {
+  clearTimeout(areaT);
+  areaT = setTimeout(() => {
+    if (map.getZoom() < 9.5) return;
+    const b = map.getBounds(), c = map.getCenter();
+    if (inNYC(c.lng, c.lat) && inNYC(b.getWest(), b.getSouth()) && inNYC(b.getEast(), b.getNorth())) return;
+    camsForBox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+  }, 600);
+});
+// Before driving, load cameras for every area the route passes through
+async function camsForRoute(R) {
+  const tiles = new Set();
+  for (let i = 0; i < R.coords.length; i += 8) { const [x, y] = R.coords[i]; if (!inNYC(x, y)) tiles.add(`${Math.floor(y * 2) / 2}|${Math.floor(x * 2) / 2}`); }
+  const list = [...tiles].slice(0, 40);
+  for (let i = 0; i < list.length; i += 4)
+    await Promise.all(list.slice(i, i + 4).map((t) => { const [la, ln] = t.split("|").map(Number); return camsForBox(ln + 0.01, la + 0.01, ln + 0.49, la + 0.49); }));
+}
+
 async function loadCams(tries = 0) {
   try {
     const j = await (await fetch("/api/cameras")).json();
-    if (j.status === "ready") { cams = j.cameras; map.getSource("cams")?.setData(camGeo()); if (route) route.camsOnRoute = camsAlong(route); return; }
+    if (j.status === "ready") { const extra = cams.filter((c) => c.src === "osm"); cams = j.cameras.concat(extra); cams.forEach((c) => camKeys.add(`${c.lat.toFixed(5)},${c.lng.toFixed(5)}`)); map.getSource("cams")?.setData(camGeo()); if (route) route.camsOnRoute = camsAlong(route); return; }
   } catch {}
   if (tries < 40) setTimeout(() => loadCams(tries + 1), 10000);
 }
@@ -649,7 +679,7 @@ async function search(pickFirst) {
   if (q.length < 3) { $("#results").hidden = true; return; }
   const c = me || [map.getCenter().lng, map.getCenter().lat];
   try {
-    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=6&lang=en&bbox=-74.6,40.3,-73.2,41.2`)).json();
+    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=6&lang=en`)).json();
     const list = (j.features || []).map((f) => {
       const p = f.properties;
       const name = p.name || [p.housenumber, p.street].filter(Boolean).join(" ") || p.city || "Place";
@@ -708,6 +738,7 @@ function project(R, p, hint = 0, wide = false) {
   return best;
 }
 const DIRB = { NB: 0, EB: 90, SB: 180, WB: 270 };
+const camHeading = (c) => (c.dir ? DIRB[c.dir] : c.heading ?? null);
 function camsAlong(R) {
   if (!cams.length) return [];
   let minX = 180, minY = 90, maxX = -180, maxY = -90;
@@ -718,7 +749,7 @@ function camsAlong(R) {
     const pr = project(R, [c.lng, c.lat], 0, true);
     if (pr.off > 35) continue;
     const i = pr.idx, rb = bearing(R.coords[i], R.coords[Math.min(i + 1, R.coords.length - 1)]);
-    if (c.dir && angDiff(rb, DIRB[c.dir]) > 70) continue; // that camera watches the other direction
+    if (camHeading(c) != null && angDiff(rb, camHeading(c)) > 70) continue; // that camera watches the other direction
     out.push({ ...c, along: pr.along });
   }
   return out.sort((a, b) => a.along - b.along);
@@ -728,7 +759,7 @@ async function planRoute(to) {
   let from;
   try { from = await getMe(); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
-  try { route = await fetchRoute(from, to.at); }
+  try { route = await fetchRoute(from, to.at); camsForRoute(route).then(() => { if (sheetMode === "route" && route) routeSheet(to); }); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
   map.getSource("route")?.setData(routeGeo());
   const b = new maplibregl.LngLatBounds(); route.coords.forEach((c) => b.extend(c));
@@ -882,7 +913,7 @@ function freeDriveCams(pos) {
     if (Math.abs(c.lat - pos[1]) > 0.004 || Math.abs(c.lng - pos[0]) > 0.005) continue;
     const p = [c.lng, c.lat], d = dist(pos, p);
     if (d > 300 || angDiff(bearing(pos, p), heading) > 30) continue;
-    if (c.dir && angDiff(heading, DIRB[c.dir]) > 60) continue;
+    if (camHeading(c) != null && angDiff(heading, camHeading(c)) > 60) continue;
     const key = `${c.lng},${c.lat}`;
     if (Date.now() - (freeWarned[key] || 0) < 5 * 60 * 1000) continue;
     freeWarned[key] = Date.now();

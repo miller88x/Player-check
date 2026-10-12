@@ -89,7 +89,7 @@ function routes(url, res, sendJSON, readBody, req) {
     readBody(req).then(async (b) => {
       if (limited(ip)) return sendJSON(res, 429, { error: "Too many reports. Try again in a few minutes." });
       const type = String(b.type || ""), lat = +b.lat, lng = +b.lng;
-      if (!TYPES[type] || !(lat > 40.3 && lat < 41.3) || !(lng > -74.6 && lng < -73.3)) return sendJSON(res, 400, { error: "Reports work inside the NYC area." });
+      if (!TYPES[type] || !(lat > 17 && lat < 72) || !(lng > -170 && lng < -64)) return sendJSON(res, 400, { error: "Reports work inside the United States." });
       try { sendJSON(res, 200, { report: await add({ type, lat, lng, note: String(b.note || "").slice(0, 80) }) }); }
       catch (e) { console.error(e.message); sendJSON(res, 500, { error: "Couldn't save the report. Try again." }); }
     }).catch(() => sendJSON(res, 400, { error: "Bad request" }));

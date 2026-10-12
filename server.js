@@ -8,6 +8,7 @@ const alerts = require("./alerts");
 const dispute = require("./dispute");
 const park = require("./park");
 const reports = require("./reports");
+const uscams = require("./uscams");
 
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
@@ -200,6 +201,7 @@ http
       }
     }
 
+    if (url.pathname === "/api/cameras/area" && uscams.routes(url, res, send)) return;
     if (url.pathname === "/api/cameras") {
       const c = cameras.state;
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
