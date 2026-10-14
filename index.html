@@ -184,6 +184,15 @@ label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;ga
 .pop .links{margin-top:6px}
 .me{width:22px;height:22px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 7px rgba(66,133,244,.22),0 1px 4px rgba(0,0,0,.4);position:relative}
 .me.heading::after{content:"";position:absolute;left:50%;top:-15px;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:13px solid rgba(66,133,244,.55)}
+.me.car{width:auto;height:auto;background:none;border:0;box-shadow:none;cursor:pointer;line-height:0}
+.me.car svg{display:block;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
+.me.car::after{display:none}
+.vgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.vgrid button{border:2px solid transparent;background:#2d2e30;border-radius:16px;padding:8px 2px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;font:600 12.5px var(--body);color:var(--ink)}
+.vgrid button[aria-pressed="true"]{border-color:var(--blue);background:#1f2a3a}
+.vcolors{display:flex;gap:8px;flex-wrap:wrap}
+.vcolors button{width:36px;height:36px;border-radius:50%;border:3px solid #3c4043;padding:0}
+.vcolors button[aria-pressed="true"]{border-color:#fff;box-shadow:0 0 0 2px var(--blue)}
 .me.nav{width:52px;height:52px;background:none;border:0;box-shadow:none}
 .me.nav::after{display:none}
 .me.nav svg{display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.35))}
@@ -305,7 +314,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
-const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts"];
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle"];
 let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -399,7 +408,7 @@ function addOverlays() {
 map.on("style.load", addOverlays);
 // Hide shops and places while navigating, like Google; keep transit and parking
 function setPOI(show) {
-  try { map.getStyle().layers.forEach((l) => { if (/^poi/.test(l.id) && !/transit|parking/.test(l.id)) map.setLayoutProperty(l.id, "visibility", show ? "visible" : "none"); }); } catch {}
+  try { map.getStyle().layers.forEach((l) => { if ((/^poi/.test(l.id) && !/transit|parking/.test(l.id)) || l.type === "fill-extrusion") map.setLayoutProperty(l.id, "visibility", show ? "visible" : "none"); }); } catch {}
 }
 map.on("style.load", () => { if (nav.active) setPOI(false); });
 
@@ -527,12 +536,61 @@ function startWatch() {
     (err) => { if (err.code === 1) { watchId = null; } },
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
 }
-const PUCK = '<svg width="52" height="52" viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="#fff"/><circle cx="26" cy="26" r="19" fill="#4a63ff"/><path d="M26 12 35.5 36 26 31 16.5 36z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+// ---------- Your vehicle (Waze-style, pick a car and color) ----------
+const VEH_KINDS = [["sedan", "Sedan"], ["taxi", "Taxi"], ["suv", "SUV"], ["pickup", "Pickup"], ["sports", "Sports"], ["van", "Van"], ["arrow", "Arrow"], ["dot", "Dot"]];
+const VEH_COLORS = ["#4a63ff", "#e5484d", "#f2c230", "#1e9e5a", "#f1f3f4", "#9aa0a6", "#2b2d31", "#9b5cff"];
+const GLASS = "#1c2530", HEAD = "#fff8d0", TAIL = "#ff4d4d";
+const lights = (y1, y2, x1 = 16, x2 = 28) => `<rect x="${x1}" y="${y1}" width="4" height="2.2" rx="1" fill="${HEAD}"/><rect x="${x2}" y="${y1}" width="4" height="2.2" rx="1" fill="${HEAD}"/><rect x="${x1}" y="${y2}" width="4" height="1.8" rx=".9" fill="${TAIL}"/><rect x="${x2}" y="${y2}" width="4" height="1.8" rx=".9" fill="${TAIL}"/>`;
+const mirrors = (c, y = 16) => `<rect x="11.2" y="${y}" width="3.2" height="2.6" rx="1.2" fill="${c}"/><rect x="33.6" y="${y}" width="3.2" height="2.6" rx="1.2" fill="${c}"/>`;
+function vehicleSVG(kind, c, size = 48) {
+  const open = `<svg width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true">`;
+  const edge = 'fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1"';
+  const dark = c === "#2b2d31" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.14)";
+  switch (kind) {
+    case "taxi": c = "#f2c230"; // NYC yellow cab, then falls through to the sedan shape with a roof sign
+    case "sedan": return open + `${mirrors(c)}<rect x="14" y="5" width="20" height="38" rx="8" fill="${c}"/><rect x="14" y="5" width="20" height="38" rx="8" ${edge}/>
+      <path d="M16.6 15.6Q24 12.6 31.4 15.6L30 22H18Z" fill="${GLASS}"/><rect x="17.6" y="22.4" width="12.8" height="9.6" rx="2.4" fill="${dark}"/><path d="M18 32.4H30L31 37Q24 39.2 17 37Z" fill="${GLASS}"/>
+      ${kind === "taxi" ? '<rect x="19.5" y="24.6" width="9" height="4.4" rx="1" fill="#fff"/><rect x="21" y="26.2" width="6" height="1.2" fill="#202124"/>' : ""}${lights(6.6, 40.4)}</svg>`;
+    case "suv": return open + `${mirrors(c, 15)}<rect x="13" y="4" width="22" height="40" rx="6" fill="${c}"/><rect x="13" y="4" width="22" height="40" rx="6" ${edge}/>
+      <path d="M15.6 13.6Q24 11.2 32.4 13.6L31.2 19.6H16.8Z" fill="${GLASS}"/><rect x="16.4" y="20.4" width="15.2" height="16" rx="2" fill="${dark}"/>
+      <path d="M18.5 22v12.5M29.5 22v12.5" stroke="rgba(0,0,0,.3)" stroke-width="1.4" stroke-linecap="round"/><rect x="16.4" y="37.6" width="15.2" height="3.4" rx="1.4" fill="${GLASS}"/>${lights(5.6, 41.6, 15.4, 28.6)}</svg>`;
+    case "pickup": return open + `${mirrors(c, 14)}<rect x="14" y="4" width="20" height="40" rx="6" fill="${c}"/><rect x="14" y="4" width="20" height="40" rx="6" ${edge}/>
+      <path d="M16.4 12.8Q24 10.4 31.6 12.8L30.4 18.6H17.6Z" fill="${GLASS}"/><rect x="17" y="19" width="14" height="5.6" rx="1.6" fill="${dark}"/><rect x="17.4" y="25" width="13.2" height="2.2" rx="1" fill="${GLASS}"/>
+      <rect x="16.4" y="28.6" width="15.2" height="13" rx="1.6" fill="rgba(0,0,0,.3)"/><path d="M18.6 31v8.6M24 31v8.6M29.4 31v8.6" stroke="rgba(255,255,255,.18)" stroke-width="1"/>${lights(5.6, 41.8)}</svg>`;
+    case "sports": return open + `<path d="M24 4C30.4 4 33.2 9 33.2 16L34.4 34C34.4 41 30.4 44 24 44S13.6 41 13.6 34L14.8 16C14.8 9 17.6 4 24 4Z" fill="${c}"/><path d="M24 4C30.4 4 33.2 9 33.2 16L34.4 34C34.4 41 30.4 44 24 44S13.6 41 13.6 34L14.8 16C14.8 9 17.6 4 24 4Z" ${edge}/>
+      <path d="M17.4 17.6Q24 14.4 30.6 17.6L29.4 24.4H18.6Z" fill="${GLASS}"/><path d="M18.8 31H29.2L30 35.4Q24 37.2 18 35.4Z" fill="${GLASS}"/>
+      <rect x="21.4" y="5" width="1.8" height="38" fill="rgba(255,255,255,.75)"/><rect x="24.8" y="5" width="1.8" height="38" fill="rgba(255,255,255,.75)"/>${lights(7.4, 40.6, 17, 27)}</svg>`;
+    case "van": return open + `${mirrors(c, 11)}<rect x="13.4" y="4" width="21.2" height="40" rx="5" fill="${c}"/><rect x="13.4" y="4" width="21.2" height="40" rx="5" ${edge}/>
+      <path d="M15.8 9.4Q24 7.4 32.2 9.4L31.4 14.4H16.6Z" fill="${GLASS}"/><rect x="16" y="16" width="16" height="25.4" rx="1.6" fill="${dark}"/>
+      <path d="M16 22.4H32M16 28.8H32M16 35.2H32" stroke="rgba(0,0,0,.18)" stroke-width="1"/>${lights(5.4, 41.8, 15.2, 28.8)}</svg>`;
+    case "dot": return open + `<circle cx="24" cy="24" r="16" fill="rgba(26,115,232,.2)"/><circle cx="24" cy="24" r="9" fill="${c}" stroke="#fff" stroke-width="3"/></svg>`;
+    default: return open + `<circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="17.2" fill="${c}"/><path d="M24 11.4 32.6 33.2 24 28.6 15.4 33.2z" fill="${c === "#f1f3f4" ? "#202124" : "#fff"}" stroke="${c === "#f1f3f4" ? "#202124" : "#fff"}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+  }
+}
+const myVehicle = () => ({ kind: "sedan", color: "#4a63ff", ...(store.get("vehicle", null) || {}) });
+function paintVehicle() {
+  if (!meMarker) return;
+  const v = myVehicle(), el = meMarker.getElement(), sz = nav.active ? 60 : 46;
+  const key = `${v.kind}|${v.color}|${sz}`;
+  if (el.dataset.k === key) return;
+  el.dataset.k = key; el.className = "me car"; el.innerHTML = vehicleSVG(v.kind, v.color, sz);
+}
+function vehicleSheet() {
+  const v = myVehicle();
+  openSheet("Your vehicle", `
+    <div class="vgrid">${VEH_KINDS.map(([k, l]) => `<button type="button" data-vk="${k}" aria-pressed="${v.kind === k}">${vehicleSVG(k, v.color, 52)}<span>${l}</span></button>`).join("")}</div>
+    ${v.kind === "taxi" ? "" : `<div class="muted">Color</div><div class="vcolors">${VEH_COLORS.map((c) => `<button type="button" data-vc="${c}" aria-pressed="${v.color === c}" aria-label="Color ${c}" style="background:${c}"></button>`).join("")}</div>`}
+    <p class="note">This is how your car shows on the map and while you drive.${account ? " Saved to your account." : ""}</p>`, "account");
+  const save = (nv) => { store.set("vehicle", nv); paintVehicle(); vehicleSheet(); };
+  document.querySelectorAll("[data-vk]").forEach((b) => (b.onclick = () => save({ ...myVehicle(), kind: b.dataset.vk })));
+  document.querySelectorAll("[data-vc]").forEach((b) => (b.onclick = () => save({ ...myVehicle(), color: b.dataset.vc })));
+}
 function ensureMarker(pos) {
   if (meMarker) return;
-  const d = document.createElement("div"); d.className = "me";
+  const d = document.createElement("div"); d.className = "me car";
+  d.addEventListener("click", (e) => { e.stopPropagation(); if (!nav.active) vehicleSheet(); }); // tap your car to change it
   meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map", pitchAlignment: "map" }).setLngLat(pos).addTo(map);
-  anim.pos = pos.slice();
+  anim.pos = pos.slice(); anim.spd = 0;
 }
 function onFix(f) {
   const pos = [f.lng, f.lat], now = performance.now();
@@ -541,13 +599,15 @@ function onFix(f) {
     if (f.speed == null && dt > 0) f.speed = moved / dt;
     if ((f.heading == null || isNaN(f.heading)) && moved > 4) f.heading = bearing(lastFix.pos, pos);
   }
-  if (f.heading != null && !isNaN(f.heading) && (f.speed || 0) > 1.5) heading = f.heading;
-  speedMps = f.speed || 0; lastFix = { pos, t: Date.now() }; me = pos;
+  speedMps = f.speed > 0.8 ? f.speed : 0; // GPS reports small fake speeds when you're stopped
+  // Only trust direction when actually moving; parked/stopped GPS heading is random and makes the car spin
+  if (f.heading != null && !isNaN(f.heading) && speedMps > 2.5) heading = f.heading;
+  lastFix = { pos, t: Date.now() }; me = pos;
   ensureMarker(pos);
-  anim.fixPos = pos; anim.fixT = now;
-  const el = meMarker.getElement();
-  if (nav.active) { if (el.className !== "me nav") { el.className = "me nav"; el.innerHTML = PUCK; } }
-  else { el.className = "me" + (heading != null ? " heading" : ""); el.innerHTML = ""; }
+  // Stopped: ignore GPS drift of a few meters so the car sits still instead of twitching
+  const drift = anim.fixPos ? dist(anim.fixPos, pos) : 99;
+  if (!(speedMps === 0 && drift < 8)) { anim.fixPos = pos; anim.fixT = now; }
+  paintVehicle();
   if (nav.active) navTick(pos); else freeDriveCams(pos);
   startAnim();
   waiters.splice(0).forEach((fn) => fn(pos));
@@ -563,25 +623,27 @@ function frame(now) {
   const dt = Math.min(0.1, (now - anim.last) / 1000); anim.last = now;
   if (!meMarker || !anim.fixPos) { anim.running = false; return; }
   let pos, brg;
-  const onRoute = nav.active && route && nav.offCount === 0;
+  const onRoute = nav.active && route && nav.offCount < 3; // stay snapped to the route until we actually reroute
+  anim.spd = (anim.spd || 0) + (speedMps - (anim.spd || 0)) * Math.min(1, dt * 1.5); // smoothed speed, no sudden lurches
   if (onRoute) {
-    // Predict where the car is now, then ease toward that prediction
+    // Predict where the car is now. Glide forward smoothly; never slide backward on small GPS errors.
     const since = (now - anim.fixT) / 1000;
-    const target = Math.min(route.total, nav.along + speedMps * Math.min(since, 2));
-    if (Math.abs(target - anim.along) > 150) anim.along = target;              // big jump (reroute / first fix)
-    anim.along += speedMps * dt;                                              // keep rolling at current speed
-    anim.along += (target - anim.along) * Math.min(1, dt * 2.5);              // soft correction
+    const target = Math.min(route.total, nav.along + anim.spd * Math.min(since, 2));
+    const gap = target - anim.along;
+    if (Math.abs(gap) > 60) anim.along = target;                                  // real jump (reroute / U-turn / first fix)
+    else if (gap > 0) anim.along += anim.spd * dt + gap * Math.min(1, dt * 1.6);   // behind: roll and catch up gently
+    else anim.along += anim.spd * dt * Math.max(0, 1 + gap / 15);                 // ahead: ease off instead of jumping back
     anim.along = Math.max(0, Math.min(route.total, anim.along));
     pos = pointAtFast(route, anim.along);
-    const ahead = pointAtFast(route, Math.min(route.total, anim.along + 25));
-    brg = dist(pos, ahead) > 1 ? bearing(pos, ahead) : anim.brg;
+    const ahead = pointAtFast(route, Math.min(route.total, anim.along + 30));
+    brg = dist(pos, ahead) > 2 ? bearing(pos, ahead) : anim.brg;
   } else {
-    const k = Math.min(1, dt * 4);
+    const k = Math.min(1, dt * 2.5);
     pos = [anim.pos[0] + (anim.fixPos[0] - anim.pos[0]) * k, anim.pos[1] + (anim.fixPos[1] - anim.pos[1]) * k];
     brg = heading ?? anim.brg;
   }
   anim.pos = pos;
-  anim.brg = lerpAng(anim.brg, brg, Math.min(1, dt * 3)); anim.brg = (anim.brg + 360) % 360;
+  anim.brg = lerpAng(anim.brg, brg, Math.min(1, dt * (anim.spd > 3 ? 3 : 1.2))); anim.brg = (anim.brg + 360) % 360;
   meMarker.setLngLat(pos);
   meMarker.setRotation(anim.brg);
   if (nav.active && nav.follow) {
@@ -921,7 +983,7 @@ function startNav(sim) {
   Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
-  document.body.classList.add("navigating"); popup?.remove(); setPOI(false);
+  document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
   try { navigator.wakeLock?.request("screen").then((l) => (nav.lock = l)).catch(() => {}); } catch {}
   if (sim) {
     let d = 0; const v = 20; // about 45 mph; GPS-like updates once a second
@@ -948,7 +1010,7 @@ function endNav() {
   clearRoute(); destMarker?.remove(); destMarker = null;
   map.getSource("done")?.setData({ type: "FeatureCollection", features: [] });
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0 }, zoom: 14, duration: 600 });
-  if (meMarker) { const el = meMarker.getElement(); el.className = "me"; el.innerHTML = ""; }
+  paintVehicle();
   if (wasSim) { me = null; meMarker?.remove(); meMarker = null; lastFix = null; heading = null; }
 }
 $("#navEnd").onclick = endNav;
@@ -994,7 +1056,7 @@ function arrowSVG(s) {
 function navTick(pos) {
   const R = route; if (!R) return;
   const pr = project(R, pos, nav.idx);
-  nav.idx = pr.idx; nav.along = Math.max(nav.along - 30, pr.along);
+  nav.idx = pr.idx; nav.along = speedMps === 0 ? Math.max(nav.along, pr.along) : Math.max(nav.along - 30, pr.along);
   if (pr.off > 50) nav.offCount++; else nav.offCount = 0;
   if (nav.offCount >= 3 && Date.now() - nav.lastReroute > 15000 && !nav.sim) {
     nav.lastReroute = Date.now(); speak("Rerouting");
@@ -1384,7 +1446,7 @@ function mergeIn(sv) {
     try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
   }
   voiceOn = store.get("voice", true);
-  drawParked();
+  drawParked(); paintVehicle();
   const p = store.get("plate", null);
   if (p && (!data || data.plate !== p.p)) checkPlate(p.p, p.s, false).catch(() => {});
 }
@@ -1399,7 +1461,8 @@ function acctRow() {
     ? `<button class="acct" type="button" id="acctBtn"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0;flex:1"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>${PLAN_NAME[account.plan]} plan · synced</small></span></button>`
     : `<button class="acct" type="button" id="acctBtn"><span class="av">?</span><span><span style="display:block">Sign in or create an account</span><small>Keep your plates, tickets and parked car on every phone</small></span></button>`;
 }
-function wireAcct() { const b = $("#acctBtn"); if (b) b.onclick = () => accountSheet(); }
+function wireAcct() { const b = $("#acctBtn"); if (b) b.onclick = () => accountSheet(); const v = $("#vehBtn"); if (v) v.onclick = vehicleSheet; }
+const vehRow = () => `<button class="acct" type="button" id="vehBtn"><span style="width:34px;display:grid;place-items:center">${vehicleSVG(myVehicle().kind, myVehicle().color, 34)}</span><span><span style="display:block">Your vehicle</span><small>Pick the car you see on the map</small></span></button>`;
 function paintMe() {
   const b = $("#meBtn");
   if (account) { b.classList.remove("out"); b.textContent = account.email[0].toUpperCase(); b.setAttribute("aria-label", `Your account, ${account.email}`); }
@@ -1410,10 +1473,12 @@ function accountSheet(mode) {
   if (account) {
     openSheet("Your account", `
       <div class="acct" style="cursor:default"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>Member since ${new Date(account.since).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</small></span></div>
+      ${vehRow()}
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>`, "account");
+    wireAcct();
     $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
     return;
   }
@@ -1426,7 +1491,9 @@ function accountSheet(mode) {
       ${signup ? '<span class="note" style="margin-top:-4px">At least 8 characters.</span>' : ""}
       <button class="btn primary" type="submit" id="aBtn">${signup ? "Create free account" : "Sign in"}</button>
     </form>
-    <p class="note">${signup ? "Free forever. Your plates, tickets and parked car follow you to any phone." : "Forgot your password? Password reset by email is coming soon."}</p>`, "account");
+    <p class="note">${signup ? "Free forever. Your plates, tickets and parked car follow you to any phone." : "Forgot your password? Password reset by email is coming soon."}</p>
+    ${vehRow()}`, "account");
+  wireAcct();
   document.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => accountSheet(b.dataset.m)));
   $("#authF").onsubmit = async (e) => {
     e.preventDefault();
