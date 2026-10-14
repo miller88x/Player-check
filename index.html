@@ -934,6 +934,44 @@ $("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeho
 let route = null;
 const routeGeo = () => ({ type: "FeatureCollection", features: route ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route.coords } }] : [] });
 function clearRoute() { route = null; map.getSource("route")?.setData(routeGeo()); }
+// The free route engine assumes empty roads (no lights, no traffic), so its times run short — badly in NYC.
+// Adjust each step by road type, city and rush hour. Live driving pace then corrects it further (tripEta).
+function realTimes(steps, from) {
+  const city = inNYC(from[0], from[1]);
+  const d = new Date(), h = d.getHours() + d.getMinutes() / 60, wk = d.getDay() > 0 && d.getDay() < 6;
+  const rush = wk && ((h >= 7 && h < 10) || (h >= 16 && h < 19.5)), busy = h >= 10 && h < 20;
+  let total = 0;
+  for (const st of steps) {
+    const v = st.distance / Math.max(1, st.duration); // m/s the engine assumed
+    const hwy = v > 17;                               // ~38 mph+: highway / expressway
+    let f = hwy ? (city ? 1.3 : 1.12) : (city ? 1.75 : 1.4);
+    if (rush) f *= hwy ? 1.45 : 1.2; else if (busy) f *= hwy ? 1.12 : 1.08;
+    const turn = /turn|end of road|fork|roundabout|rotary/.test(st.maneuver.type) ? (/left/.test(st.maneuver.modifier || "") ? 14 : 7) : 0;
+    st.t = st.duration * f + turn;
+    total += st.t;
+  }
+  return total;
+}
+// Seconds left from a point on the route, using the adjusted step times
+function timeLeft(R, along) {
+  let secs = 0;
+  for (const st of R.steps) {
+    const end = st.at + st.distance;
+    if (end <= along) continue;
+    secs += st.distance ? st.t * Math.min(1, (end - Math.max(along, st.at)) / st.distance) : 0;
+  }
+  return secs;
+}
+// Learn from how this trip is actually going: if you've been slower than planned (traffic, lights), the ETA grows
+function tripEta(R) {
+  const left = timeLeft(R, nav.along);
+  const elapsed = (Date.now() - (nav.t0 || Date.now())) / 1000, covered = nav.along - (nav.a0 || 0);
+  const planned = timeLeft(R, nav.a0 || 0) - left;
+  if (elapsed < 60 || covered < 200 || planned < 20) return left;
+  const ratio = Math.max(0.65, Math.min(2.5, elapsed / planned));
+  const w = Math.min(0.75, covered / 2500); // trust live pace more the farther you've driven
+  return left * (1 + (ratio - 1) * w);
+}
 async function fetchRoute(from, to) {
   const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true`)).json();
   if (j.code !== "Ok" || !j.routes?.length) throw new Error("No route");
@@ -941,7 +979,7 @@ async function fetchRoute(from, to) {
   const cum = [0]; for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + dist(coords[i - 1], coords[i]));
   let acc = 0;
   const steps = r.legs[0].steps.map((s) => { const st = { ...s, at: acc }; acc += s.distance; return st; });
-  const R = { coords, cum, steps, duration: r.duration, distance: r.distance, total: cum[cum.length - 1] || 1 };
+  const R = { coords, cum, steps, duration: realTimes(steps, from), distance: r.distance, total: cum[cum.length - 1] || 1 };
   R.camsOnRoute = camsAlong(R);
   return R;
 }
@@ -1011,7 +1049,7 @@ function startNav(sim) {
   if (!route) return;
   unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
   (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
-  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true });
+  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, t0: Date.now(), a0: 0 });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
@@ -1091,7 +1129,7 @@ function navTick(pos) {
   if (pr.off > 50) nav.offCount++; else nav.offCount = 0;
   if (nav.offCount >= 3 && Date.now() - nav.lastReroute > 15000 && !nav.sim) {
     nav.lastReroute = Date.now(); speak("Rerouting");
-    fetchRoute(pos, R.coords[R.coords.length - 1]).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; map.getSource("route")?.setData(routeGeo()); }).catch(() => {});
+    fetchRoute(pos, R.coords[R.coords.length - 1]).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; nav.t0 = Date.now(); nav.a0 = 0; map.getSource("route")?.setData(routeGeo()); }).catch(() => {});
   }
   let k = R.steps.findIndex((s) => s.at > nav.along + 5); if (k < 0) k = R.steps.length - 1;
   const next = R.steps[k], after = R.steps[k + 1];
@@ -1106,7 +1144,7 @@ function navTick(pos) {
   const spk = (key, txt) => { if (!nav.spoken[key]) { nav.spoken[key] = 1; speak(txt); } };
   if (toNext < 600 && toNext > 250) spk(`f${k}`, `In ${sayDist(toNext)}, ${instruction(next)}`);
   if (toNext <= 90) spk(`n${k}`, instruction(next));
-  const left = Math.max(0, R.total - nav.along), secs = R.duration * (left / R.total);
+  const left = Math.max(0, R.total - nav.along), secs = tripEta(R);
   $("#navEta").textContent = fmtMin(secs);
   $("#navSub").textContent = `${fmtDist(left)} · ${clock(secs)}`;
   const ahead = R.camsOnRoute.find((c) => c.along > nav.along - 10 && c.along - nav.along < 500);
