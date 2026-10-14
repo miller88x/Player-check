@@ -213,6 +213,7 @@ label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;ga
 body.navigating .inAlert,body.navigating .top,body.navigating > .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
 body.navigating #navTop,body.navigating #speedo,body.navigating #navSide{display:flex}
 body.navigating #navBottom{display:grid}
+body.navigating .sheet{z-index:20}
 body.navigating #recenter.on{display:grid!important}
 @media (prefers-reduced-motion:reduce){.sheet{transition:none}.camAlert{animation:none}}
 </style>
@@ -1224,7 +1225,9 @@ async function sendReport(type) {
   try {
     const r = await fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, lat: at[1], lng: at[0] }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    if (j.report?.id != null) store.set("myReps", [String(j.report.id), ...store.get("myReps", [])].slice(0, 50)); // never warn you about your own report
     closeSheet(); loadReports();
+    if (nav.active) speak(`Thanks. ${RTYPES[type].label} reported.`);
     const box = $("#inAlert"); const t = RTYPES[type];
     box.innerHTML = `<div class="ico" style="background:${t.c};font-size:20px">${t.e}</div><div><b>${esc(t.label)} reported</b><div class="sub">Thanks for warning other drivers.</div></div>`;
     box.hidden = false; box.onclick = () => (box.hidden = true); setTimeout(() => (box.hidden = true), 2500);
@@ -1236,8 +1239,9 @@ $("#navReport").onclick = reportSheet;
 const repWarned = {};
 function reportsAhead(pos, brg, R) {
   let best = null;
+  const mine = new Set(store.get("myReps", []));
   for (const r of reports) {
-    const t = RTYPES[r.type]; if (!t?.warn) continue;
+    const t = RTYPES[r.type]; if (!t?.warn || mine.has(String(r.id))) continue;
     let d;
     if (R) { const pr = project(R, [r.lng, r.lat], 0, true); if (pr.off > 40) continue; d = pr.along - nav.along; if (d < 0 || d > 800) continue; }
     else { if (brg == null) continue; d = dist(pos, [r.lng, r.lat]); if (d > 500 || angDiff(bearing(pos, [r.lng, r.lat]), brg) > 35) continue; }
