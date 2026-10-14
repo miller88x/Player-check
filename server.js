@@ -223,6 +223,17 @@ http
     if (url.pathname === "/health") return send(res, 200, { ok: true });
 
     // Serve the app
+    // Home-screen app: icon + manifest so "Add to Home Screen" opens full screen like a real app
+    if (url.pathname === "/apple-touch-icon.png" || url.pathname === "/icon-512.png") {
+      return fs.readFile(path.join(__dirname, url.pathname.slice(1)), (err, b) => {
+        if (err) return send(res, 404, "Not found", "text/plain");
+        res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=604800" }); res.end(b);
+      });
+    }
+    if (url.pathname === "/manifest.json") {
+      return send(res, 200, JSON.stringify({ name: "Rova", short_name: "Rova", start_url: "/", display: "standalone", orientation: "portrait",
+        background_color: "#202124", theme_color: "#202124", icons: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] }), "application/manifest+json");
+    }
     const file = path.join(__dirname, "index.html");
     fs.readFile(file, (err, html) => (err ? send(res, 500, "Missing index.html", "text/plain") : send(res, 200, html, "text/html; charset=utf-8")));
   })
