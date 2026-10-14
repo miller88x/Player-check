@@ -187,6 +187,12 @@ label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;ga
 .me.car{width:auto;height:auto;background:none;border:0;box-shadow:none;cursor:pointer;line-height:0}
 .me.car svg{display:block;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
 .me.car::after{display:none}
+.vlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.vlist button{width:100%;display:flex;align-items:center;gap:12px;border:2px solid transparent;background:#2d2e30;border-radius:14px;padding:10px 14px;text-align:left;color:var(--ink)}
+.vlist button[aria-pressed="true"]{border-color:var(--blue);background:#1f2a3a}
+.vlist b{display:block;font-size:16px}.vlist small{color:var(--muted);font-size:13px}
+.vplay{width:36px;height:36px;border-radius:50%;background:#3c4043;display:grid;place-items:center;font-size:13px;flex:0 0 auto}
+.vchk{margin-left:auto;color:var(--blue);font-weight:800;font-size:18px}
 .vgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .vgrid button{border:2px solid transparent;background:#2d2e30;border-radius:16px;padding:8px 2px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;font:600 12.5px var(--body);color:var(--ink)}
 .vgrid button[aria-pressed="true"]{border-color:var(--blue);background:#1f2a3a}
@@ -314,7 +320,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
-const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle"];
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName"];
 let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -680,8 +686,18 @@ let ttsReady = false, ttsBusy = false, ttsTimer = null;
 const ttsQ = [], ttsAudio = new Audio();
 ttsAudio.preload = "auto";
 fetch("/api/tts/status").then((r) => r.json()).then((j) => { ttsReady = !!j.ready; }).catch(() => {});
-const ttsUrl = (t) => `/api/tts?t=${encodeURIComponent(t)}`;
-function ttsPrefetch(t) { if (ttsReady && t) fetch(ttsUrl(t)).catch(() => {}); }
+const VOICES = [
+  ["en-US-Chirp3-HD-Aoede", "Ava", "Warm · American"], ["en-US-Chirp3-HD-Kore", "Kara", "Clear · American"],
+  ["en-US-Chirp3-HD-Leda", "Lena", "Friendly · American"], ["en-US-Chirp3-HD-Puck", "Max", "Upbeat · American"],
+  ["en-US-Chirp3-HD-Charon", "Cole", "Deep · American"], ["en-US-Chirp3-HD-Fenrir", "Jay", "Energetic · American"],
+  ["en-GB-Chirp3-HD-Aoede", "Olivia", "British"], ["en-GB-Chirp3-HD-Puck", "Oliver", "British"],
+  ["en-AU-Chirp3-HD-Aoede", "Mia", "Australian"], ["en-IN-Chirp3-HD-Kore", "Priya", "Indian English"],
+  ["phone", "Phone voice", "Built into your phone · works offline"],
+];
+const myVoice = () => store.get("voiceName", VOICES[0][0]);
+const cloudVoice = () => ttsReady && myVoice() !== "phone";
+const ttsUrl = (t, v = myVoice()) => `/api/tts?t=${encodeURIComponent(t)}&v=${encodeURIComponent(v)}`;
+function ttsPrefetch(t) { if (cloudVoice() && t) fetch(ttsUrl(t)).catch(() => {}); }
 function bestVoice() {
   const vs = (speechSynthesis.getVoices?.() || []).filter((v) => /^en[-_]US/i.test(v.lang));
   return vs.find((v) => /premium/i.test(v.name)) || vs.find((v) => /enhanced|natural|neural/i.test(v.name)) || vs.find((v) => /Google US English|Samantha|Ava|Zoe/i.test(v.name)) || vs[0] || null;
@@ -703,8 +719,22 @@ function ttsNext() {
 }
 function speak(text) {
   if (!voiceOn) return;
-  if (ttsReady) { if (ttsQ.length > 2) ttsQ.shift(); ttsQ.push(text); ttsNext(); }
+  if (cloudVoice()) { if (ttsQ.length > 2) ttsQ.shift(); ttsQ.push(text); ttsNext(); }
   else phoneSpeak(text);
+}
+// Voice picker: tap a voice to hear it and pick it
+function voiceSheet() {
+  const cur = myVoice();
+  openSheet("Navigation voice", `
+    ${ttsReady ? "" : '<div class="alert warn"><b>AI voices are almost ready</b>Until they\'re switched on, the app uses your phone\'s voice.</div>'}
+    <ul class="vlist">${VOICES.map(([id, name, desc]) => `<li><button type="button" data-voice="${id}" aria-pressed="${cur === id}"><span class="vplay" aria-hidden="true">▶</span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span>${cur === id ? '<span class="vchk">✓</span>' : ""}</button></li>`).join("")}</ul>
+    <p class="note">Tap a voice to hear it. Your pick is used for turns, cameras and alerts${account ? " and saved to your account" : ""}.</p>`, "account");
+  document.querySelectorAll("[data-voice]").forEach((b) => (b.onclick = () => {
+    store.set("voiceName", b.dataset.voice); voiceOn = true; store.set("voice", true); try { paintMute(); } catch {}
+    stopVoice(); speak("In 500 feet, turn right onto Flatbush Avenue.");
+    document.querySelectorAll("[data-voice]").forEach((x) => { x.setAttribute("aria-pressed", x === b); x.querySelector(".vchk")?.remove(); });
+    b.insertAdjacentHTML("beforeend", '<span class="vchk">✓</span>');
+  }));
 }
 function stopVoice() { ttsQ.length = 0; try { ttsAudio.pause(); } catch {} ttsBusy = false; clearTimeout(ttsTimer); try { speechSynthesis.cancel(); } catch {} }
 // iPhone only lets sound play after a tap: call this from a tap (Start / Test drive)
@@ -967,9 +997,10 @@ function routeSheet(to) {
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
       ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
     <div class="row"><button class="btn green grow" type="button" id="startNav">Start</button><button class="btn" type="button" id="simNav">Test drive</button></div>
-    <label class="muted" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="voiceT" ${voiceOn ? "checked" : ""}> Voice guidance</label>
+    <div class="row" style="align-items:center;justify-content:space-between"><label class="muted" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="voiceT" ${voiceOn ? "checked" : ""}> Voice guidance</label><button type="button" class="btn" id="voicePick" style="padding:6px 12px;font-size:13px">Voice: ${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</button></div>
     <p class="note">Test drive plays the trip on the map so you can hear the turn and camera warnings from home. Keep the app open while driving.</p>`, "route");
   $("#voiceT").onchange = (e) => { voiceOn = e.target.checked; store.set("voice", voiceOn); };
+  $("#voicePick").onclick = voiceSheet;
   $("#startNav").onclick = () => startNav(false);
   $("#simNav").onclick = () => startNav(true);
 }
@@ -1461,8 +1492,9 @@ function acctRow() {
     ? `<button class="acct" type="button" id="acctBtn"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0;flex:1"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>${PLAN_NAME[account.plan]} plan · synced</small></span></button>`
     : `<button class="acct" type="button" id="acctBtn"><span class="av">?</span><span><span style="display:block">Sign in or create an account</span><small>Keep your plates, tickets and parked car on every phone</small></span></button>`;
 }
-function wireAcct() { const b = $("#acctBtn"); if (b) b.onclick = () => accountSheet(); const v = $("#vehBtn"); if (v) v.onclick = vehicleSheet; }
-const vehRow = () => `<button class="acct" type="button" id="vehBtn"><span style="width:34px;display:grid;place-items:center">${vehicleSVG(myVehicle().kind, myVehicle().color, 34)}</span><span><span style="display:block">Your vehicle</span><small>Pick the car you see on the map</small></span></button>`;
+function wireAcct() { const b = $("#acctBtn"); if (b) b.onclick = () => accountSheet(); const v = $("#vehBtn"); if (v) v.onclick = vehicleSheet; const vo = $("#voiceBtn"); if (vo) vo.onclick = voiceSheet; }
+const vehRow = () => `<button class="acct" type="button" id="vehBtn"><span style="width:34px;display:grid;place-items:center">${vehicleSVG(myVehicle().kind, myVehicle().color, 34)}</span><span><span style="display:block">Your vehicle</span><small>Pick the car you see on the map</small></span></button>
+  <button class="acct" type="button" id="voiceBtn"><span class="av" style="background:#3c4043;color:#e8eaed">🔊</span><span><span style="display:block">Navigation voice</span><small>${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</small></span></button>`;
 function paintMe() {
   const b = $("#meBtn");
   if (account) { b.classList.remove("out"); b.textContent = account.email[0].toUpperCase(); b.setAttribute("aria-label", `Your account, ${account.email}`); }
