@@ -54,10 +54,15 @@ body.navigating #credit{bottom:calc(var(--safeB) + 96px)}
 .results button{all:unset;display:flex;gap:12px;align-items:center;width:100%;padding:12px 16px;border-top:1px solid var(--ui2);cursor:pointer;box-sizing:border-box}
 .results button:first-child{border-top:0}
 .results .t{font-weight:600}.results .s{color:var(--muted);font-size:13px}
-.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:0 28px 4px 0;margin-right:-12px;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
+.chips{display:flex;gap:8px;padding-bottom:4px}
 .chips::-webkit-scrollbar{display:none}
 .results:not([hidden]) + .chips{display:none}
-.chip{flex:0 0 auto;justify-content:center;border:1px solid transparent;background:#303134;color:var(--ink);border-radius:20px;padding:9px 10px;font:500 14.5px var(--body);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px}
+.chip{flex:1 1 auto;min-width:0;justify-content:center;border:1px solid transparent;background:#303134;color:var(--ink);border-radius:20px;padding:9px 10px;font:500 14.5px var(--body);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#nearbyChip{flex:0 0 auto}
+.catgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.catgrid button{border:0;background:#2d2e30;color:var(--ink);border-radius:16px;padding:14px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font:600 14px var(--body)}
+.catgrid button i{font-style:normal;font-size:26px;line-height:1}
 .chip[aria-pressed="true"]{background:#0e3a4f;border-color:#7cc9f0;color:#d6efff}
 
 /* Floating buttons */
@@ -340,12 +345,7 @@ body.navigating #recenter.on{display:grid!important}
   <div class="chips" id="chips">
     <button class="chip" type="button" data-saved="home"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 11h2.8v9h5.2v-6h3v6h5.2v-9h2.8z" fill="#8ab4f8"/></svg><span>Home</span></button>
     <button class="chip" type="button" data-saved="work"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4z" fill="#8ab4f8"/></svg><span>Work</span></button>
-    <button class="chip" type="button" data-cat="gas">⛽ Gas</button>
-    <button class="chip" type="button" data-cat="parking">🅿️ Parking</button>
-    <button class="chip" type="button" data-cat="coffee">☕ Coffee</button>
-    <button class="chip" type="button" data-cat="food">🍔 Food</button>
-    <button class="chip" type="button" data-cat="ev">⚡ EV charging</button>
-    <button class="chip" type="button" data-cat="carwash">🧽 Car wash</button>
+    <button class="chip" type="button" id="nearbyChip"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#8ab4f8" stroke-width="2.4"/><path d="m15.5 15.5 5 5" stroke="#8ab4f8" stroke-width="2.4" stroke-linecap="round"/></svg><span>Nearby</span></button>
   </div>
 </div>
 
@@ -1163,7 +1163,8 @@ function paintSaved() {
   const s = saved();
   document.querySelectorAll("[data-saved]").forEach((b) => {
     const k = b.dataset.saved, t = savedEta[k];
-    b.querySelector("span").textContent = s[k] ? (t ? `${PNAME[k]} · ${fmtMin(t)}` : PNAME[k]) : `Set ${PNAME[k].toLowerCase()}`;
+    b.querySelector("span").textContent = s[k] ? (t ? `${PNAME[k]} ${fmtMin(t).replace(" hr ", "h ").replace(" min", "m")}` : PNAME[k]) : `Set ${PNAME[k].toLowerCase()}`;
+    b.setAttribute("aria-label", s[k] ? `${PNAME[k]}${t ? ", " + fmtMin(t) : ""}` : `Set ${PNAME[k].toLowerCase()}`);
   });
 }
 async function refreshSavedEta() {
@@ -1234,8 +1235,14 @@ $("#q").addEventListener("input", () => { if (!$("#q").value.trim()) showRecents
 const CATS = { gas: ["gas station", "amenity:fuel", "Gas"], parking: ["parking", "amenity:parking", "Parking"], coffee: ["coffee", "amenity:cafe", "Coffee"],
   food: ["restaurant", "amenity:restaurant", "Food"], ev: ["charging station", "amenity:charging_station", "EV charging"], carwash: ["car wash", "amenity:car_wash", "Car wash"] };
 function clearCats() { catMarkers.forEach((m) => m.remove()); catMarkers = []; }
-document.querySelectorAll("[data-cat]").forEach((b) => (b.onclick = async () => {
-  const [q, tag, label] = CATS[b.dataset.cat];
+const CAT_ICON = { gas: "⛽", parking: "🅿️", coffee: "☕", food: "🍔", ev: "⚡", carwash: "🧽" };
+$("#nearbyChip").onclick = () => {
+  openSheet("Nearby", `<div class="catgrid">${Object.keys(CATS).map((k) => `<button type="button" data-cat="${k}"><i>${CAT_ICON[k]}</i>${CATS[k][2]}</button>`).join("")}</div>`, "cat");
+  document.querySelectorAll("[data-cat]").forEach((b) => (b.onclick = () => catSearch(b.dataset.cat)));
+};
+async function catSearch(key) {
+  const b = { textContent: CAT_ICON[key] };
+  const [q, tag, label] = CATS[key];
   const c = me || [map.getCenter().lng, map.getCenter().lat];
   openSheet(label, '<p class="muted" style="margin:0">Finding the closest ones…</p>', "cat");
   try {
@@ -1255,7 +1262,7 @@ document.querySelectorAll("[data-cat]").forEach((b) => (b.onclick = async () => 
     $("#sheetBody").innerHTML = `<ul class="tix">${list.map((r, i) => `<li data-ci="${i}" style="grid-template-columns:1fr auto"><span class="vio">${esc(r.name)}</span><span class="meta" style="text-align:right">${fmtDist(r.d)}</span><span class="meta" style="grid-column:1/-1">${esc(r.line)}</span></li>`).join("")}</ul>`;
     document.querySelectorAll("[data-ci]").forEach((li) => (li.onclick = () => { clearCats(); showPlace(list[+li.dataset.ci]); }));
   } catch { $("#sheetBody").innerHTML = '<p class="muted" style="margin:0">Search is not reachable right now. Try again.</p>'; }
-}));
+}
 
 function showPlace(r) {
   const ps = pendingSave; exitSearch(); pendingSave = ps;
