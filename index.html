@@ -182,9 +182,9 @@ label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;ga
 .pop h3{margin:0 24px 2px 0;font-size:15px}
 .pop .amt{text-align:left;font-size:22px}
 .pop .links{margin-top:6px}
-.me{width:22px;height:22px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 7px rgba(66,133,244,.22),0 1px 4px rgba(0,0,0,.4);position:relative}
+.me{width:22px;height:22px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 7px rgba(66,133,244,.22),0 1px 4px rgba(0,0,0,.4)}
 .me.heading::after{content:"";position:absolute;left:50%;top:-15px;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:13px solid rgba(66,133,244,.55)}
-.me.car{width:auto;height:auto;background:none;border:0;box-shadow:none;cursor:pointer;line-height:0}
+.me.car{width:max-content;height:max-content;background:none;border:0;box-shadow:none;cursor:pointer;line-height:0}
 .me.car svg{display:block;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
 .me.car::after{display:none}
 .vlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
@@ -408,7 +408,7 @@ function addOverlays() {
   if (!map.getLayer("reports")) map.addLayer({ id: "reports", type: "symbol", source: "reports", minzoom: 10,
     layout: { "icon-image": ["concat", "rep-", ["get", "type"]], "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 0.85], "icon-allow-overlap": true, "icon-anchor": "bottom" } });
   if (!map.getSource("cams")) map.addSource("cams", { type: "geojson", data: camGeo() });
-  if (!map.getLayer("cams")) map.addLayer({ id: "cams", type: "symbol", source: "cams", minzoom: 10.5, filter: camFilter(),
+  if (!map.getLayer("cams")) map.addLayer({ id: "cams", type: "symbol", source: "cams", minzoom: 12.5, filter: camFilter(),
     layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "cam-speed", "cam-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1], "icon-allow-overlap": true } });
 }
 map.on("style.load", addOverlays);
