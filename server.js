@@ -229,10 +229,10 @@ http
 
     // Serve the app
     // Home-screen app: icon + manifest so "Add to Home Screen" opens full screen like a real app
-    if (url.pathname === "/apple-touch-icon.png" || url.pathname === "/icon-512.png") {
+    if (["/apple-touch-icon.png", "/icon-512.png", "/rova-logo.jpg"].includes(url.pathname)) {
       return fs.readFile(path.join(__dirname, url.pathname.slice(1)), (err, b) => {
         if (err) return send(res, 404, "Not found", "text/plain");
-        res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=604800" }); res.end(b);
+        res.writeHead(200, { "Content-Type": url.pathname.endsWith(".jpg") ? "image/jpeg" : "image/png", "Cache-Control": "public, max-age=604800" }); res.end(b);
       });
     }
     if (url.pathname === "/manifest.json") {
