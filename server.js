@@ -208,6 +208,11 @@ http
       const c = cameras.state;
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
     }
+    // App error reports from phones (last 100), to find bugs that only happen on real devices
+    if (url.pathname === "/api/log") {
+      if (req.method === "POST") return readBody(req).then((b) => { (global.appLog ||= []).unshift({ ...b, ip: undefined }); global.appLog.length = Math.min(global.appLog.length, 100); send(res, 200, { ok: true }); }).catch(() => send(res, 400, {}));
+      return send(res, 200, { errors: global.appLog || [] });
+    }
     if (url.pathname.startsWith("/api/tts") && tts.routes(url, res, send, req)) return;
     if ((url.pathname.startsWith("/api/auth/") || url.pathname === "/api/me") && auth.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/reports") && reports.routes(url, res, send, readBody, req)) return;

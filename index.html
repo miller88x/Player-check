@@ -353,6 +353,14 @@ body.navigating #recenter.on{display:grid!important}
 </div>
 
 <script>
+// Send any app error to the server so problems on real phones can be found and fixed
+(function () {
+  let sent = 0;
+  const report = (msg, stack) => { if (sent++ > 20) return; try { navigator.sendBeacon("/api/log", JSON.stringify({ msg: String(msg).slice(0, 300), stack: String(stack || "").slice(0, 900), nav: !!document.body?.classList.contains("navigating"), ua: navigator.userAgent.slice(0, 120), t: new Date().toISOString() })); } catch {} };
+  window.addEventListener("error", (e) => report(e.message, e.error?.stack || `${e.filename}:${e.lineno}:${e.colno}`));
+  window.addEventListener("unhandledrejection", (e) => report(e.reason?.message || e.reason, e.reason?.stack));
+  window.reportError2 = report;
+})();
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -429,6 +437,23 @@ const camFilter = () => ["in", ["get", "type"], ["literal", ["speed", "redlight"
 const camGeo = () => ({ type: "FeatureCollection", features: cams.map((c, i) => ({ type: "Feature", properties: { i, type: c.type }, geometry: { type: "Point", coordinates: [c.lng, c.lat] } })) });
 
 function addOverlays() {
+  try { addOverlaysInner(); } catch (e) { window.reportError2?.("addOverlays: " + e.message, e.stack); }
+  try { ensureRouteLayers(); } catch (e) { window.reportError2?.("ensureRouteLayers: " + e.message, e.stack); }
+}
+// The route line must always exist while a route is open
+function ensureRouteLayers() {
+  if (!map.isStyleLoaded?.() && !map.getStyle()) return;
+  if (!map.getSource("route")) map.addSource("route", { type: "geojson", data: routeGeo() });
+  if (!map.getSource("done")) map.addSource("done", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#1b2db5", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
+  if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#4a63ff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
+  if (!map.getLayer("done-line")) map.addLayer({ id: "done-line", type: "line", source: "done", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#9aa0a6", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 12] } });
+  for (const id of ["route-casing", "route-line", "done-line"]) if (map.getLayoutProperty(id, "visibility") === "none") map.setLayoutProperty(id, "visibility", "visible");
+}
+function drawRoute() {
+  try { ensureRouteLayers(); map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo()); } catch (e) { window.reportError2?.("drawRoute: " + e.message, e.stack); }
+}
+function addOverlaysInner() {
   if (mapType === "sat") {
     if (!map.getSource("esri")) map.addSource("esri", { type: "raster", tileSize: 256, maxzoom: 19, tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], attribution: "Imagery © Esri" });
     if (!map.getLayer("esri")) map.addLayer({ id: "esri", type: "raster", source: "esri" }, map.getLayer("tunnel_motorway_link_casing") ? "tunnel_motorway_link_casing" : undefined);
@@ -1192,12 +1217,12 @@ async function planRoute(to) {
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
   try { routeAlts = await fetchRoutes(from, to.at); route = routeAlts[0]; camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
-  map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo());
+  drawRoute();
   const b = new maplibregl.LngLatBounds(); routeAlts.forEach((R) => R.coords.forEach((c) => b.extend(c)));
   map.fitBounds(b, { padding: { top: 140, bottom: 280, left: 50, right: 70 }, duration: 700 });
   routeSheet(to);
 }
-function pickRoute(R, to) { route = R; map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo()); routeSheet(to); }
+function pickRoute(R, to) { route = R; drawRoute(); routeSheet(to); }
 function routeSheet(to) {
   nav.dest = to;
   const a = avoid();
@@ -1232,6 +1257,7 @@ function startNav(sim) {
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
+  routeAlts = [route]; drawRoute(); // only the chosen route while driving
   try { navigator.wakeLock?.request("screen").then((l) => (nav.lock = l)).catch(() => {}); } catch {}
   if (sim) {
     let d = 0; const v = 20; // about 45 mph; GPS-like updates once a second
@@ -1284,7 +1310,7 @@ function paintMute() { const b = $("#navMute"); b.setAttribute("aria-label", voi
 $("#navMute").onclick = () => { voiceOn = !voiceOn; store.set("voice", voiceOn); if (!voiceOn) stopVoice(); paintMute(); };
 paintMute();
 $("#navOv").onclick = () => {
-  if (!route) return;
+  if (!route) { if (me && nav.dest?.at) { const b = new maplibregl.LngLatBounds(); b.extend(me); b.extend(nav.dest.at); nav.follow = false; $("#recenter").classList.add("on"); map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 }); map.fitBounds(b, { padding: 120, pitch: 0, bearing: 0, duration: 900 }); } return; }
   if (!nav.follow) { $("#recenter").click(); return; } // tap again to go back to driving view
   nav.follow = false; $("#recenter").classList.add("on");
   const b = new maplibregl.LngLatBounds(); route.coords.forEach((c) => b.extend(c));
@@ -1331,13 +1357,17 @@ function paintLanes(step, toNext) {
   $("#lanes").setAttribute("aria-label", `Use the ${lanes.filter((l) => l.valid).length} highlighted lanes`);
 }
 function navTick(pos) {
+  try { if (!map.getLayer("route-line") || !map.getSource("route")) drawRoute(); navTickInner(pos); }
+  catch (e) { window.reportError2?.("navTick: " + e.message, e.stack); }
+}
+function navTickInner(pos) {
   const R = route; if (!R) return;
   const pr = project(R, pos, nav.idx);
   nav.idx = pr.idx; nav.along = speedMps === 0 ? Math.max(nav.along, pr.along) : Math.max(nav.along - 30, pr.along);
   if (pr.off > 50) nav.offCount++; else nav.offCount = 0;
   if (nav.offCount >= 3 && Date.now() - nav.lastReroute > 15000 && !nav.sim) {
     nav.lastReroute = Date.now(); speak("Rerouting");
-    fetchRoute(pos, R.coords[R.coords.length - 1]).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; nav.t0 = Date.now(); nav.a0 = 0; map.getSource("route")?.setData(routeGeo()); }).catch(() => {});
+    fetchRoute(pos, R.coords[R.coords.length - 1]).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; nav.t0 = Date.now(); nav.a0 = 0; drawRoute(); }).catch(() => {});
   }
   let k = R.steps.findIndex((s) => s.at > nav.along + 5); if (k < 0) k = R.steps.length - 1;
   const next = R.steps[k], after = R.steps[k + 1];
