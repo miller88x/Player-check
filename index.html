@@ -136,7 +136,10 @@ body.searching .fab,body.searching .tabs,body.searching #tixPill{visibility:hidd
 .scut i{width:40px;height:40px;border-radius:50%;background:#303134;display:grid;place-items:center;flex:0 0 auto;font-style:normal}
 .scut b{display:block;font:600 15px var(--body)}.scut small{display:block;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
 .rhead{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font:600 14px var(--body);padding:14px 4px 4px}
-.rrow{display:flex;gap:14px;align-items:center;padding:10px 4px;border:0;background:none;color:var(--ink);width:100%;text-align:left;cursor:pointer;animation:rowIn .22s ease both}
+.rrow{display:flex;gap:14px;align-items:center;padding:10px 4px;border:0;background:none;color:var(--ink);width:100%;text-align:left;cursor:pointer;animation:rowIn .16s ease both;border-radius:12px}
+.rrow:active{background:#2a2b2e}
+.sload{height:3px;border-radius:2px;margin:2px 4px 6px;background:linear-gradient(90deg,transparent,#8ab4f8,transparent);background-size:40% 100%;background-repeat:no-repeat;animation:sl 0.9s linear infinite}
+@keyframes sl{from{background-position:-40% 0}to{background-position:140% 0}}
 @keyframes rowIn{from{opacity:0;transform:translateY(4px)}}
 .rrow .ic{width:44px;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-size:11.5px}
 .rrow .tx{min-width:0;flex:1}.rrow .t{font:500 16px var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rrow .s{color:var(--muted);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -248,7 +251,7 @@ label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;ga
 .me{width:22px;height:22px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 7px rgba(66,133,244,.22),0 1px 4px rgba(0,0,0,.4)}
 .me.heading::after{content:"";position:absolute;left:50%;top:-15px;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:13px solid rgba(66,133,244,.55)}
 .me.car{width:max-content;height:max-content;background:none;border:0;box-shadow:none;cursor:pointer;line-height:0}
-.me.car svg{display:block;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
+.me.car svg{display:block}
 .me.car::after{display:none}
 .vlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .vlist button{width:100%;display:flex;align-items:center;gap:12px;border:2px solid transparent;background:#2d2e30;border-radius:14px;padding:10px 14px;text-align:left;color:var(--ink)}
@@ -537,6 +540,7 @@ map.on("style.load", addOverlays);
 // Crisp, Google-like look for the default map: soft gray ground, white streets, yellow highways, see-through 3D buildings
 function googleTheme() {
   if (mapType !== "map") return;
+  try { map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.22, position: [1.3, 210, 40] }); } catch {}
   const set = (id, k, v) => { try { map.setPaintProperty(id, k, v); } catch {} };
   for (const l of map.getStyle().layers) {
     const id = l.id;
@@ -545,7 +549,7 @@ function googleTheme() {
     else if (l.type === "fill" && /park|grass|wood|forest|garden|pitch|nature|meadow|scrub|cemetery/.test(id)) set(id, "fill-color", "#c8ebcf");
     else if (l.type === "fill" && /building/.test(id)) { set(id, "fill-color", "#e6e7ea"); set(id, "fill-outline-color", "#d6d8dc"); }
     else if (l.type === "fill" && /landuse|landcover|residential/.test(id)) set(id, "fill-opacity", 0.35);
-    else if (l.type === "fill-extrusion") { set(id, "fill-extrusion-color", "#f4f5f7"); set(id, "fill-extrusion-opacity", 0.72); }
+    else if (l.type === "fill-extrusion") { set(id, "fill-extrusion-color", "#ffffff"); set(id, "fill-extrusion-opacity", 0.6); set(id, "fill-extrusion-vertical-gradient", true); }
     else if (l.type === "line" && /road|highway|street|motorway|trunk|primary|secondary|tertiary|minor|service|bridge|tunnel/.test(id) && !/rail|path|pedestrian|track|ferry|one_way|oneway|area|pier|aerialway/.test(id)) {
       const hwy = /motorway/.test(id), major = /trunk|primary/.test(id);
       if (/casing/.test(id)) set(id, "line-color", hwy ? "#e2a43a" : major ? "#cfd3d8" : "#dadce0");
@@ -706,30 +710,60 @@ const VEH_COLORS = ["#4a63ff", "#e5484d", "#f2c230", "#1e9e5a", "#f1f3f4", "#9aa
 const GLASS = "#1c2530", HEAD = "#fff8d0", TAIL = "#ff4d4d";
 const lights = (y1, y2, x1 = 16, x2 = 28) => `<rect x="${x1}" y="${y1}" width="4" height="2.2" rx="1" fill="${HEAD}"/><rect x="${x2}" y="${y1}" width="4" height="2.2" rx="1" fill="${HEAD}"/><rect x="${x1}" y="${y2}" width="4" height="1.8" rx=".9" fill="${TAIL}"/><rect x="${x2}" y="${y2}" width="4" height="1.8" rx=".9" fill="${TAIL}"/>`;
 const mirrors = (c, y = 16) => `<rect x="11.2" y="${y}" width="3.2" height="2.6" rx="1.2" fill="${c}"/><rect x="33.6" y="${y}" width="3.2" height="2.6" rx="1.2" fill="${c}"/>`;
+function shadeHex(hex, amt) { // amt -1..1: darker..lighter
+  const n = parseInt(hex.slice(1), 16), f = (v) => Math.max(0, Math.min(255, Math.round(amt < 0 ? v * (1 + amt) : v + (255 - v) * amt)));
+  return "#" + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => f(v).toString(16).padStart(2, "0")).join("");
+}
+const CAR_SHAPES = {
+  sedan: { x: 14, y: 5, w: 20, h: 38, rx: 9, wind: [13.5, 21.5], roof: [21.5, 32.5], rear: [32.5, 38] },
+  taxi: { x: 14, y: 5, w: 20, h: 38, rx: 9, wind: [13.5, 21.5], roof: [21.5, 32.5], rear: [32.5, 38], sign: 1 },
+  suv: { x: 13, y: 4, w: 22, h: 40, rx: 6.5, wind: [11.5, 19], roof: [19, 37], rear: [37, 41.5], rack: 1 },
+  pickup: { x: 14, y: 4, w: 20, h: 40, rx: 6.5, wind: [11, 17.5], roof: [17.5, 24], rear: [24, 26.5], bed: [27.5, 41.5] },
+  sports: { x: 14.5, y: 4.5, w: 19, h: 39, rx: 10, wind: [15, 23], roof: [23, 30], rear: [30, 35], stripes: 1 },
+  van: { x: 13.4, y: 4, w: 21.2, h: 40, rx: 5.5, wind: [8, 13.5], roof: [13.5, 41], rear: null, panels: 1 },
+};
 function vehicleSVG(kind, c, size = 48) {
-  const open = `<svg width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true">`;
-  const edge = 'fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1"';
-  const dark = c === "#2b2d31" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.14)";
-  switch (kind) {
-    case "taxi": c = "#f2c230"; // NYC yellow cab, then falls through to the sedan shape with a roof sign
-    case "sedan": return open + `${mirrors(c)}<rect x="14" y="5" width="20" height="38" rx="8" fill="${c}"/><rect x="14" y="5" width="20" height="38" rx="8" ${edge}/>
-      <path d="M16.6 15.6Q24 12.6 31.4 15.6L30 22H18Z" fill="${GLASS}"/><rect x="17.6" y="22.4" width="12.8" height="9.6" rx="2.4" fill="${dark}"/><path d="M18 32.4H30L31 37Q24 39.2 17 37Z" fill="${GLASS}"/>
-      ${kind === "taxi" ? '<rect x="19.5" y="24.6" width="9" height="4.4" rx="1" fill="#fff"/><rect x="21" y="26.2" width="6" height="1.2" fill="#202124"/>' : ""}${lights(6.6, 40.4)}</svg>`;
-    case "suv": return open + `${mirrors(c, 15)}<rect x="13" y="4" width="22" height="40" rx="6" fill="${c}"/><rect x="13" y="4" width="22" height="40" rx="6" ${edge}/>
-      <path d="M15.6 13.6Q24 11.2 32.4 13.6L31.2 19.6H16.8Z" fill="${GLASS}"/><rect x="16.4" y="20.4" width="15.2" height="16" rx="2" fill="${dark}"/>
-      <path d="M18.5 22v12.5M29.5 22v12.5" stroke="rgba(0,0,0,.3)" stroke-width="1.4" stroke-linecap="round"/><rect x="16.4" y="37.6" width="15.2" height="3.4" rx="1.4" fill="${GLASS}"/>${lights(5.6, 41.6, 15.4, 28.6)}</svg>`;
-    case "pickup": return open + `${mirrors(c, 14)}<rect x="14" y="4" width="20" height="40" rx="6" fill="${c}"/><rect x="14" y="4" width="20" height="40" rx="6" ${edge}/>
-      <path d="M16.4 12.8Q24 10.4 31.6 12.8L30.4 18.6H17.6Z" fill="${GLASS}"/><rect x="17" y="19" width="14" height="5.6" rx="1.6" fill="${dark}"/><rect x="17.4" y="25" width="13.2" height="2.2" rx="1" fill="${GLASS}"/>
-      <rect x="16.4" y="28.6" width="15.2" height="13" rx="1.6" fill="rgba(0,0,0,.3)"/><path d="M18.6 31v8.6M24 31v8.6M29.4 31v8.6" stroke="rgba(255,255,255,.18)" stroke-width="1"/>${lights(5.6, 41.8)}</svg>`;
-    case "sports": return open + `<path d="M24 4C30.4 4 33.2 9 33.2 16L34.4 34C34.4 41 30.4 44 24 44S13.6 41 13.6 34L14.8 16C14.8 9 17.6 4 24 4Z" fill="${c}"/><path d="M24 4C30.4 4 33.2 9 33.2 16L34.4 34C34.4 41 30.4 44 24 44S13.6 41 13.6 34L14.8 16C14.8 9 17.6 4 24 4Z" ${edge}/>
-      <path d="M17.4 17.6Q24 14.4 30.6 17.6L29.4 24.4H18.6Z" fill="${GLASS}"/><path d="M18.8 31H29.2L30 35.4Q24 37.2 18 35.4Z" fill="${GLASS}"/>
-      <rect x="21.4" y="5" width="1.8" height="38" fill="rgba(255,255,255,.75)"/><rect x="24.8" y="5" width="1.8" height="38" fill="rgba(255,255,255,.75)"/>${lights(7.4, 40.6, 17, 27)}</svg>`;
-    case "van": return open + `${mirrors(c, 11)}<rect x="13.4" y="4" width="21.2" height="40" rx="5" fill="${c}"/><rect x="13.4" y="4" width="21.2" height="40" rx="5" ${edge}/>
-      <path d="M15.8 9.4Q24 7.4 32.2 9.4L31.4 14.4H16.6Z" fill="${GLASS}"/><rect x="16" y="16" width="16" height="25.4" rx="1.6" fill="${dark}"/>
-      <path d="M16 22.4H32M16 28.8H32M16 35.2H32" stroke="rgba(0,0,0,.18)" stroke-width="1"/>${lights(5.4, 41.8, 15.2, 28.8)}</svg>`;
-    case "dot": return open + `<circle cx="24" cy="24" r="16" fill="rgba(26,115,232,.2)"/><circle cx="24" cy="24" r="9" fill="${c}" stroke="#fff" stroke-width="3"/></svg>`;
-    default: return open + `<circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="17.2" fill="${c}"/><path d="M24 11.4 32.6 33.2 24 28.6 15.4 33.2z" fill="${c === "#f1f3f4" ? "#202124" : "#fff"}" stroke="${c === "#f1f3f4" ? "#202124" : "#fff"}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
-  }
+  if (kind === "taxi") c = "#f2c230";
+  const id = `v${kind}${c.slice(1)}${size}`, open = `<svg width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true">`;
+  const dk = shadeHex(c, -0.42), md = shadeHex(c, -0.12), lt = shadeHex(c, 0.38), xl = shadeHex(c, 0.6);
+  if (kind === "dot") return open + `<defs><radialGradient id="${id}d" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="${lt}"/><stop offset="1" stop-color="${dk}"/></radialGradient></defs><circle cx="24" cy="24" r="17" fill="rgba(26,115,232,.18)"/><circle cx="24" cy="25.5" r="9.5" fill="rgba(0,0,0,.25)"/><circle cx="24" cy="24" r="9.5" fill="url(#${id}d)" stroke="#fff" stroke-width="3"/></svg>`;
+  if (kind === "arrow" || !CAR_SHAPES[kind]) return open + `<defs><linearGradient id="${id}a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${lt}"/><stop offset="1" stop-color="${dk}"/></linearGradient>
+      <linearGradient id="${id}b" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" stop-color="#ffffff"/><stop offset=".5" stop-color="#d7dbe2"/></linearGradient></defs>
+      <ellipse cx="24" cy="27" rx="18" ry="17" fill="rgba(0,0,0,.28)"/><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="17.4" fill="url(#${id}a)"/>
+      <path d="M24 10.6 33.4 34 24 29.2 14.6 34z" fill="url(#${id}b)" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+  const S = CAR_SHAPES[kind], cx = S.x + S.w / 2, L = S.x, R = S.x + S.w;
+  const glass = `url(#${id}g)`;
+  let parts = "";
+  // soft shadow under the car
+  parts += `<ellipse cx="25.2" cy="${S.y + S.h / 2 + 1.6}" rx="${S.w / 2 + 2.2}" ry="${S.h / 2 + 1.4}" fill="rgba(0,0,0,.32)" filter="url(#${id}s)"/>`;
+  // mirrors
+  parts += `<rect x="${L - 2.8}" y="${S.wind[0] + 1.5}" width="3.4" height="2.6" rx="1.2" fill="${md}"/><rect x="${R - 0.6}" y="${S.wind[0] + 1.5}" width="3.4" height="2.6" rx="1.2" fill="${md}"/>`;
+  // body with rounded side shading
+  parts += `<rect x="${L}" y="${S.y}" width="${S.w}" height="${S.h}" rx="${S.rx}" fill="url(#${id}b)"/>`;
+  // hood + trunk sheen
+  parts += `<rect x="${L + 2.4}" y="${S.y + 1.4}" width="${S.w - 4.8}" height="${S.wind[0] - S.y - 2.6}" rx="${Math.min(S.rx - 1.5, 6)}" fill="url(#${id}h)"/>`;
+  // windshield + reflection
+  parts += `<path d="M${L + 2.4} ${S.wind[0] + 1.4}Q${cx} ${S.wind[0] - 1.4} ${R - 2.4} ${S.wind[0] + 1.4}L${R - 3.6} ${S.wind[1]}H${L + 3.6}Z" fill="${glass}"/><path d="M${L + 4.6} ${S.wind[0] + 1.6}L${L + 7.2} ${S.wind[0] + 0.9}L${L + 6} ${S.wind[1] - 0.6}H${L + 4.4}Z" fill="rgba(255,255,255,.28)"/>`;
+  // side windows
+  parts += `<rect x="${L + 1.1}" y="${S.wind[1] + 0.4}" width="1.7" height="${(S.rear ? S.rear[0] : S.roof[1]) - S.wind[1] - 0.8}" rx=".8" fill="${glass}"/><rect x="${R - 2.8}" y="${S.wind[1] + 0.4}" width="1.7" height="${(S.rear ? S.rear[0] : S.roof[1]) - S.wind[1] - 0.8}" rx=".8" fill="${glass}"/>`;
+  // glossy roof
+  parts += `<rect x="${L + 3.6}" y="${S.roof[0]}" width="${S.w - 7.2}" height="${S.roof[1] - S.roof[0]}" rx="2.6" fill="url(#${id}r)"/>`;
+  if (S.rear) parts += `<path d="M${L + 3.6} ${S.rear[0]}H${R - 3.6}L${R - 2.6} ${S.rear[1] - 0.6}Q${cx} ${S.rear[1] + 1.2} ${L + 2.6} ${S.rear[1] - 0.6}Z" fill="${glass}"/>`;
+  if (S.bed) parts += `<rect x="${L + 2.2}" y="${S.bed[0]}" width="${S.w - 4.4}" height="${S.bed[1] - S.bed[0]}" rx="1.6" fill="${dk}"/><path d="M${L + 5.5} ${S.bed[0] + 2}V${S.bed[1] - 2}M${cx} ${S.bed[0] + 2}V${S.bed[1] - 2}M${R - 5.5} ${S.bed[0] + 2}V${S.bed[1] - 2}" stroke="rgba(255,255,255,.16)" stroke-width="1"/>`;
+  if (S.rack) parts += `<path d="M${L + 5.4} ${S.roof[0] + 2}V${S.roof[1] - 2}M${R - 5.4} ${S.roof[0] + 2}V${S.roof[1] - 2}" stroke="rgba(0,0,0,.35)" stroke-width="1.5" stroke-linecap="round"/>`;
+  if (S.panels) parts += `<path d="M${L + 3.6} ${S.roof[0] + 9}H${R - 3.6}M${L + 3.6} ${S.roof[0] + 18}H${R - 3.6}" stroke="rgba(0,0,0,.14)" stroke-width="1"/>`;
+  if (S.stripes) parts += `<rect x="${cx - 2.6}" y="${S.y + 0.8}" width="1.8" height="${S.h - 1.6}" fill="rgba(255,255,255,.8)"/><rect x="${cx + 0.8}" y="${S.y + 0.8}" width="1.8" height="${S.h - 1.6}" fill="rgba(255,255,255,.8)"/>`;
+  if (S.sign) parts += `<rect x="${cx - 4.6}" y="${S.roof[0] + 3}" width="9.2" height="4.4" rx="1.2" fill="#fff"/><rect x="${cx - 3}" y="${S.roof[0] + 4.6}" width="6" height="1.2" fill="#202124"/>`;
+  // head and tail lights
+  parts += `<rect x="${L + 1.6}" y="${S.y + 1.2}" width="4.2" height="2.2" rx="1.1" fill="#fffbe0"/><rect x="${R - 5.8}" y="${S.y + 1.2}" width="4.2" height="2.2" rx="1.1" fill="#fffbe0"/>`;
+  parts += `<rect x="${L + 1.6}" y="${S.y + S.h - 2.6}" width="4.2" height="1.8" rx=".9" fill="#ff3b3b"/><rect x="${R - 5.8}" y="${S.y + S.h - 2.6}" width="4.2" height="1.8" rx=".9" fill="#ff3b3b"/>`;
+  return open + `<defs>
+    <filter id="${id}s" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.5"/></filter>
+    <linearGradient id="${id}b" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${dk}"/><stop offset=".16" stop-color="${md}"/><stop offset=".5" stop-color="${lt}"/><stop offset=".84" stop-color="${md}"/><stop offset="1" stop-color="${dk}"/></linearGradient>
+    <linearGradient id="${id}h" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${xl}" stop-opacity=".55"/><stop offset="1" stop-color="${xl}" stop-opacity="0"/></linearGradient>
+    <radialGradient id="${id}r" cx="45%" cy="30%" r="80%"><stop offset="0" stop-color="${xl}"/><stop offset=".55" stop-color="${lt}"/><stop offset="1" stop-color="${md}"/></radialGradient>
+    <linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d5570"/><stop offset=".55" stop-color="#16202c"/><stop offset="1" stop-color="#0b1118"/></linearGradient>
+  </defs>${parts}</svg>`;
 }
 const myVehicle = () => ({ kind: "sedan", color: "#4a63ff", ...(store.get("vehicle", null) || {}) });
 function paintVehicle() {
@@ -753,7 +787,7 @@ function ensureMarker(pos) {
   if (meMarker) return;
   const d = document.createElement("div"); d.className = "me car";
   d.addEventListener("click", (e) => { e.stopPropagation(); if (!nav.active) vehicleSheet(); }); // tap your car to change it
-  meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map", pitchAlignment: "map" }).setLngLat(pos).addTo(map);
+  meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map", pitchAlignment: "viewport" }).setLngLat(pos).addTo(map);
   anim.pos = pos.slice(); anim.spd = 0;
 }
 function onFix(f) {
@@ -1058,27 +1092,52 @@ $("#dirX").onclick = () => closeSheet();
 
 // ================= SEARCH =================
 let qTimer = null, destMarker = null, dest = null;
-$("#q").addEventListener("input", () => { $("#qClear").style.display = $("#q").value ? "block" : "none"; clearTimeout(qTimer); qTimer = setTimeout(() => search(false), 300); });
+$("#q").addEventListener("input", () => { $("#qClear").style.display = $("#q").value ? "block" : "none"; clearTimeout(qTimer); qTimer = setTimeout(() => search(false), 140); });
 $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(qTimer); search(true); } });
 $("#qClear").onclick = () => { $("#q").value = ""; $("#qClear").style.display = "none"; $("#results").hidden = true; };
+const searchCache = new Map();
+let searchCtl = null, searchSeq = 0;
+function localMatches(q) {
+  const ql = q.toLowerCase(), sv = saved();
+  const pool = [...["home", "work"].filter((k) => sv[k]).map((k) => ({ ...sv[k], label: PNAME[k] })), ...store.get("recents", [])];
+  return pool.filter((r) => `${r.label || ""} ${r.name} ${r.line || ""}`.toLowerCase().includes(ql)).slice(0, 3);
+}
+function renderResults(q, list, local, loading) {
+  const seen = new Set(local.map((r) => r.name.toLowerCase()));
+  const remote = list.filter((r) => !seen.has(r.name.toLowerCase()));
+  const rows = [...local.map((r, i) => rowHTML(r, i, "data-li", CLOCK_ICO)), ...remote.map((r, i) => rowHTML(r, i, "data-i", PIN_ICO))].join("");
+  $("#results").innerHTML = (loading ? '<div class="sload"></div>' : "") + (rows || (loading ? "" : '<p class="muted" style="padding:16px 4px">No places found. Try a different name or address.</p>'));
+  $("#results").hidden = false;
+  wireFill();
+  document.querySelectorAll("#results [data-li]").forEach((b) => (b.onclick = () => { const r = local[+b.dataset.li]; showPlace(r.label ? { name: r.label, line: r.name, at: r.at } : r); }));
+  document.querySelectorAll("#results [data-i]").forEach((b) => (b.onclick = () => showPlace(remote[+b.dataset.i])));
+}
 async function search(pickFirst) {
   const q = $("#q").value.trim();
   if (q.length < 2) return;
+  const seq = ++searchSeq, local = localMatches(q);
   const c = me || [map.getCenter().lng, map.getCenter().lat];
+  const key = `${q.toLowerCase()}|${c[0].toFixed(2)}|${c[1].toFixed(2)}`;
+  if (searchCache.has(key)) { const list = searchCache.get(key); if (pickFirst && (local[0] || list[0])) return showPlace(local[0] || list[0]); return renderResults(q, list, local, false); }
+  renderResults(q, [], local, true); // show what we already know instantly, with a loading bar
+  try { searchCtl?.abort(); } catch {}
+  searchCtl = new AbortController();
   try {
-    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=6&lang=en`)).json();
+    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=7&lang=en`, { signal: searchCtl.signal })).json();
     const list = (j.features || []).map((f) => {
       const p = f.properties;
       const name = p.name || [p.housenumber, p.street].filter(Boolean).join(" ") || p.city || "Place";
       const line = [p.name && p.street ? [p.housenumber, p.street].filter(Boolean).join(" ") : "", p.district || p.locality, p.city, p.state].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i && x !== name).join(", ");
       return { name, line, at: f.geometry.coordinates };
     });
+    searchCache.set(key, list); if (searchCache.size > 200) searchCache.delete(searchCache.keys().next().value);
+    if (seq !== searchSeq) return; // a newer search already started; drop this one
     if (pickFirst && list[0]) return showPlace(list[0]);
-    $("#results").innerHTML = list.map((r, i) => rowHTML(r, i, "data-i", PIN_ICO)).join("") || '<p class="muted" style="padding:16px 4px">No places found. Try a different name or address.</p>';
-    wireFill();
-    $("#results").hidden = false;
-    document.querySelectorAll("#results [data-i]").forEach((b) => (b.onclick = () => showPlace(list[+b.dataset.i])));
-  } catch { $("#results").innerHTML = '<button type="button" disabled><span class="s">Search is not reachable right now. Try again.</span></button>'; $("#results").hidden = false; }
+    renderResults(q, list, local, false);
+  } catch (e) {
+    if (e.name === "AbortError" || seq !== searchSeq) return;
+    $("#results").innerHTML = '<p class="muted" style="padding:16px 4px">Search is not reachable right now. Check your connection and try again.</p>'; $("#results").hidden = false;
+  }
 }
 // ---------- Home, Work, recents ----------
 let pendingSave = null, catMarkers = [];
@@ -1126,7 +1185,7 @@ const CLOCK_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="
 const FILL_ICO = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17V9.4L16.6 19 18 17.6 8.4 8H16V6H5v11z" fill="currentColor"/></svg>';
 function rowHTML(r, i, attr, icon) {
   const d = me ? fmtDist(dist(me, r.at)) : "";
-  return `<button type="button" class="rrow" ${attr}="${i}" style="animation-delay:${Math.min(i, 8) * 18}ms"><span class="ic">${icon}${d ? `<span>${d}</span>` : ""}</span><span class="tx"><div class="t">${esc(r.label || r.name)}</div><div class="s">${esc(r.label ? r.name : r.line)}</div></span><span class="fill" data-fill="${esc(r.name)}" role="button" aria-label="Search ${esc(r.name)}">${FILL_ICO}</span></button>`;
+  return `<button type="button" class="rrow" ${attr}="${i}" style="animation-delay:${Math.min(i, 6) * 12}ms"><span class="ic">${icon}${d ? `<span>${d}</span>` : ""}</span><span class="tx"><div class="t">${esc(r.label || r.name)}</div><div class="s">${esc(r.label ? r.name : r.line)}</div></span><span class="fill" data-fill="${esc(r.name)}" role="button" aria-label="Search ${esc(r.name)}">${FILL_ICO}</span></button>`;
 }
 function wireFill() {
   document.querySelectorAll("#results [data-fill]").forEach((f) => (f.onclick = (e) => { e.stopPropagation(); $("#q").value = f.dataset.fill; $("#qClear").style.display = "block"; $("#q").focus(); search(false); }));
