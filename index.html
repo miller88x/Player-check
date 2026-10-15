@@ -787,7 +787,7 @@ function ensureMarker(pos) {
   if (meMarker) return;
   const d = document.createElement("div"); d.className = "me car";
   d.addEventListener("click", (e) => { e.stopPropagation(); if (!nav.active) vehicleSheet(); }); // tap your car to change it
-  meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map", pitchAlignment: "viewport" }).setLngLat(pos).addTo(map);
+  meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map", pitchAlignment: "viewport", subpixelPositioning: true }).setLngLat(pos).addTo(map);
   anim.pos = pos.slice(); anim.spd = 0;
 }
 function onFix(f) {
@@ -843,14 +843,20 @@ function frame(now) {
   }
   anim.pos = pos;
   anim.brg = lerpAng(anim.brg, brg, Math.min(1, dt * (anim.spd > 3 ? 3 : 1.2))); anim.brg = (anim.brg + 360) % 360;
-  meMarker.setLngLat(pos);
-  meMarker.setRotation(anim.brg);
+  // Only touch the marker / camera when something really changed: tiny per-frame nudges are what made the car shake
+  const lc = anim.lastCam || {}, moved = !lc.pos || Math.abs(lc.pos[0] - pos[0]) + Math.abs(lc.pos[1] - pos[1]) > 2e-8, turned = Math.abs(((anim.brg - (lc.brg ?? -999)) + 540) % 360 - 180) > 0.05;
+  if (moved) meMarker.setLngLat(pos);
+  if (turned) meMarker.setRotation(Math.round(anim.brg * 10) / 10);
   if (nav.active && nav.follow) {
     // Zoom out a little at highway speed, in a little on city streets
     const mph = speedMps * 2.237, wantZoom = mph > 45 ? 16 : mph > 25 ? 16.6 : 17.3;
     anim.zoom += (wantZoom - anim.zoom) * Math.min(1, dt * 0.8);
-    map.jumpTo({ center: pos, bearing: nav.northUp ? 0 : anim.brg, pitch: nav.northUp ? 0 : 62, zoom: anim.zoom, padding: { top: Math.round(innerHeight * 0.42), bottom: 90, left: 0, right: 0 } });
+    if (Math.abs(wantZoom - anim.zoom) < 0.004) anim.zoom = wantZoom;
+    const zoomed = Math.abs((lc.zoom ?? 0) - anim.zoom) > 0.0005, modeChg = lc.northUp !== !!nav.northUp || lc.follow !== true;
+    anim.lastCam = { pos, brg: anim.brg, zoom: anim.zoom, northUp: !!nav.northUp, follow: true };
+    if (moved || turned || zoomed || modeChg) map.jumpTo({ center: pos, bearing: nav.northUp ? 0 : anim.brg, pitch: nav.northUp ? 0 : 62, zoom: anim.zoom, padding: { top: Math.round(innerHeight * 0.42), bottom: 90, left: 0, right: 0 } });
   }
+  else anim.lastCam = { pos, brg: anim.brg, zoom: anim.lastCam?.zoom, follow: false };
   const moving = nav.active || Math.abs(anim.fixPos[0] - pos[0]) + Math.abs(anim.fixPos[1] - pos[1]) > 1e-7;
   if (moving) requestAnimationFrame(frame); else anim.running = false;
 }
