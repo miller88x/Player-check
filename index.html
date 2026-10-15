@@ -524,6 +524,21 @@ document.querySelectorAll("[data-style]").forEach((b) => (b.onclick = () => setL
 $("#layersBtn").onclick = (e) => { e.stopPropagation(); $("#layers").hidden = !$("#layers").hidden; };
 document.addEventListener("pointerdown", (e) => { if (!$("#layers").hidden && !e.target.closest("#layers,#layersBtn")) $("#layers").hidden = true; }, true);
 map.on("click", () => { $("#layers").hidden = true; $("#results").hidden = true; });
+// Tap a store, restaurant or any place icon on the map → its card with Directions (like Google / Waze)
+map.on("click", (e) => {
+  if (nav.active) return;
+  const box = [[e.point.x - 14, e.point.y - 14], [e.point.x + 14, e.point.y + 14]];
+  const hits = map.queryRenderedFeatures(box);
+  if (hits.some((f) => f.layer.id === "cams" || f.layer.id === "reports")) return; // those have their own popups
+  const f = hits.find((h) => (h.sourceLayer === "poi" || /^poi/.test(h.layer.id)) && (h.properties.name || h.properties["name:en"]));
+  if (!f) return;
+  const p = f.properties, name = p["name:en"] || p.name;
+  const kind = title(String(p.subclass || p.class || "").replace(/_/g, " "));
+  const at = f.geometry.type === "Point" ? f.geometry.coordinates.slice() : [e.lngLat.lng, e.lngLat.lat];
+  popup?.remove();
+  showPlace({ name, line: kind && kind.toLowerCase() !== name.toLowerCase() ? kind : "", at });
+});
+map.on("mousemove", (e) => { const f = map.queryRenderedFeatures(e.point).find((h) => h.sourceLayer === "poi"); map.getCanvas().style.cursor = f ? "pointer" : ""; });
 
 function paintChips() { document.querySelectorAll("[data-layer]").forEach((b) => b.setAttribute("aria-pressed", !!layerOn[b.dataset.layer])); }
 paintChips();
@@ -925,8 +940,10 @@ function showPlace(r) {
   destMarker = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.at).addTo(map);
   map.flyTo({ center: r.at, zoom: 15.5, offset: [0, -60], duration: 800 });
   openSheet(r.name, `${r.line ? `<div class="muted">${esc(r.line)}</div>` : ""}
-    <button class="btn primary" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>`, "place");
+    <button class="btn primary" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>
+    ${inNYC(r.at[0], r.at[1]) ? '<button class="btn" type="button" id="parkNear">Can I park here?</button>' : ""}`, "place");
   $("#goDir").onclick = () => planRoute(r);
+  $("#parkNear")?.addEventListener("click", () => parkCheck(r.at, true));
 }
 $("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeholder = "Where to?"; $("#q").focus(); } };
 
