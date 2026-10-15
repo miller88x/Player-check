@@ -53,9 +53,10 @@ body.navigating #credit{bottom:calc(var(--safeB) + 96px)}
 .results button{all:unset;display:flex;gap:12px;align-items:center;width:100%;padding:12px 16px;border-top:1px solid var(--ui2);cursor:pointer;box-sizing:border-box}
 .results button:first-child{border-top:0}
 .results .t{font-weight:600}.results .s{color:var(--muted);font-size:13px}
-.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:0 28px 4px 0;margin-right:-12px;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
 .chips::-webkit-scrollbar{display:none}
-.chip{flex:1 1 auto;justify-content:center;min-width:0;border:1px solid transparent;background:#303134;color:var(--ink);border-radius:20px;padding:9px 10px;font:500 14.5px var(--body);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px}
+.results:not([hidden]) + .chips{display:none}
+.chip{flex:0 0 auto;justify-content:center;border:1px solid transparent;background:#303134;color:var(--ink);border-radius:20px;padding:9px 10px;font:500 14.5px var(--body);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px}
 .chip[aria-pressed="true"]{background:#0e3a4f;border-color:#7cc9f0;color:#d6efff}
 
 /* Floating buttons */
@@ -64,11 +65,17 @@ body.navigating #credit{bottom:calc(var(--safeB) + 96px)}
 #locBtn{bottom:calc(var(--safeB) + var(--tabH) + 92px);border-radius:18px;background:#303134}
 #dirBtn{bottom:calc(var(--safeB) + var(--tabH) + 18px);width:64px;height:64px;border-radius:20px;background:var(--teal)}
 #recenter{left:14px;right:auto;bottom:calc(var(--safeB) + 128px);width:auto;height:54px;border-radius:27px;padding:0 22px 0 18px;font:600 18px var(--body);color:#fff;background:#1f1f1f;display:none;z-index:15;gap:12px;grid-auto-flow:column;align-items:center}
-.layers{position:fixed;right:14px;top:calc(var(--safeT) + 204px);z-index:11;background:var(--ui);border-radius:16px;padding:12px;display:flex;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.45)}
-.layers button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
-.layers button span{width:58px;height:58px;border-radius:12px;border:2px solid transparent}
-.layers button[aria-pressed="true"] span{border-color:var(--blue)}
-.layers button[aria-pressed="true"]{color:var(--blue)}
+.layers{position:fixed;right:14px;top:calc(var(--safeT) + 204px);z-index:11;background:var(--ui);border-radius:18px;padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 16px rgba(0,0,0,.45);max-width:calc(100vw - 28px)}
+.lhead{font:600 13px var(--body);color:var(--muted)}
+.lrow{display:flex;gap:10px}
+.lcol{display:flex;flex-direction:column;gap:6px}
+.layers .ltog{all:unset;cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;background:#3c4043;font:500 15px var(--body);color:var(--ink)}
+.layers .ltog[aria-pressed="true"]{background:#0e3a4f;color:#d6efff;box-shadow:inset 0 0 0 1px #7cc9f0}
+.layers .ltog[aria-pressed="false"]{opacity:.6}
+.layers .lrow button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
+.layers .lrow button span{width:58px;height:58px;border-radius:12px;border:2px solid transparent}
+.layers .lrow button[aria-pressed="true"] span{border-color:var(--blue)}
+.layers .lrow button[aria-pressed="true"]{color:var(--blue)}
 .reasons{display:flex;flex-direction:column;gap:8px}
 .reasons button{all:unset;cursor:pointer;background:var(--ui);border-radius:12px;padding:12px 14px;font-weight:500;border:2px solid transparent}
 .reasons button[aria-pressed="true"]{border-color:var(--blue);background:#1f2a3a}
@@ -94,6 +101,7 @@ ul.rules li{background:var(--ui);border-radius:10px;padding:10px 12px;font-size:
 #parkedPill.soon{background:#d93025;animation:pulse2 1.2s ease-in-out infinite alternate}
 @keyframes pulse2{to{background:#a50e0e}}
 .carPin{width:34px;height:34px;border-radius:9px;background:#1a73e8;border:3px solid #fff;color:#fff;font:800 17px var(--body);display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+.catPin{width:34px;height:34px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:#fff;display:grid;place-items:center;font-size:17px;box-shadow:0 2px 6px rgba(0,0,0,.4);cursor:pointer}
 .signDot{width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid #d93025;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .checkPin{width:22px;height:22px;border-radius:50%;background:#1a73e8;border:4px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45)}
 body.navigating #parkedPill{display:none!important}
@@ -233,6 +241,20 @@ body.navigating #recenter.on ~ #navRoad{display:none}
 #speedo{position:fixed;left:14px;bottom:calc(var(--safeB) + 198px);z-index:14;width:62px;height:62px;border-radius:50%;background:#fff;color:#111;display:none;flex-direction:column;align-items:center;justify-content:center;font:700 22px/1 var(--body);box-shadow:0 2px 8px rgba(0,0,0,.4)}
 #speedo small{font-size:10px;font-weight:600}
 #speedo.over{background:#d93025;color:#fff}
+#limitSign{position:fixed;left:84px;bottom:calc(var(--safeB) + 200px);z-index:14;width:50px;background:#fff;color:#111;border:3px solid #111;border-radius:8px;text-align:center;padding:3px 0 2px;box-shadow:0 2px 8px rgba(0,0,0,.35);font:700 8.5px/1.05 var(--body);display:none;flex-direction:column;align-items:center}
+#limitSign b{font:800 24px/1 var(--body);margin-top:1px}
+#limitSign.over{border-color:#d93025;color:#d93025;animation:pulse3 .8s ease-in-out infinite alternate}
+@keyframes pulse3{to{transform:scale(1.06)}}
+body.navigating #limitSign:not([hidden]){display:flex}
+.ropts{display:flex;flex-direction:column;gap:8px}
+.ropts button{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 12px;border:2px solid transparent;background:#2d2e30;border-radius:14px;padding:10px 14px;text-align:left;color:var(--ink)}
+.ropts button[aria-pressed="true"]{border-color:var(--blue);background:#1f2a3a}
+.ropts b{font:700 18px var(--body);color:#81c995}.ropts span{color:var(--muted);font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ropts em{font-style:normal;font-size:12px;font-weight:700;color:#062e6f;background:var(--blue);border-radius:8px;padding:2px 7px}
+.row.avoid{gap:18px;flex-wrap:wrap}.row.avoid label{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px}
+#lanes{display:flex;gap:4px;justify-content:center;background:#0a4744;border-radius:0 0 16px 16px;padding:14px 12px 8px;margin-top:-10px;align-self:stretch;margin-inline:18px}
+#lanes:empty{display:none}
+#lanes svg{background:#0d5e5a;border-radius:6px}
 body.navigating .inAlert,body.navigating .top,body.navigating > .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
 body.navigating #navTop,body.navigating #speedo,body.navigating #navSide{display:flex}
 body.navigating #navBottom{display:grid}
@@ -254,17 +276,31 @@ body.navigating #recenter.on{display:grid!important}
   </div>
   <div class="results" id="results" hidden></div>
   <div class="chips" id="chips">
-    <button class="chip" type="button" data-layer="tickets"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#e5484d"/></svg>Tickets</button>
-    <button class="chip" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
-    <button class="chip" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
+    <button class="chip" type="button" data-saved="home"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 11h2.8v9h5.2v-6h3v6h5.2v-9h2.8z" fill="#8ab4f8"/></svg><span>Home</span></button>
+    <button class="chip" type="button" data-saved="work"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4z" fill="#8ab4f8"/></svg><span>Work</span></button>
+    <button class="chip" type="button" data-cat="gas">⛽ Gas</button>
+    <button class="chip" type="button" data-cat="parking">🅿️ Parking</button>
+    <button class="chip" type="button" data-cat="coffee">☕ Coffee</button>
+    <button class="chip" type="button" data-cat="food">🍔 Food</button>
+    <button class="chip" type="button" data-cat="ev">⚡ EV charging</button>
+    <button class="chip" type="button" data-cat="carwash">🧽 Car wash</button>
   </div>
 </div>
 
 <button class="fab" id="layersBtn" type="button" aria-label="Map type"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8.5l10 5.5 10-5.5L12 3zm0 13.2L4.2 12 2 13.2l10 5.5 10-5.5-2.2-1.2L12 16.2z" fill="#c8eef4"/></svg></button>
 <div class="layers" id="layers" hidden>
+  <div class="lhead">Map type</div>
+  <div class="lrow">
   <button type="button" data-style="map"><span style="background:linear-gradient(135deg,#f2efe9 40%,#aad3df 40% 55%,#f2efe9 55%)"></span>Default</button>
   <button type="button" data-style="sat"><span style="background:linear-gradient(135deg,#3d5a3a,#6b6b55 50%,#2f4b5e)"></span>Satellite</button>
   <button type="button" data-style="dark"><span style="background:linear-gradient(135deg,#1d2633 40%,#0e1621 40% 55%,#1d2633 55%)"></span>Night</button>
+</div>
+  <div class="lhead">Show on map</div>
+  <div class="lcol">
+    <button class="ltog" type="button" data-layer="tickets"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#e5484d"/></svg>Tickets</button>
+    <button class="ltog" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
+    <button class="ltog" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
+  </div>
 </div>
 <button class="fab" id="locBtn" type="button" aria-label="Show my location"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="#1a73e8" stroke="#fff" stroke-width="2"/></svg></button>
 <button id="parkedPill" type="button" hidden></button>
@@ -292,6 +328,7 @@ body.navigating #recenter.on{display:grid!important}
       <div class="ar"><svg id="navArrow" width="52" height="52" viewBox="0 0 24 24" aria-hidden="true"></svg><div class="dist" id="navDist"></div></div>
       <div style="min-width:0"><div class="toward" id="navToward"></div><div class="street" id="navStreet"></div></div>
     </div>
+    <div id="lanes"></div>
     <div class="then" id="navThen"></div>
   </div>
   <div class="camAlert" id="camAlert">
@@ -300,6 +337,7 @@ body.navigating #recenter.on{display:grid!important}
     <div class="lim" id="camLim">SPEED<br>LIMIT<b></b></div>
   </div>
 </div>
+<div id="limitSign" hidden><small>SPEED<br>LIMIT</small><b id="limitNum"></b></div>
 <div id="speedo"><span id="speedNum">0</span><small>mph</small></div>
 <div id="navRoad"></div>
 <div id="navSide">
@@ -320,7 +358,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
-const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName"];
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents"];
 let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -400,6 +438,8 @@ function addOverlays() {
   if (!map.hasImage("cam-red")) map.addImage("cam-red", camIcon("#d93025", "red"), { pixelRatio: 2 });
   if (!map.getSource("route")) map.addSource("route", { type: "geojson", data: routeGeo() });
   if (!map.getSource("done")) map.addSource("done", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  if (!map.getSource("alts")) map.addSource("alts", { type: "geojson", data: altGeo() });
+  if (!map.getLayer("alts-line")) map.addLayer({ id: "alts-line", type: "line", source: "alts", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#8e9bb0", "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 16, 10] } });
   if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#1b2db5", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
   if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#4a63ff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
   if (!map.getLayer("done-line")) map.addLayer({ id: "done-line", type: "line", source: "done", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#9aa0a6", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 12] } });
@@ -548,6 +588,7 @@ document.querySelectorAll("[data-layer]").forEach((b) => (b.onclick = () => {
 }));
 
 // ================= LOCATION =================
+let savedEtaAsked = false;
 let me = null, meMarker = null, heading = null, speedMps = 0, watchId = null, lastFix = null;
 const waiters = [];
 function startWatch() {
@@ -632,6 +673,7 @@ function onFix(f) {
   if (nav.active) navTick(pos); else freeDriveCams(pos);
   startAnim();
   waiters.splice(0).forEach((fn) => fn(pos));
+  if (!savedEtaAsked) { savedEtaAsked = true; refreshSavedEta(); }
 }
 
 // ---------- Smooth motion (runs every frame, like Google Maps / Waze) ----------
@@ -764,6 +806,7 @@ function closeSheet() {
   $("#sheet").classList.remove("show");
   if (sheetMode === "route" && !nav.active) clearRoute();
   if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
+  if (sheetMode === "cat") clearCats();
   sheetMode = null; setTab(null);
 }
 $("#sheetX").onclick = () => closeSheet();
@@ -932,7 +975,88 @@ async function search(pickFirst) {
     document.querySelectorAll("#results [data-i]").forEach((b) => (b.onclick = () => showPlace(list[+b.dataset.i])));
   } catch { $("#results").innerHTML = '<button type="button" disabled><span class="s">Search is not reachable right now. Try again.</span></button>'; $("#results").hidden = false; }
 }
+// ---------- Home, Work, recents ----------
+let pendingSave = null, catMarkers = [];
+const saved = () => store.get("saved", {});
+const PNAME = { home: "Home", work: "Work" };
+function savePlace(kind, r) { const s = saved(); s[kind] = { name: r.name, line: r.line || "", at: r.at }; store.set("saved", s); savedEta = {}; paintSaved(); refreshSavedEta(); }
+function addRecent(r) {
+  const k = (x) => `${x.name}|${x.at[0].toFixed(4)}|${x.at[1].toFixed(4)}`;
+  const list = [{ name: r.name, line: r.line || "", at: r.at }, ...store.get("recents", []).filter((x) => k(x) !== k(r))].slice(0, 8);
+  store.set("recents", list);
+}
+let savedEta = {};
+function paintSaved() {
+  const s = saved();
+  document.querySelectorAll("[data-saved]").forEach((b) => {
+    const k = b.dataset.saved, t = savedEta[k];
+    b.querySelector("span").textContent = s[k] ? (t ? `${PNAME[k]} · ${fmtMin(t)}` : PNAME[k]) : `Set ${PNAME[k].toLowerCase()}`;
+  });
+}
+async function refreshSavedEta() {
+  if (!me) return;
+  const s = saved();
+  for (const k of ["home", "work"]) {
+    if (!s[k] || dist(me, s[k].at) < 150) { delete savedEta[k]; continue; }
+    try {
+      const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${me[0]},${me[1]};${s[k].at[0]},${s[k].at[1]}?overview=false&steps=true`)).json();
+      if (j.routes?.[0]) savedEta[k] = realTimes(j.routes[0].legs[0].steps, me);
+    } catch {}
+  }
+  paintSaved();
+}
+setInterval(refreshSavedEta, 5 * 60000);
+document.querySelectorAll("[data-saved]").forEach((b) => (b.onclick = () => {
+  const k = b.dataset.saved, s = saved();
+  if (s[k]) { dest = { ...s[k], name: PNAME[k] }; planRoute(dest); return; }
+  pendingSave = k; $("#q").value = ""; $("#q").placeholder = `Search your ${PNAME[k].toLowerCase()} address`; $("#q").focus();
+}));
+// Tap the search box: Home, Work and recent places show right away (like Google)
+function showRecents() {
+  if ($("#q").value.trim()) return;
+  const s = saved(), recents = store.get("recents", []);
+  const rows = [...["home", "work"].filter((k) => s[k]).map((k) => ({ ...s[k], label: PNAME[k], icon: k })), ...recents.map((r) => ({ ...r, icon: "recent" }))];
+  if (!rows.length) { $("#results").hidden = true; return; }
+  const ICO = { home: '<path d="M12 3 2.5 11h2.8v9h5.2v-6h3v6h5.2v-9h2.8z" fill="#8ab4f8"/>', work: '<path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4z" fill="#8ab4f8"/>', recent: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="#9aa0a6" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="#9aa0a6" stroke-width="2" fill="none" stroke-linecap="round"/>' };
+  $("#results").innerHTML = rows.map((r, i) => `<button type="button" data-ri="${i}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">${ICO[r.icon]}</svg>
+    <span style="min-width:0"><div class="t">${esc(r.label || r.name)}</div><div class="s">${esc(r.label ? r.name : r.line)}${me ? " · " + fmtDist(dist(me, r.at)) : ""}</div></span></button>`).join("");
+  $("#results").hidden = false;
+  document.querySelectorAll("#results [data-ri]").forEach((b) => (b.onclick = () => { const r = rows[+b.dataset.ri]; showPlace({ name: r.label || r.name, line: r.label ? r.name : r.line, at: r.at }); }));
+}
+$("#q").addEventListener("focus", showRecents);
+$("#q").addEventListener("input", () => { if (!$("#q").value.trim()) showRecents(); });
+// Quick searches: gas, parking, coffee… nearest first, pinned on the map
+const CATS = { gas: ["gas station", "amenity:fuel", "Gas"], parking: ["parking", "amenity:parking", "Parking"], coffee: ["coffee", "amenity:cafe", "Coffee"],
+  food: ["restaurant", "amenity:restaurant", "Food"], ev: ["charging station", "amenity:charging_station", "EV charging"], carwash: ["car wash", "amenity:car_wash", "Car wash"] };
+function clearCats() { catMarkers.forEach((m) => m.remove()); catMarkers = []; }
+document.querySelectorAll("[data-cat]").forEach((b) => (b.onclick = async () => {
+  const [q, tag, label] = CATS[b.dataset.cat];
+  const c = me || [map.getCenter().lng, map.getCenter().lat];
+  openSheet(label, '<p class="muted" style="margin:0">Finding the closest ones…</p>', "cat");
+  try {
+    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&osm_tag=${tag}&lat=${c[1]}&lon=${c[0]}&limit=25&lang=en`)).json();
+    const list = (j.features || []).map((f) => { const p = f.properties; return { name: p.name || label, line: [[p.housenumber, p.street].filter(Boolean).join(" "), p.district || p.city].filter(Boolean).join(", "), at: f.geometry.coordinates, d: dist(c, f.geometry.coordinates) }; })
+      .filter((r) => r.d < 15000).sort((a, b) => a.d - b.d).slice(0, 10);
+    if (sheetMode !== "cat") return;
+    clearCats();
+    if (!list.length) { $("#sheetBody").innerHTML = '<p class="muted" style="margin:0">Nothing found close by. Try zooming the map to another area.</p>'; return; }
+    const bb = new maplibregl.LngLatBounds(); bb.extend(c);
+    list.forEach((r, i) => {
+      const el = document.createElement("div"); el.className = "catPin"; el.textContent = b.textContent.trim().split(" ")[0];
+      el.onclick = (e) => { e.stopPropagation(); clearCats(); showPlace(r); };
+      catMarkers.push(new maplibregl.Marker({ element: el }).setLngLat(r.at).addTo(map)); bb.extend(r.at);
+    });
+    map.fitBounds(bb, { padding: { top: 170, bottom: Math.round(innerHeight * 0.5), left: 40, right: 40 }, maxZoom: 16, duration: 700 });
+    $("#sheetBody").innerHTML = `<ul class="tix">${list.map((r, i) => `<li data-ci="${i}" style="grid-template-columns:1fr auto"><span class="vio">${esc(r.name)}</span><span class="meta" style="text-align:right">${fmtDist(r.d)}</span><span class="meta" style="grid-column:1/-1">${esc(r.line)}</span></li>`).join("")}</ul>`;
+    document.querySelectorAll("[data-ci]").forEach((li) => (li.onclick = () => { clearCats(); showPlace(list[+li.dataset.ci]); }));
+  } catch { $("#sheetBody").innerHTML = '<p class="muted" style="margin:0">Search is not reachable right now. Try again.</p>'; }
+}));
+
 function showPlace(r) {
+  if (pendingSave) {
+    const k = pendingSave; pendingSave = null; $("#q").placeholder = "Search here"; savePlace(k, r);
+    r = { ...r, name: PNAME[k], line: r.name };
+  } else addRecent(r);
   dest = r; $("#results").hidden = true; $("#q").blur(); $("#q").value = r.name; $("#qClear").style.display = "block";
   destMarker?.remove();
   const el = document.createElement("div"); el.className = "pin";
@@ -941,7 +1065,9 @@ function showPlace(r) {
   map.flyTo({ center: r.at, zoom: 15.5, offset: [0, -60], duration: 800 });
   openSheet(r.name, `${r.line ? `<div class="muted">${esc(r.line)}</div>` : ""}
     <button class="btn primary" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>
-    ${inNYC(r.at[0], r.at[1]) ? '<button class="btn" type="button" id="parkNear">Can I park here?</button>' : ""}`, "place");
+    ${inNYC(r.at[0], r.at[1]) ? '<button class="btn" type="button" id="parkNear">Can I park here?</button>' : ""}
+    ${PNAME[Object.keys(PNAME).find((k) => r.name === PNAME[k]) || ""] ? "" : '<div class="row"><button class="btn grow" type="button" data-sv="home">Save as Home</button><button class="btn grow" type="button" data-sv="work">Save as Work</button></div>'}`, "place");
+  document.querySelectorAll("[data-sv]").forEach((b) => (b.onclick = () => { savePlace(b.dataset.sv, r); b.textContent = `Saved as ${PNAME[b.dataset.sv]} ✓`; }));
   $("#goDir").onclick = () => planRoute(r);
   $("#parkNear")?.addEventListener("click", () => parkCheck(r.at, true));
 }
@@ -950,7 +1076,10 @@ $("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeho
 // ================= ROUTING =================
 let route = null;
 const routeGeo = () => ({ type: "FeatureCollection", features: route ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route.coords } }] : [] });
-function clearRoute() { route = null; map.getSource("route")?.setData(routeGeo()); }
+let routeAlts = [];
+const altGeo = () => ({ type: "FeatureCollection", features: routeAlts.filter((r) => r !== route).map((r) => ({ type: "Feature", properties: { i: routeAlts.indexOf(r) }, geometry: { type: "LineString", coordinates: r.coords } })) });
+function clearRoute() { route = null; routeAlts = []; map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo()); }
+map.on("click", "alts-line", (e) => { const R = routeAlts[e.features[0].properties.i]; if (R && !nav.active && dest) pickRoute(R, dest); });
 // The free route engine assumes empty roads (no lights, no traffic), so its times run short — badly in NYC.
 // Adjust each step by road type, city and rush hour. Live driving pace then corrects it further (tripEta).
 function realTimes(steps, from) {
@@ -989,16 +1118,39 @@ function tripEta(R) {
   const w = Math.min(0.75, covered / 2500); // trust live pace more the farther you've driven
   return left * (1 + (ratio - 1) * w);
 }
-async function fetchRoute(from, to) {
-  const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true`)).json();
-  if (j.code !== "Ok" || !j.routes?.length) throw new Error("No route");
-  const r = j.routes[0], coords = r.geometry.coordinates;
+function buildRoute(r, from) {
+  const coords = r.geometry.coordinates;
   const cum = [0]; for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + dist(coords[i - 1], coords[i]));
   let acc = 0;
   const steps = r.legs[0].steps.map((s) => { const st = { ...s, at: acc }; acc += s.distance; return st; });
-  const R = { coords, cum, steps, duration: realTimes(steps, from), distance: r.distance, total: cum[cum.length - 1] || 1 };
+  const R = { coords, cum, steps, duration: realTimes(steps, from), distance: r.distance, total: cum[cum.length - 1] || 1, from };
+  R.maxspeed = r.legs[0].annotation?.maxspeed || [];
+  const main = steps.filter((x) => x.name).sort((a, b) => b.distance - a.distance)[0];
+  R.via = main ? main.name : "";
   R.camsOnRoute = camsAlong(R);
   return R;
+}
+const avoid = () => store.get("avoid", { tolls: false, highways: false });
+async function fetchRoutes(from, to, alts = true) {
+  const a = avoid(), ex = [a.tolls && "toll", a.highways && "motorway"].filter(Boolean).join(",");
+  const base = `https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true&annotations=maxspeed${alts ? "&alternatives=2" : ""}`;
+  let j = await (await fetch(base + (ex ? `&exclude=${ex}` : ""))).json();
+  let avoidFailed = false;
+  if (ex && j.code !== "Ok") { j = await (await fetch(base)).json(); avoidFailed = true; } // route engine can't avoid here: fall back
+  if (j.code !== "Ok") j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true`)).json(); // plain request as a last resort
+  if (j.code !== "Ok" || !j.routes?.length) throw new Error("No route");
+  const list = j.routes.map((r) => buildRoute(r, from)).sort((x, y) => x.duration - y.duration);
+  list.forEach((R) => (R.avoidFailed = avoidFailed));
+  return list;
+}
+async function fetchRoute(from, to) { return (await fetchRoutes(from, to, false))[0]; }
+// Posted speed limit (mph) where the car is now. NYC's default is 25 on city streets.
+function limitAt(R, idx) {
+  const m = R.maxspeed?.[Math.min(idx, (R.maxspeed?.length || 1) - 1)];
+  if (m && m.speed) return m.unit === "km/h" ? Math.round(m.speed * 0.621 / 5) * 5 : m.speed;
+  const st = R.steps.find((x) => x.at + x.distance > nav.along) || R.steps[R.steps.length - 1];
+  const fast = st && st.distance / Math.max(1, st.duration) > 17;
+  return me && inNYC(me[0], me[1]) && !fast ? 25 : null;
 }
 const KX = 84300, KY = 111200; // meters per degree near NYC
 function project(R, p, hint = 0, wide = false) {
@@ -1038,24 +1190,34 @@ async function planRoute(to) {
   let from;
   try { from = await getMe(); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
-  try { route = await fetchRoute(from, to.at); camsForRoute(route).then(() => { if (sheetMode === "route" && route) routeSheet(to); }); }
+  try { routeAlts = await fetchRoutes(from, to.at); route = routeAlts[0]; camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
-  map.getSource("route")?.setData(routeGeo());
-  const b = new maplibregl.LngLatBounds(); route.coords.forEach((c) => b.extend(c));
+  map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo());
+  const b = new maplibregl.LngLatBounds(); routeAlts.forEach((R) => R.coords.forEach((c) => b.extend(c)));
   map.fitBounds(b, { padding: { top: 140, bottom: 280, left: 50, right: 70 }, duration: 700 });
   routeSheet(to);
 }
+function pickRoute(R, to) { route = R; map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo()); routeSheet(to); }
 function routeSheet(to) {
+  nav.dest = to;
+  const a = avoid();
+  const opts = routeAlts.length > 1 ? `<div class="ropts">${routeAlts.map((R, i) => `<button type="button" data-ro="${i}" aria-pressed="${R === route}"><b>${fmtMin(R.duration)}</b><span>${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span>${i === 0 ? '<em>Fastest</em>' : ""}</button>`).join("")}</div>` : "";
   const sp = route.camsOnRoute.filter((c) => c.type === "speed").length, rl = route.camsOnRoute.length - sp;
   openSheet(to.name, `
     <div class="stats"><span class="big" style="color:#81c995">${fmtMin(route.duration)}</span><span class="muted">${fmtDist(route.distance)} · arrive ${clock(route.duration)}</span></div>
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
       ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
+    ${opts}
+    <div class="row avoid"><label><input type="checkbox" id="avTolls" ${a.tolls ? "checked" : ""}> Avoid tolls</label><label><input type="checkbox" id="avHwy" ${a.highways ? "checked" : ""}> Avoid highways</label></div>
+    ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
     <div class="row"><button class="btn green grow" type="button" id="startNav">Start</button><button class="btn" type="button" id="simNav">Test drive</button></div>
     <div class="row" style="align-items:center;justify-content:space-between"><label class="muted" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="voiceT" ${voiceOn ? "checked" : ""}> Voice guidance</label><button type="button" class="btn" id="voicePick" style="padding:6px 12px;font-size:13px">Voice: ${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</button></div>
     <p class="note">Test drive plays the trip on the map so you can hear the turn and camera warnings from home. Keep the app open while driving.</p>`, "route");
   $("#voiceT").onchange = (e) => { voiceOn = e.target.checked; store.set("voice", voiceOn); };
   $("#voicePick").onclick = voiceSheet;
+  document.querySelectorAll("[data-ro]").forEach((b) => (b.onclick = () => pickRoute(routeAlts[+b.dataset.ro], to)));
+  const setAvoid = () => { store.set("avoid", { tolls: $("#avTolls").checked, highways: $("#avHwy").checked }); planRoute(to); };
+  $("#avTolls").onchange = setAvoid; $("#avHwy").onchange = setAvoid;
   $("#startNav").onclick = () => startNav(false);
   $("#simNav").onclick = () => startNav(true);
 }
@@ -1066,7 +1228,7 @@ function startNav(sim) {
   if (!route) return;
   unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
   (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
-  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, t0: Date.now(), a0: 0 });
+  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, t0: Date.now(), a0: 0, arrived: false, start: Date.now(), overWarned: 0 });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
@@ -1086,6 +1248,20 @@ function pointAt(R, d) {
   let i = 0; while (i < R.cum.length - 2 && R.cum[i + 1] < d) i++;
   const seg = R.cum[i + 1] - R.cum[i] || 1, t = Math.min(1, (d - R.cum[i]) / seg);
   return [R.coords[i][0] + (R.coords[i + 1][0] - R.coords[i][0]) * t, R.coords[i][1] + (R.coords[i + 1][1] - R.coords[i][1]) * t];
+}
+function arrived() {
+  if (!nav.active) return;
+  const to = nav.dest || dest || { name: "your destination" }, mins = Math.max(1, Math.round((Date.now() - nav.start) / 60000)), miles = route ? fmtDist(route.total) : "";
+  const at = me || to.at;
+  endNav();
+  openSheet("You've arrived", `
+    <div class="verdict green"><div class="ic">✓</div><div><div class="big2">${esc(to.name || "Destination")}</div><div class="muted" style="color:var(--ink);opacity:.85">${mins} min${miles ? " · " + miles : ""}</div></div></div>
+    ${at && inNYC(at[0], at[1]) ? '<button class="btn primary" type="button" id="arrPark">Can I park here?</button>' : ""}
+    <button class="btn" type="button" id="arrSave">I parked here · remember my car</button>
+    <button class="btn" type="button" id="arrDone">Done</button>`, "arrived");
+  $("#arrPark")?.addEventListener("click", () => parkCheck(at, false));
+  $("#arrSave").onclick = () => saveParked({ moveBy: null, where: to.name || "", headline: "" }, at);
+  $("#arrDone").onclick = () => closeSheet();
 }
 function endNav() {
   const wasSim = !!nav.sim;
@@ -1139,6 +1315,21 @@ function arrowSVG(s) {
   const rot = { straight: 0, "slight right": 35, right: 90, "sharp right": 135, uturn: 180, "sharp left": -135, left: -90, "slight left": -35 }[mod] ?? 0;
   return `<g transform="rotate(${rot} 12 12)"><path d="M12 2.5 5 10.5h4.5v11h5v-11H19z" fill="#fff"/></g>`;
 }
+// Lane guidance: which lanes work for the next turn (bright = use these)
+const LANE_ROT = { straight: 0, "slight right": 35, right: 80, "sharp right": 125, uturn: 180, "sharp left": -125, left: -80, "slight left": -35, none: 0 };
+function laneSVG(ind, on) {
+  const r = LANE_ROT[ind] ?? 0, c = on ? "#fff" : "rgba(255,255,255,.32)";
+  const path = ind === "uturn" ? '<path d="M15 20V10a4 4 0 0 0-8 0v4" fill="none" stroke-width="2.6" stroke-linecap="round"/><path d="M4 12l3 4 3-4" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    : `<g transform="rotate(${r} 12 14)"><path d="M12 21V8" fill="none" stroke-width="2.6" stroke-linecap="round"/><path d="M7.5 11.5 12 7l4.5 4.5" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  return `<svg width="32" height="36" viewBox="0 0 24 26" aria-hidden="true" stroke="${c}">${path}</svg>`;
+}
+function paintLanes(step, toNext) {
+  const lanes = step?.intersections?.[0]?.lanes;
+  if (!lanes || lanes.length < 2 || toNext > 700 || step.maneuver.type === "arrive") { $("#lanes").innerHTML = ""; return; }
+  const want = step.maneuver.modifier || "straight";
+  $("#lanes").innerHTML = lanes.map((l) => { const inds = l.indications || ["none"]; const ind = l.valid && inds.includes(want) ? want : inds[0]; return laneSVG(ind, l.valid); }).join("");
+  $("#lanes").setAttribute("aria-label", `Use the ${lanes.filter((l) => l.valid).length} highlighted lanes`);
+}
 function navTick(pos) {
   const R = route; if (!R) return;
   const pr = project(R, pos, nav.idx);
@@ -1152,6 +1343,7 @@ function navTick(pos) {
   const next = R.steps[k], after = R.steps[k + 1];
   const toNext = Math.max(0, next.at - nav.along);
   $("#navArrow").innerHTML = arrowSVG(next);
+  paintLanes(next, toNext);
   const cur = R.steps[Math.max(0, k - 1)]; $("#navRoad").textContent = cur?.name || cur?.ref || "";
   $("#navDist").textContent = fmtDist(toNext);
   const toward = next.destinations ? next.destinations.split(",")[0] : "";
@@ -1171,8 +1363,8 @@ function navTick(pos) {
     if (ra) { const t = RTYPES[ra.r.type]; const box = $("#camAlert"); box.style.display = "flex"; box.style.background = t.c; box.style.animation = "none"; $("#camIco").textContent = t.e; $("#camText").textContent = `${t.label} reported`; $("#camDist").textContent = `${fmtDist(ra.d)} ahead · ${ago(ra.r.created_at)}`; $("#camLim").style.display = "none"; }
     else showCam(null);
   }
-  updateSpeedo(ahead?.type === "speed" ? ahead.limit : null);
-  if (left < 25) { spk("arr", "You have arrived"); setTimeout(() => nav.active && endNav(), 3000); }
+  updateSpeedo((ahead?.type === "speed" && ahead.limit) || limitAt(R, nav.idx));
+  if (left < 25 && !nav.arrived) { nav.arrived = true; spk("arr", `You have arrived${nav.dest?.name ? " at " + nav.dest.name : ""}`); setTimeout(arrived, 1200); }
   const doneCoords = R.coords.slice(0, nav.idx + 1).concat([pointAt(R, nav.along)]);
   map.getSource("done")?.setData({ type: "FeatureCollection", features: doneCoords.length > 1 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: doneCoords } }] : [] });
 }
@@ -1194,9 +1386,12 @@ function showCam(c) {
   }
 }
 function updateSpeedo(limit) {
-  const mph = Math.round(speedMps * 2.237);
+  const mph = Math.round(speedMps * 2.237), over = !!limit && mph > limit + 2;
   $("#speedNum").textContent = mph;
-  $("#speedo").classList.toggle("over", !!limit && mph > limit + 2);
+  $("#speedo").classList.toggle("over", over);
+  $("#limitSign").hidden = !limit; $("#limitNum").textContent = limit || "";
+  $("#limitSign").classList.toggle("over", over);
+  if (over && nav.active && Date.now() - (nav.overWarned || 0) > 90000 && mph > limit + 7) { nav.overWarned = Date.now(); speak(`Speed limit ${limit}`); }
 }
 const freeWarned = {};
 function freeDriveCams(pos) {
@@ -1532,7 +1727,7 @@ function mergeIn(sv) {
     try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
   }
   voiceOn = store.get("voice", true);
-  drawParked(); paintVehicle();
+  drawParked(); paintVehicle(); paintSaved(); refreshSavedEta();
   const p = store.get("plate", null);
   if (p && (!data || data.plate !== p.p)) checkPlate(p.p, p.s, false).catch(() => {});
 }
@@ -1602,6 +1797,7 @@ function accountSheet(mode) {
 }
 
 // ================= START =================
+paintSaved();
 const savedPlate = store.get("plate", null);
 if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
 if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
