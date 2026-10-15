@@ -46,6 +46,7 @@ body.navigating #credit{bottom:calc(var(--safeB) + 96px)}
 .pill{display:flex;align-items:center;gap:12px;background:#303134;border-radius:30px;padding:6px 6px 6px 14px;min-height:60px;box-shadow:0 1px 3px rgba(0,0,0,.35),0 6px 18px rgba(0,0,0,.28)}
 .pill input{all:unset;flex:1;min-width:0;font:400 19px var(--body);color:#fff;padding:8px 0}
 .pill input::placeholder{color:var(--muted)}
+.pill input::-webkit-search-cancel-button,.pill input::-webkit-search-decoration{-webkit-appearance:none;display:none}
 .avatar{width:46px;height:46px;border-radius:50%;border:3px solid #1a73e8;background:#0b57d0;color:#fff;display:grid;place-items:center;flex:0 0 auto;font:600 20px var(--body);padding:0}
 .avatar.out{background:#3c4043;border-color:#5f6368}
 .clear{border:0;background:none;color:var(--muted);padding:6px;display:none}
@@ -120,6 +121,60 @@ ul.alist .t{font-weight:600}
 #tixPill i{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
 #tixPill span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+/* ---------- Full-screen search (Google style) ---------- */
+.qback{display:none;border:0;background:none;width:40px;height:40px;border-radius:50%;place-items:center;padding:0;color:#e8eaed;margin-left:-6px}
+body.searching .top{bottom:0;max-width:none;background:#1f1f1f;pointer-events:auto;overflow-y:auto;gap:6px;animation:fadeIn .18s ease both}
+body.searching .pill{box-shadow:none;background:#303134;padding-left:8px}
+body.searching .pill .logo,body.searching #meBtn,body.searching .chips{display:none}
+body.searching .qback{display:grid}
+body.searching .results{background:none;box-shadow:none;border-radius:0;overflow:visible}
+body.searching .fab,body.searching .tabs,body.searching #tixPill{visibility:hidden}
+@keyframes fadeIn{from{opacity:0}}
+.scuts{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:6px 2px 12px;border-bottom:1px solid #3c4043}
+.scuts::-webkit-scrollbar{display:none}
+.scut{all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;min-width:0;flex:0 0 auto;max-width:200px}
+.scut i{width:40px;height:40px;border-radius:50%;background:#303134;display:grid;place-items:center;flex:0 0 auto;font-style:normal}
+.scut b{display:block;font:600 15px var(--body)}.scut small{display:block;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.rhead{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font:600 14px var(--body);padding:14px 4px 4px}
+.rrow{display:flex;gap:14px;align-items:center;padding:10px 4px;border:0;background:none;color:var(--ink);width:100%;text-align:left;cursor:pointer;animation:rowIn .22s ease both}
+@keyframes rowIn{from{opacity:0;transform:translateY(4px)}}
+.rrow .ic{width:44px;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-size:11.5px}
+.rrow .tx{min-width:0;flex:1}.rrow .t{font:500 16px var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rrow .s{color:var(--muted);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow .fill{border:0;background:none;color:var(--muted);width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto}
+/* ---------- Place card + directions ---------- */
+.pbtns{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.pbtns::-webkit-scrollbar{display:none}
+.pbtn{flex:0 0 auto;border:1px solid #5f6368;background:none;color:#a8dadf;border-radius:20px;padding:9px 16px;font:600 15px var(--body);display:inline-flex;gap:8px;align-items:center}
+.pbtn.main{background:#5fc6d8;border-color:#5fc6d8;color:#00363f}
+.pbtn:active,.btn:active,.chip:active,.tab:active,.fab:active{transform:scale(.96)}
+.pbtn,.btn,.chip,.fab{transition:transform .12s ease,background .2s ease}
+#dirTop{position:fixed;left:12px;right:12px;top:calc(var(--safeT) + 10px);z-index:13;max-width:576px;margin:0 auto;background:#303134;border-radius:20px;padding:10px 8px 10px 16px;box-shadow:0 4px 18px rgba(0,0,0,.4);display:none;align-items:center;gap:10px;animation:dropIn .3s cubic-bezier(.2,.9,.25,1) both}
+body.routing #dirTop{display:flex}
+body.routing .top,body.routing #layersBtn{display:none}
+#dirTop .pts{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;font:500 15px var(--body)}
+#dirTop .pts div{display:flex;gap:12px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dirTop .pts div:first-child{color:#8ab4f8}
+#dirTop .dot{width:12px;height:12px;border-radius:50%;border:2.5px solid #8ab4f8;flex:0 0 auto}
+@keyframes dropIn{from{opacity:0;transform:translateY(-12px)}}
+.rbub{background:#fff;color:#202124;font:700 14px var(--body);padding:5px 10px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.35);white-space:nowrap;cursor:pointer;transition:background .2s,color .2s}
+.rbub.sel{background:#1a73e8;color:#fff;z-index:2}
+.rlist{display:flex;flex-direction:column;gap:2px}
+.rl{display:grid;grid-template-columns:62px 1fr;gap:2px 12px;padding:12px 6px;border:0;border-radius:14px;background:none;color:var(--ink);text-align:left;cursor:pointer}
+.rl[aria-pressed="true"]{background:#283142}
+.rl .tm{grid-row:span 2;font:600 22px/1.05 var(--body);color:#81c995;text-align:center}.rl .tm small{display:block;font-size:13px;font-weight:500}
+.rl .a{font:500 15px var(--body)}.rl .b{color:var(--muted);font-size:13.5px}
+.tchips{display:flex;gap:8px;flex-wrap:wrap}
+.tchip{border:1px solid #5f6368;background:none;color:var(--ink);border-radius:10px;padding:7px 12px;font:500 14px var(--body)}
+.tchip[aria-pressed="true"]{background:#004a77;border-color:#004a77;color:#c2e7ff}
+.startbtn{background:#8ab4f8;color:#062e6f;border:0;border-radius:24px;padding:12px 22px;font:700 16px var(--body);display:inline-flex;gap:8px;align-items:center}
+/* ---------- Driving: light, crisp (Google style) ---------- */
+body.navigating #navSide .fab{background:#fff;color:#3c4043;box-shadow:0 2px 6px rgba(0,0,0,.25),0 6px 14px rgba(0,0,0,.12)}
+body.navigating #recenter{background:#fff;color:#0b5e57;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+#navBottom{background:#fff!important;color:#202124}
+#navBottom::before{background:#dadce0!important}
+#navBottom .eta{color:#188038!important}
+#navBottom .sub{color:#3c4043!important}
+
 /* Bottom tabs (Material 3 style) */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:11;height:calc(var(--tabH) + var(--safeB));padding:6px 4px var(--safeB);background:#1b1b1c;display:grid;grid-template-columns:repeat(5,1fr);box-shadow:0 -1px 0 rgba(255,255,255,.06)}
 .tab{border:0;background:none;color:#c4c7c5;display:flex;flex-direction:column;align-items:center;gap:3px;font:600 12.5px var(--body);padding:0;position:relative}
@@ -131,7 +186,7 @@ ul.alist .t{font-weight:600}
 body.navigating .tabs{display:none}
 
 /* Sheet */
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:12;max-width:600px;margin:0 auto;background:#1f1f1f;border-radius:28px 28px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.5);max-height:72%;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .25s ease}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:12;max-width:600px;margin:0 auto;background:#1f1f1f;border-radius:28px 28px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.5);max-height:72%;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .34s cubic-bezier(.2,.9,.25,1)}
 .sheet.show{transform:none}
 .sheet::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:#5f6368;margin:10px auto 0}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;padding:10px 18px 8px;gap:12px}
@@ -269,7 +324,8 @@ body.navigating #recenter.on{display:grid!important}
 
 <div class="top" id="top">
   <div class="pill">
-    <svg width="30" height="30" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="#1a73e8"/><path d="M50 20 L71 76 L50 63 L29 76 Z" fill="#f2c230" stroke="#f2c230" stroke-width="5" stroke-linejoin="round"/></svg>
+    <button class="qback" id="qBack" type="button" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z" fill="currentColor"/></svg></button>
+    <svg class="logo" width="30" height="30" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="#1a73e8"/><path d="M50 20 L71 76 L50 63 L29 76 Z" fill="#f2c230" stroke="#f2c230" stroke-width="5" stroke-linejoin="round"/></svg>
     <input id="q" type="search" placeholder="Search here" autocomplete="off" enterkeyhint="search" aria-label="Search for a place">
     <button class="clear" id="qClear" type="button" aria-label="Clear search">✕</button>
     <button class="avatar out" id="meBtn" type="button" aria-label="Your account"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="#e8eaed"/><path d="M4 20c.8-4 4-6 8-6s7.2 2 8 6z" fill="#e8eaed"/></svg></button>
@@ -305,9 +361,10 @@ body.navigating #recenter.on{display:grid!important}
 <button class="fab" id="locBtn" type="button" aria-label="Show my location"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="#1a73e8" stroke="#fff" stroke-width="2"/></svg></button>
 <button id="parkedPill" type="button" hidden></button>
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#00363f"/></svg></button>
-<button class="fab" id="recenter" type="button"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="#fff"/></svg>Re-center</button>
+<button class="fab" id="recenter" type="button"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
 <div class="inAlert" id="inAlert" role="alert" hidden></div>
+<div id="dirTop"><div class="pts"><div><span class="dot"></span>Your location</div><div id="dirTo"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true" style="flex:0 0 auto"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#ea4335"/></svg><span></span></div></div><button class="x" id="dirX" type="button" aria-label="Close directions">✕</button></div>
 
 <nav class="tabs" aria-label="Main">
   <button class="tab" id="tabExplore" type="button" aria-current="page"><i><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg></i>Explore</button>
@@ -341,10 +398,10 @@ body.navigating #recenter.on{display:grid!important}
 <div id="speedo"><span id="speedNum">0</span><small>mph</small></div>
 <div id="navRoad"></div>
 <div id="navSide">
-  <button class="fab" id="navCompass" type="button" aria-label="Compass: tap to switch north up or heading up"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 15 12h-6z" fill="#e5484d"/><path d="M12 21.5 9 12h6z" fill="#e8eaed"/></svg></button>
+  <button class="fab" id="navCompass" type="button" aria-label="Compass: tap to switch north up or heading up"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 15 12h-6z" fill="#e5484d"/><path d="M12 21.5 9 12h6z" fill="#9aa0a6"/></svg></button>
   <button class="fab" id="navMute" type="button" aria-label="Mute voice"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3.5 3.5l17 17" stroke="#e5484d" stroke-width="2.4" stroke-linecap="round" style="display:none"/></svg></button>
-  <button class="fab" id="navOv" type="button" aria-label="Route overview"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-6.5L7 9.5M12 14.5l5-5M7 9.5V5M17 9.5V5M4.5 7.5 7 5l2.5 2.5M14.5 7.5 17 5l2.5 2.5" fill="none" stroke="#e8eaed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-  <button class="fab" id="navReport" type="button" aria-label="Report something on the road"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" fill="none" stroke="#fbbc04" stroke-width="2" stroke-linejoin="round"/><path d="M12 9.5v6M9 12.5h6" stroke="#fbbc04" stroke-width="2" stroke-linecap="round"/></svg></button>
+  <button class="fab" id="navOv" type="button" aria-label="Route overview"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-6.5L7 9.5M12 14.5l5-5M7 9.5V5M17 9.5V5M4.5 7.5 7 5l2.5 2.5M14.5 7.5 17 5l2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button class="fab" id="navReport" type="button" aria-label="Report something on the road"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" fill="none" stroke="#e37400" stroke-width="2" stroke-linejoin="round"/><path d="M12 9.5v6M9 12.5h6" stroke="#e37400" stroke-width="2" stroke-linecap="round"/></svg></button>
 </div>
 <div id="navBottom">
   <span></span>
@@ -477,9 +534,29 @@ function addOverlaysInner() {
     layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "cam-speed", "cam-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1], "icon-allow-overlap": true } });
 }
 map.on("style.load", addOverlays);
+// Crisp, Google-like look for the default map: soft gray ground, white streets, yellow highways, see-through 3D buildings
+function googleTheme() {
+  if (mapType !== "map") return;
+  const set = (id, k, v) => { try { map.setPaintProperty(id, k, v); } catch {} };
+  for (const l of map.getStyle().layers) {
+    const id = l.id;
+    if (l.type === "background") set(id, "background-color", "#f2f3f5");
+    else if (l.type === "fill" && /water/.test(id)) set(id, "fill-color", "#a6d1f7");
+    else if (l.type === "fill" && /park|grass|wood|forest|garden|pitch|nature|meadow|scrub|cemetery/.test(id)) set(id, "fill-color", "#c8ebcf");
+    else if (l.type === "fill" && /building/.test(id)) { set(id, "fill-color", "#e6e7ea"); set(id, "fill-outline-color", "#d6d8dc"); }
+    else if (l.type === "fill" && /landuse|landcover|residential/.test(id)) set(id, "fill-opacity", 0.35);
+    else if (l.type === "fill-extrusion") { set(id, "fill-extrusion-color", "#f4f5f7"); set(id, "fill-extrusion-opacity", 0.72); }
+    else if (l.type === "line" && /road|highway|street|motorway|trunk|primary|secondary|tertiary|minor|service|bridge|tunnel/.test(id) && !/rail|path|pedestrian|track|ferry|one_way|oneway|area|pier|aerialway/.test(id)) {
+      const hwy = /motorway/.test(id), major = /trunk|primary/.test(id);
+      if (/casing/.test(id)) set(id, "line-color", hwy ? "#e2a43a" : major ? "#cfd3d8" : "#dadce0");
+      else set(id, "line-color", hwy ? "#fcd469" : "#ffffff");
+    } else if (l.type === "symbol" && /road|highway|street/.test(id) && /name|label/.test(id)) { set(id, "text-color", "#4b4f54"); set(id, "text-halo-color", "#ffffff"); set(id, "text-halo-width", 1.6); }
+  }
+}
+map.on("style.load", googleTheme);
 // Hide shops and places while navigating, like Google; keep transit and parking
 function setPOI(show) {
-  try { map.getStyle().layers.forEach((l) => { if ((/^poi/.test(l.id) && !/transit|parking/.test(l.id)) || l.type === "fill-extrusion") map.setLayoutProperty(l.id, "visibility", show ? "visible" : "none"); }); } catch {}
+  try { map.getStyle().layers.forEach((l) => { if (/^poi/.test(l.id) && !/transit|parking/.test(l.id)) map.setLayoutProperty(l.id, "visibility", show ? "visible" : "none"); }); } catch {}
 }
 map.on("style.load", () => { if (nav.active) setPOI(false); });
 
@@ -826,12 +903,14 @@ function unlockVoice() { try { speechSynthesis.speak(new SpeechSynthesisUtteranc
 let sheetMode = null;
 const TAB_FOR = { plate: "plateBtn", tickets: "plateBtn", alerts: "plateBtn", dispute: "plateBtn", letter: "plateBtn", park: "parkBtn", parked: "parkBtn", report: "reportBtn", account: "youBtn" };
 function setTab(mode) { const id = TAB_FOR[mode] || "tabExplore"; document.querySelectorAll(".tab").forEach((t) => (t.id === id ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"))); }
-function openSheet(t, html, mode = null) { sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); }
+function openSheet(t, html, mode = null) {
+  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); }
 function closeSheet() {
   $("#sheet").classList.remove("show");
   if (sheetMode === "route" && !nav.active) clearRoute();
   if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
   if (sheetMode === "cat") clearCats();
+  if (sheetMode === "route" && !nav.active) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; }
   sheetMode = null; setTab(null);
 }
 $("#sheetX").onclick = () => closeSheet();
@@ -975,6 +1054,7 @@ function wireAlerts() {
 $("#plateBtn").onclick = () => (!data ? plateSheet() : pending.length ? alertsSheet() : ticketsSheet());
 $("#tixPill").onclick = ticketsSheet;
 $("#tabExplore").onclick = () => closeSheet();
+$("#dirX").onclick = () => closeSheet();
 
 // ================= SEARCH =================
 let qTimer = null, destMarker = null, dest = null;
@@ -983,7 +1063,7 @@ $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventD
 $("#qClear").onclick = () => { $("#q").value = ""; $("#qClear").style.display = "none"; $("#results").hidden = true; };
 async function search(pickFirst) {
   const q = $("#q").value.trim();
-  if (q.length < 3) { $("#results").hidden = true; return; }
+  if (q.length < 2) return;
   const c = me || [map.getCenter().lng, map.getCenter().lat];
   try {
     const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=6&lang=en`)).json();
@@ -994,8 +1074,8 @@ async function search(pickFirst) {
       return { name, line, at: f.geometry.coordinates };
     });
     if (pickFirst && list[0]) return showPlace(list[0]);
-    $("#results").innerHTML = list.map((r, i) => `<button type="button" data-i="${i}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#9aa0a6"/></svg>
-      <span style="min-width:0"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.line)}${me ? " · " + fmtDist(dist(me, r.at)) : ""}</div></span></button>`).join("") || '<button type="button" disabled><span class="s">No places found</span></button>';
+    $("#results").innerHTML = list.map((r, i) => rowHTML(r, i, "data-i", PIN_ICO)).join("") || '<p class="muted" style="padding:16px 4px">No places found. Try a different name or address.</p>';
+    wireFill();
     $("#results").hidden = false;
     document.querySelectorAll("#results [data-i]").forEach((b) => (b.onclick = () => showPlace(list[+b.dataset.i])));
   } catch { $("#results").innerHTML = '<button type="button" disabled><span class="s">Search is not reachable right now. Try again.</span></button>'; $("#results").hidden = false; }
@@ -1034,10 +1114,42 @@ setInterval(refreshSavedEta, 5 * 60000);
 document.querySelectorAll("[data-saved]").forEach((b) => (b.onclick = () => {
   const k = b.dataset.saved, s = saved();
   if (s[k]) { dest = { ...s[k], name: PNAME[k] }; planRoute(dest); return; }
-  pendingSave = k; $("#q").value = ""; $("#q").placeholder = `Search your ${PNAME[k].toLowerCase()} address`; $("#q").focus();
+  $("#q").value = ""; $("#q").focus(); pendingSave = k; $("#q").placeholder = `Search your ${PNAME[k].toLowerCase()} address`;
 }));
 // Tap the search box: Home, Work and recent places show right away (like Google)
+// ---- Full-screen search ----
+function enterSearch() { if (!document.body.classList.contains("searching")) { document.body.classList.add("searching"); closeSheet(); } showRecents(); }
+function exitSearch() { document.body.classList.remove("searching"); $("#results").hidden = true; $("#q").blur(); if (pendingSave) { pendingSave = null; $("#q").placeholder = "Search here"; } }
+$("#qBack").addEventListener("click", (e) => { e.preventDefault(); $("#q").value = ""; $("#qClear").style.display = "none"; exitSearch(); });
+const PIN_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#9aa0a6"/></svg>';
+const CLOCK_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#9aa0a6" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="#9aa0a6" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+const FILL_ICO = '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17V9.4L16.6 19 18 17.6 8.4 8H16V6H5v11z" fill="currentColor"/></svg>';
+function rowHTML(r, i, attr, icon) {
+  const d = me ? fmtDist(dist(me, r.at)) : "";
+  return `<button type="button" class="rrow" ${attr}="${i}" style="animation-delay:${Math.min(i, 8) * 18}ms"><span class="ic">${icon}${d ? `<span>${d}</span>` : ""}</span><span class="tx"><div class="t">${esc(r.label || r.name)}</div><div class="s">${esc(r.label ? r.name : r.line)}</div></span><span class="fill" data-fill="${esc(r.name)}" role="button" aria-label="Search ${esc(r.name)}">${FILL_ICO}</span></button>`;
+}
+function wireFill() {
+  document.querySelectorAll("#results [data-fill]").forEach((f) => (f.onclick = (e) => { e.stopPropagation(); $("#q").value = f.dataset.fill; $("#qClear").style.display = "block"; $("#q").focus(); search(false); }));
+}
 function showRecents() {
+  if (!document.body.classList.contains("searching")) return;
+  if ($("#q").value.trim()) return;
+  const s = saved(), recents = store.get("recents", []), car = store.get("parked", null);
+  const SC = { home: '<path d="M12 3 2.5 11h2.8v9h5.2v-6h3v6h5.2v-9h2.8z" fill="#8ab4f8"/>', work: '<path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4z" fill="#8ab4f8"/>' };
+  const cuts = ["home", "work"].map((k) => `<button class="scut" type="button" data-sc="${k}"><i><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">${SC[k]}</svg></i><span><b>${PNAME[k]}</b><small>${s[k] ? esc(s[k].name) : "Set location"}</small></span></button>`).join("")
+    + (car ? `<button class="scut" type="button" data-sc="car"><i style="background:#1a73e8;color:#fff;font-weight:800">P</i><span><b>Parked car</b><small>${esc(car.where || "Saved spot")}</small></span></button>` : "");
+  $("#results").innerHTML = `<div class="scuts">${cuts}</div>${recents.length ? `<div class="rhead">Recent</div>${recents.map((r, i) => rowHTML(r, i, "data-ri", CLOCK_ICO)).join("")}` : '<p class="muted" style="padding:16px 4px">Search for a place or address.</p>'}`;
+  $("#results").hidden = false;
+  document.querySelectorAll("#results [data-sc]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.sc;
+    if (k === "car") { exitSearch(); parkedSheet(); return; }
+    if (s[k]) { exitSearch(); showPlace({ name: PNAME[k], line: s[k].name, at: s[k].at }); return; }
+    pendingSave = k; $("#q").placeholder = `Search your ${PNAME[k].toLowerCase()} address`; $("#q").focus();
+  }));
+  document.querySelectorAll("#results [data-ri]").forEach((b) => (b.onclick = () => showPlace(recents[+b.dataset.ri])));
+  wireFill();
+}
+function oldShowRecents() {
   if ($("#q").value.trim()) return;
   const s = saved(), recents = store.get("recents", []);
   const rows = [...["home", "work"].filter((k) => s[k]).map((k) => ({ ...s[k], label: PNAME[k], icon: k })), ...recents.map((r) => ({ ...r, icon: "recent" }))];
@@ -1048,7 +1160,7 @@ function showRecents() {
   $("#results").hidden = false;
   document.querySelectorAll("#results [data-ri]").forEach((b) => (b.onclick = () => { const r = rows[+b.dataset.ri]; showPlace({ name: r.label || r.name, line: r.label ? r.name : r.line, at: r.at }); }));
 }
-$("#q").addEventListener("focus", showRecents);
+$("#q").addEventListener("focus", enterSearch);
 $("#q").addEventListener("input", () => { if (!$("#q").value.trim()) showRecents(); });
 // Quick searches: gas, parking, coffee… nearest first, pinned on the map
 const CATS = { gas: ["gas station", "amenity:fuel", "Gas"], parking: ["parking", "amenity:parking", "Parking"], coffee: ["coffee", "amenity:cafe", "Coffee"],
@@ -1078,6 +1190,7 @@ document.querySelectorAll("[data-cat]").forEach((b) => (b.onclick = async () => 
 }));
 
 function showPlace(r) {
+  const ps = pendingSave; exitSearch(); pendingSave = ps;
   if (pendingSave) {
     const k = pendingSave; pendingSave = null; $("#q").placeholder = "Search here"; savePlace(k, r);
     r = { ...r, name: PNAME[k], line: r.name };
@@ -1088,12 +1201,22 @@ function showPlace(r) {
   el.innerHTML = '<svg viewBox="0 0 30 40"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#ea4335" stroke="#b31412" stroke-width="1.5"/><circle cx="15" cy="14" r="5" fill="#b31412"/></svg>';
   destMarker = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.at).addTo(map);
   map.flyTo({ center: r.at, zoom: 15.5, offset: [0, -60], duration: 800 });
-  openSheet(r.name, `${r.line ? `<div class="muted">${esc(r.line)}</div>` : ""}
-    <button class="btn primary" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>
-    ${inNYC(r.at[0], r.at[1]) ? '<button class="btn" type="button" id="parkNear">Can I park here?</button>' : ""}
-    ${PNAME[Object.keys(PNAME).find((k) => r.name === PNAME[k]) || ""] ? "" : '<div class="row"><button class="btn grow" type="button" data-sv="home">Save as Home</button><button class="btn grow" type="button" data-sv="work">Save as Work</button></div>'}`, "place");
+  const isSaved = Object.values(PNAME).includes(r.name);
+  openSheet(r.name, `${r.line ? `<div class="muted">${esc(r.line)}</div>` : ""}${me ? `<div class="muted">${fmtDist(dist(me, r.at))} away</div>` : ""}
+    <div class="pbtns">
+      <button class="pbtn main" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>
+      <button class="pbtn" type="button" id="goStart"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Start</button>
+      <button class="pbtn" type="button" id="goShare"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5l-1.4 1.4L13 4.8V15h-2V4.8L9.4 6.4 8 5l4-4zm4 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h3v2H6v11h12V10h-3V8h3a2 2 0 0 1 2 2z" fill="currentColor"/></svg>Share</button>
+      ${inNYC(r.at[0], r.at[1]) ? '<button class="pbtn" type="button" id="parkNear"><b style="font-weight:800">P</b>Parking</button>' : ""}
+    </div>
+    ${isSaved ? "" : '<div class="pbtns"><button class="pbtn" type="button" data-sv="home">Save as Home</button><button class="pbtn" type="button" data-sv="work">Save as Work</button></div>'}`, "place");
   document.querySelectorAll("[data-sv]").forEach((b) => (b.onclick = () => { savePlace(b.dataset.sv, r); b.textContent = `Saved as ${PNAME[b.dataset.sv]} ✓`; }));
   $("#goDir").onclick = () => planRoute(r);
+  $("#goStart").onclick = async () => { unlockVoice(); await planRoute(r); if (route && sheetMode === "route") startNav(false); };
+  $("#goShare").onclick = async () => {
+    const url = `https://www.google.com/maps/search/?api=1&query=${r.at[1]},${r.at[0]}`, text = `${r.name}${r.line ? " — " + r.line : ""}`;
+    try { if (navigator.share) await navigator.share({ title: r.name, text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); $("#goShare").lastChild.textContent = "Copied"; } } catch {}
+  };
   $("#parkNear")?.addEventListener("click", () => parkCheck(r.at, true));
 }
 $("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeholder = "Where to?"; $("#q").focus(); } };
@@ -1219,30 +1342,41 @@ async function planRoute(to) {
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
   drawRoute();
   const b = new maplibregl.LngLatBounds(); routeAlts.forEach((R) => R.coords.forEach((c) => b.extend(c)));
-  map.fitBounds(b, { padding: { top: 140, bottom: 280, left: 50, right: 70 }, duration: 700 });
+  map.fitBounds(b, { padding: { top: 150, bottom: Math.round(innerHeight * 0.48), left: 50, right: 60 }, duration: 800 });
   routeSheet(to);
 }
 function pickRoute(R, to) { route = R; drawRoute(); routeSheet(to); }
+// Time bubbles on each route option, like Google ("13 min")
+let routeBubbles = [];
+function paintBubbles() {
+  routeBubbles.forEach((m) => m.remove()); routeBubbles = [];
+  if (nav.active || routeAlts.length < 1 || sheetMode !== "route") return;
+  routeAlts.forEach((R, i) => {
+    const el = document.createElement("div"); el.className = "rbub" + (R === route ? " sel" : ""); el.textContent = fmtMin(R.duration);
+    el.onclick = (e) => { e.stopPropagation(); if (nav.dest) pickRoute(R, nav.dest); };
+    const at = pointAt(R, R.total * (0.35 + 0.15 * i));
+    routeBubbles.push(new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -6] }).setLngLat(at).addTo(map));
+  });
+}
 function routeSheet(to) {
   nav.dest = to;
-  const a = avoid();
-  const opts = routeAlts.length > 1 ? `<div class="ropts">${routeAlts.map((R, i) => `<button type="button" data-ro="${i}" aria-pressed="${R === route}"><b>${fmtMin(R.duration)}</b><span>${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span>${i === 0 ? '<em>Fastest</em>' : ""}</button>`).join("")}</div>` : "";
-  const sp = route.camsOnRoute.filter((c) => c.type === "speed").length, rl = route.camsOnRoute.length - sp;
-  openSheet(to.name, `
-    <div class="stats"><span class="big" style="color:#81c995">${fmtMin(route.duration)}</span><span class="muted">${fmtDist(route.distance)} · arrive ${clock(route.duration)}</span></div>
+  const a = avoid(), sp = route.camsOnRoute.filter((c) => c.type === "speed").length, rl = route.camsOnRoute.length - sp;
+  const best = Math.min(...routeAlts.map((R) => R.duration));
+  document.body.classList.add("routing"); $("#dirTo span").textContent = to.name;
+  openSheet("Drive", `
+    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button></div>
+    ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
+    <div class="rlist">${routeAlts.map((R, i) => { const extra = Math.round((R.duration - best) / 60);
+      return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
       ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
-    ${opts}
-    <div class="row avoid"><label><input type="checkbox" id="avTolls" ${a.tolls ? "checked" : ""}> Avoid tolls</label><label><input type="checkbox" id="avHwy" ${a.highways ? "checked" : ""}> Avoid highways</label></div>
-    ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
-    <div class="row"><button class="btn green grow" type="button" id="startNav">Start</button><button class="btn" type="button" id="simNav">Test drive</button></div>
-    <div class="row" style="align-items:center;justify-content:space-between"><label class="muted" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="voiceT" ${voiceOn ? "checked" : ""}> Voice guidance</label><button type="button" class="btn" id="voicePick" style="padding:6px 12px;font-size:13px">Voice: ${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</button></div>
-    <p class="note">Test drive plays the trip on the map so you can hear the turn and camera warnings from home. Keep the app open while driving.</p>`, "route");
-  $("#voiceT").onchange = (e) => { voiceOn = e.target.checked; store.set("voice", voiceOn); };
-  $("#voicePick").onclick = voiceSheet;
+    <div class="row" style="align-items:center"><button class="startbtn" type="button" id="startNav"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Start</button><button class="btn" type="button" id="simNav">Test drive</button><button type="button" class="btn" id="voicePick" style="margin-left:auto;padding:8px 12px;font-size:13px">🔊 ${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</button></div>
+    <p class="note">Test drive plays the trip so you can hear turn and camera warnings from home. Keep the app open while driving.</p>`, "route");
+  paintBubbles();
   document.querySelectorAll("[data-ro]").forEach((b) => (b.onclick = () => pickRoute(routeAlts[+b.dataset.ro], to)));
-  const setAvoid = () => { store.set("avoid", { tolls: $("#avTolls").checked, highways: $("#avHwy").checked }); planRoute(to); };
-  $("#avTolls").onchange = setAvoid; $("#avHwy").onchange = setAvoid;
+  const flip = (k) => { const v = avoid(); v[k] = !v[k]; store.set("avoid", v); planRoute(to); };
+  $("#avTolls").onclick = () => flip("tolls"); $("#avHwy").onclick = () => flip("highways");
+  $("#voicePick").onclick = voiceSheet;
   $("#startNav").onclick = () => startNav(false);
   $("#simNav").onclick = () => startNav(true);
 }
@@ -1258,6 +1392,7 @@ function startNav(sim) {
   $("#sheet").classList.remove("show"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
   routeAlts = [route]; drawRoute(); // only the chosen route while driving
+  document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = [];
   try { navigator.wakeLock?.request("screen").then((l) => (nav.lock = l)).catch(() => {}); } catch {}
   if (sim) {
     let d = 0; const v = 20; // about 45 mph; GPS-like updates once a second
@@ -1306,7 +1441,7 @@ map.on("dragstart", () => { if (nav.active) { nav.follow = false; $("#recenter")
 $("#recenter").onclick = () => { nav.follow = true; $("#recenter").classList.remove("on"); startAnim(); };
 $("#navCompass").onclick = () => { nav.northUp = !nav.northUp; nav.follow = true; $("#recenter").classList.remove("on"); startAnim(); };
 map.on("rotate", () => { $("#navCompass svg").style.transform = `rotate(${-map.getBearing()}deg)`; });
-function paintMute() { const b = $("#navMute"); b.setAttribute("aria-label", voiceOn ? "Mute voice" : "Unmute voice"); b.style.color = voiceOn ? "#e8eaed" : "#e5484d"; b.querySelector(".wave").style.display = voiceOn ? "" : "none"; b.querySelector(".slash").style.display = voiceOn ? "none" : ""; }
+function paintMute() { const b = $("#navMute"); b.setAttribute("aria-label", voiceOn ? "Mute voice" : "Unmute voice"); b.style.color = voiceOn ? "#3c4043" : "#d93025"; b.querySelector(".wave").style.display = voiceOn ? "" : "none"; b.querySelector(".slash").style.display = voiceOn ? "none" : ""; }
 $("#navMute").onclick = () => { voiceOn = !voiceOn; store.set("voice", voiceOn); if (!voiceOn) stopVoice(); paintMute(); };
 paintMute();
 $("#navOv").onclick = () => {
