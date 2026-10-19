@@ -221,13 +221,22 @@ function check(coords, steps) {
 // ---------- the truck route ----------
 async function osrm(points, keepIdx) {
   const coords = points.map((x) => `${x.p[0].toFixed(6)},${x.p[1].toFixed(6)}`).join(";");
-  const bearings = points.map((x, i) => (x.brg != null && !keepIdx.includes(i) ? `${x.brg},50` : "")).join(";");
-  const radiuses = points.map((x, i) => (keepIdx.includes(i) ? "unlimited" : "40")).join(";");
-  const url = `${OSRM}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&annotations=maxspeed&continue_straight=true&bearings=${bearings}&radiuses=${radiuses}&waypoints=${keepIdx.join(";")}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  const j = await r.json();
-  if (j.code !== "Ok" || !j.routes?.length) throw new Error(j.code || "no route");
-  return normalize(j.routes[0], points.length, keepIdx);
+  const base = `${OSRM}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&annotations=maxspeed`;
+  const hasVia = points.some((x, i) => x.brg != null && !keepIdx.includes(i));
+  const bearings = points.map((x, i) => (x.brg != null && !keepIdx.includes(i) ? `${Math.round(x.brg) % 360},60` : "")).join(";");
+  // Try with direction hints first; if the engine rejects any option, retry simpler (legs are merged below either way)
+  const tries = [hasVia ? `${base}&continue_straight=true&bearings=${bearings}` : null, `${base}&continue_straight=true`, base].filter(Boolean);
+  let last = "NoRoute";
+  for (const url of tries) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      const j = await r.json();
+      if (j.code === "Ok" && j.routes?.length) return normalize(j.routes[0], points.length, keepIdx);
+      last = j.code || `HTTP ${r.status}`;
+      if (j.code === "NoRoute" || j.code === "NoSegment") break; // a simpler request won't help
+    } catch (e) { last = e.message; }
+  }
+  throw new Error(last);
 }
 // One leg per real stop (via points are silent even if the engine split legs at them)
 function normalize(rt, n, keepIdx) {

@@ -1445,6 +1445,9 @@ async function getJSON(url, ms = 12000, tries = 2) {
 }
 async function fetchRoutes(from, to, alts = true, via = null) {
   if (truckOn()) return fetchTruckRoutes(from, to, via);
+  return fetchCarRoutes(from, to, alts, via);
+}
+async function fetchCarRoutes(from, to, alts = true, via = null) {
   const a = avoid(), ex = [a.tolls && "toll", a.highways && "motorway"].filter(Boolean).join(",");
   const pts = [from, via, to].filter(Boolean).map((c) => `${c[0]},${c[1]}`).join(";");
   const base = `https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true&annotations=maxspeed${alts && !via ? "&alternatives=2" : ""}`;
@@ -2304,18 +2307,27 @@ function truckSheet(then) {
 }
 async function fetchTruckRoutes(from, to, via) {
   const pts = [from, via, to].filter(Boolean).map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join(";");
-  const r = await fetch(`/api/truck/route?pts=${pts}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(40000) : undefined });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || "No truck route");
-  const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
-  return [R];
+  try {
+    const r = await fetch(`/api/truck/route?pts=${pts}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(40000) : undefined });
+    const j = await r.json();
+    if (!r.ok || !j.routes?.[0]) throw new Error(j.error || "No truck route");
+    const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
+    return [R];
+  } catch (e) {
+    // Never leave the driver without directions: give the normal route, clearly marked as not truck-checked
+    window.reportError2?.("truck route: " + (e.message || e));
+    const list = await fetchCarRoutes(from, to, false, via);
+    list.forEach((R) => (R.truck = { verdict: "unchecked", reason: e.message || "" }));
+    return list;
+  }
 }
 function truckCard(R) {
   const c = R?.truck; if (!c) return "";
   const t = truck(), mi = (m) => (m / 1609 < 0.1 ? `${Math.round(m * 3.281)} ft` : `${(m / 1609).toFixed(1)} mi`);
   const asOf = c.asOf ? new Date(c.asOf + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
   let head;
-  if (c.verdict === "outside") head = `<div class="alert warn"><b>Outside NYC</b>The NYC truck route check only covers the five boroughs. Follow posted truck signs.</div>`;
+  if (c.verdict === "unchecked") head = `<div class="alert stop"><b>⚠️ Truck route not verified</b>Rova couldn't check this route against NYC truck routes right now${c.reason ? ` (${esc(c.reason)})` : ""}. This is the regular route: follow posted truck route signs.</div>`;
+  else if (c.verdict === "outside") head = `<div class="alert warn"><b>Outside NYC</b>The NYC truck route check only covers the five boroughs. Follow posted truck signs.</div>`;
   else if (c.verdict === "ok") head = `<div class="alert go"><b>✅ Stays on NYC truck routes</b>${c.pctOnNetwork}% on the official network${c.endsOffNetwork ? ` · ${mi(c.endsOffNetwork)} at the start/end to reach your stop (allowed: most direct route)` : ""}.</div>`;
   else head = `<div class="alert stop"><b>⚠️ Not fully on truck routes</b>${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
   return `<div class="truckbox">${head}
