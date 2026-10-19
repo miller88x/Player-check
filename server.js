@@ -13,6 +13,8 @@ const auth = require("./auth");
 const tts = require("./tts");
 const trips = require("./trips");
 
+const zlib = require("zlib");
+const crypto = require("crypto");
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
 const DATASET = "https://data.cityofnewyork.us/resource/nc67-uf89.json"; // Open Parking and Camera Violations
@@ -50,6 +52,7 @@ async function geocode(text) {
     if (f) hit = { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
   } catch {}
   geoCache.set(text, hit);
+  if (geoCache.size > 50000) geoCache.delete(geoCache.keys().next().value);
   return hit;
 }
 
@@ -184,10 +187,45 @@ function readBody(req) {
   });
 }
 
-function send(res, code, body, type = "application/json") {
-  res.writeHead(code, { "Content-Type": type, "Cache-Control": "no-store" });
-  res.end(type === "application/json" ? JSON.stringify(body) : body);
+// Compress anything over 1 KB (brotli, else gzip): phones on LTE get pages and data far faster
+function compress(buf, req) {
+  const ae = String(req?.headers["accept-encoding"] || "");
+  if (buf.length < 1024) return { buf, enc: null };
+  if (/\bbr\b/.test(ae)) return { buf: zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }), enc: "br" };
+  if (/\bgzip\b/.test(ae)) return { buf: zlib.gzipSync(buf, { level: 6 }), enc: "gzip" };
+  return { buf, enc: null };
 }
+function send(res, code, body, type = "application/json", cache = "no-store") {
+  const raw = Buffer.isBuffer(body) ? body : Buffer.from(type === "application/json" ? JSON.stringify(body) : String(body));
+  const { buf, enc } = compress(raw, res.req);
+  res.writeHead(code, { "Content-Type": type, "Cache-Control": cache, Vary: "Accept-Encoding", "Content-Length": buf.length, ...(enc ? { "Content-Encoding": enc } : {}) });
+  res.end(buf);
+}
+// The app page: read once at startup, pre-compressed, with an ETag so repeat opens download nothing
+const PAGE = (() => {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, "index.html"));
+    return { raw, br: zlib.brotliCompressSync(raw), gz: zlib.gzipSync(raw, { level: 9 }), etag: `"${crypto.createHash("sha1").update(raw).digest("hex").slice(0, 16)}"` };
+  } catch { return null; }
+})();
+function sendPage(req, res) {
+  if (!PAGE) return send(res, 500, "Missing index.html", "text/plain");
+  const h = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", ETag: PAGE.etag, Vary: "Accept-Encoding" };
+  if (req.headers["if-none-match"] === PAGE.etag) { res.writeHead(304, h); return res.end(); }
+  const ae = String(req.headers["accept-encoding"] || ""), enc = /\bbr\b/.test(ae) ? "br" : /\bgzip\b/.test(ae) ? "gzip" : null;
+  const buf = enc === "br" ? PAGE.br : enc === "gzip" ? PAGE.gz : PAGE.raw;
+  res.writeHead(200, { ...h, "Content-Length": buf.length, ...(enc ? { "Content-Encoding": enc } : {}) });
+  res.end(buf);
+}
+// Small time-limited cache with a size cap (oldest dropped first)
+function ttlCache(max, ms) {
+  const m = new Map();
+  return {
+    get(k) { const e = m.get(k); if (!e) return; if (Date.now() - e.at > ms) { m.delete(k); return; } return e.v; },
+    set(k, v) { m.delete(k); m.set(k, { v, at: Date.now() }); if (m.size > max) m.delete(m.keys().next().value); },
+  };
+}
+const ticketCache = ttlCache(3000, 3 * 60 * 1000); // same plate checked again within 3 min: instant
 
 http
   .createServer(async (req, res) => {
@@ -198,7 +236,10 @@ http
       const state = (url.searchParams.get("state") || "NY").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
       if (plate.length < 2 || plate.length > 8) return send(res, 400, { error: "Enter a plate with 2 to 8 letters or numbers." });
       try {
-        return send(res, 200, await lookup(plate, state));
+        const key = `${plate}|${state}`;
+        let out = ticketCache.get(key);
+        if (!out) { out = await lookup(plate, state); ticketCache.set(key, out); }
+        return send(res, 200, out);
       } catch (e) {
         return send(res, 502, { error: "Couldn't reach NYC ticket records. Try again in a minute." });
       }
@@ -207,7 +248,7 @@ http
     if (url.pathname.startsWith("/api/cameras/area") && uscams.routes(url, res, send)) return;
     if (url.pathname === "/api/cameras") {
       const c = cameras.state;
-      return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] });
+      return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, cameras: c.status === "ready" ? c.cameras : [] }, "application/json", c.status === "ready" ? "public, max-age=3600" : "no-store");
     }
     // App error reports from phones (last 100), to find bugs that only happen on real devices
     if (url.pathname === "/api/log") {
@@ -238,12 +279,14 @@ http
         res.writeHead(200, { "Content-Type": url.pathname.endsWith(".jpg") ? "image/jpeg" : "image/png", "Cache-Control": "public, max-age=604800" }); res.end(b);
       });
     }
+    if (url.pathname === "/sw.js") {
+      return fs.readFile(path.join(__dirname, "sw.js"), (err, b) => (err ? send(res, 404, "Not found", "text/plain") : send(res, 200, b, "application/javascript; charset=utf-8", "no-cache")));
+    }
     if (url.pathname === "/manifest.json") {
       return send(res, 200, JSON.stringify({ name: "Rova", short_name: "Rova", start_url: "/", display: "standalone", orientation: "portrait",
         background_color: "#202124", theme_color: "#202124", icons: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] }), "application/manifest+json");
     }
-    const file = path.join(__dirname, "index.html");
-    fs.readFile(file, (err, html) => (err ? send(res, 500, "Missing index.html", "text/plain") : send(res, 200, html, "text/html; charset=utf-8")));
+    sendPage(req, res);
   })
   .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); });
 alerts.init(lookup);

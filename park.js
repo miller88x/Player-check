@@ -158,18 +158,35 @@ function suspensionNote(rules, now) {
   return k ? ` Street cleaning is suspended ${k === 1 ? "tomorrow" : DAYNAME[DAYS[(now.day + k) % 7]]} (${ASP_SUSPENDED[now.dates[k]]}).` : "";
 }
 
+// Signs barely change, so cache them by 300 ft grid cell for 12 hours: repeat checks nearby are instant
+// and the city's servers see far fewer requests. Each cell fetches its area plus a margin.
+const CELL = 300, MARGIN = 300, cellCache = new Map(), cellBusy = new Map();
+async function cellRows(cx, cy) {
+  const key = `${cx}|${cy}`, hit = cellCache.get(key);
+  if (hit && Date.now() - hit.at < 12 * 3600e3) return hit.rows;
+  if (cellBusy.has(key)) return cellBusy.get(key);
+  const x0 = cx * CELL - MARGIN, x1 = (cx + 1) * CELL + MARGIN, y0 = cy * CELL - MARGIN, y1 = (cy + 1) * CELL + MARGIN;
+  const p = (async () => {
+    const params = new URLSearchParams({
+      $select: "on_street,from_street,to_street,side_of_street,sign_x_coord,sign_y_coord,sign_description,arrow_direction",
+      $where: `record_type='Current' AND sign_x_coord between ${x0} and ${x1} AND sign_y_coord between ${y0} and ${y1}`,
+      $limit: "5000",
+    });
+    const res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`signs ${res.status}`);
+    const rows = (await res.json()).map((r) => ({ ...r, x: +r.sign_x_coord, y: +r.sign_y_coord })).filter((r) => r.x && r.y);
+    cellCache.set(key, { at: Date.now(), rows });
+    if (cellCache.size > 4000) cellCache.delete(cellCache.keys().next().value);
+    return rows;
+  })().finally(() => cellBusy.delete(key));
+  cellBusy.set(key, p);
+  return p;
+}
 async function signsNear(lat, lng, radiusFt = 260) {
   const [x, y] = toStatePlane(lat, lng);
-  const params = new URLSearchParams({
-    $select: "on_street,from_street,to_street,side_of_street,sign_x_coord,sign_y_coord,sign_description,arrow_direction",
-    $where: `record_type='Current' AND sign_x_coord between ${Math.round(x - radiusFt)} and ${Math.round(x + radiusFt)} AND sign_y_coord between ${Math.round(y - radiusFt)} and ${Math.round(y + radiusFt)}`,
-    $limit: "400",
-  });
-  const res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`signs ${res.status}`);
-  const rows = await res.json();
-  return rows.map((r) => ({ ...r, x: +r.sign_x_coord, y: +r.sign_y_coord, dist: Math.hypot(+r.sign_x_coord - x, +r.sign_y_coord - y) }))
-    .filter((r) => r.x && r.y).sort((a, b) => a.dist - b.dist);
+  const rows = await cellRows(Math.floor(x / CELL), Math.floor(y / CELL));
+  return rows.map((r) => ({ ...r, dist: Math.hypot(r.x - x, r.y - y) }))
+    .filter((r) => Math.abs(r.x - x) <= radiusFt && Math.abs(r.y - y) <= radiusFt).sort((a, b) => a.dist - b.dist);
 }
 
 const SIDES = { N: "north", S: "south", E: "east", W: "west" };

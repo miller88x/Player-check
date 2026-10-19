@@ -11,8 +11,12 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" href="/icon-512.png">
 <link rel="manifest" href="/manifest.json">
-<title>Plate Check</title>
+<title>Rova</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://unpkg.com">
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
+<link rel="preconnect" href="https://router.project-osrm.org" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Figtree:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -430,6 +434,7 @@ body.navigating #recenter.on{display:grid!important}
   window.addEventListener("unhandledrejection", (e) => report(e.reason?.message || e.reason, e.reason?.stack));
   window.reportError2 = report;
 })();
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -1367,14 +1372,22 @@ function buildRoute(r, from) {
   return R;
 }
 const avoid = () => store.get("avoid", { tolls: false, highways: false });
+async function getJSON(url, ms = 12000, tries = 2) {
+  let err;
+  for (let i = 0; i < tries; i++) {
+    try { const r = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined }); return await r.json(); }
+    catch (e) { err = e; }
+  }
+  throw err;
+}
 async function fetchRoutes(from, to, alts = true, via = null) {
   const a = avoid(), ex = [a.tolls && "toll", a.highways && "motorway"].filter(Boolean).join(",");
   const pts = [from, via, to].filter(Boolean).map((c) => `${c[0]},${c[1]}`).join(";");
   const base = `https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true&annotations=maxspeed${alts && !via ? "&alternatives=2" : ""}`;
-  let j = await (await fetch(base + (ex ? `&exclude=${ex}` : ""))).json();
+  let j = await getJSON(base + (ex ? `&exclude=${ex}` : ""));
   let avoidFailed = false;
-  if (ex && j.code !== "Ok") { j = await (await fetch(base)).json(); avoidFailed = true; } // route engine can't avoid here: fall back
-  if (j.code !== "Ok") j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true`)).json(); // plain request as a last resort
+  if (ex && j.code !== "Ok") { j = await getJSON(base); avoidFailed = true; } // route engine can't avoid here: fall back
+  if (j.code !== "Ok") j = await getJSON(`https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true`); // plain request as a last resort
   if (j.code !== "Ok" || !j.routes?.length) throw new Error("No route");
   const list = j.routes.map((r) => buildRoute(r, from)).sort((x, y) => x.duration - y.duration);
   list.forEach((R) => (R.avoidFailed = avoidFailed));
