@@ -254,19 +254,27 @@ function check(coords, steps) {
 // ---------- the truck route ----------
 async function osrm(points, keepIdx) {
   const coords = points.map((x) => `${x.p[0].toFixed(6)},${x.p[1].toFixed(6)}`).join(";");
-  const base = `${OSRM}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&annotations=maxspeed`;
+  const core = `${OSRM}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
   const hasVia = points.some((x, i) => x.brg != null && !keepIdx.includes(i));
   const bearings = points.map((x, i) => (x.brg != null && !keepIdx.includes(i) ? `${Math.round(x.brg) % 360},60` : "")).join(";");
-  // Try with direction hints first; if the engine rejects any option, retry simpler (legs are merged below either way)
-  const tries = [hasVia ? `${base}&continue_straight=true&bearings=${bearings}` : null, `${base}&continue_straight=true`, base].filter(Boolean);
+  // From richest to plainest. If the engine rejects an option ("InvalidQuery"), drop it and try again.
+  const tries = [
+    hasVia ? `${core}&annotations=maxspeed&continue_straight=true&bearings=${bearings}` : null,
+    hasVia ? `${core}&continue_straight=true&bearings=${bearings}` : null,
+    `${core}&annotations=maxspeed&continue_straight=true`,
+    `${core}&annotations=maxspeed`,
+    `${core}&continue_straight=true`,
+    core,
+  ].filter(Boolean);
   let last = "NoRoute";
-  for (const url of tries) {
+  for (let k = 0; k < tries.length; k++) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      const j = await r.json();
+      const r = await fetch(tries[k], { signal: AbortSignal.timeout(15000) });
+      const j = await r.json().catch(() => ({ code: `HTTP ${r.status}` }));
       if (j.code === "Ok" && j.routes?.length) return normalize(j.routes[0], points.length, keepIdx);
-      last = j.code || `HTTP ${r.status}`;
-      if (j.code === "NoRoute" || j.code === "NoSegment") break; // a simpler request won't help
+      last = j.message ? `${j.code}: ${j.message}` : j.code || `HTTP ${r.status}`;
+      console.error("truck route engine:", last, "| try", k);
+      if (j.code === "NoRoute" || j.code === "NoSegment") break;
     } catch (e) { last = e.message; }
   }
   throw new Error(last);
