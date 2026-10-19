@@ -5,6 +5,9 @@ const rovers = new Map(); // id -> { lat, lng, heading, mph, joined, at }
 const rate = new Map();
 const STALE = 2 * 60 * 1000;
 const okId = (v) => typeof v === "string" && /^[a-z0-9]{12,24}$/.test(v);
+// Only known looks are accepted (no free text, so nothing offensive can show up on the map)
+const LOOK = { c: ["blue", "red", "green", "purple", "orange", "pink", "teal", "gold", "midnight"], f: ["smile", "grin", "cool", "wink", "sleepy", "wow"], h: ["none", "cap", "beanie", "phones", "crown", "halo"] };
+const cleanLook = (l) => (l && typeof l === "object" ? Object.fromEntries(Object.keys(LOOK).map((k) => [k, LOOK[k].includes(l[k]) ? l[k] : LOOK[k][0]])) : null);
 const num = (v, lo, hi) => (typeof v === "number" && isFinite(v) && v >= lo && v <= hi ? v : null);
 
 function sweep() { const t = Date.now(); for (const [k, r] of rovers) if (t - r.at > STALE) rovers.delete(k); }
@@ -29,7 +32,7 @@ function routes(url, res, send, readBody, req) {
       rovers.set(b.id, {
         lat: Math.round(lat * 1e4) / 1e4, lng: Math.round(lng * 1e4) / 1e4,
         heading: num(b.heading, 0, 360), mph: mph == null ? null : Math.round(mph / 5) * 5,
-        joined: num(b.joined, 1.6e12, Date.now() + 864e5), at: Date.now(),
+        joined: num(b.joined, 1.6e12, Date.now() + 864e5), look: cleanLook(b.look), at: Date.now(),
       });
       send(res, 200, { ok: true });
     }).catch(() => send(res, 400, { error: "bad body" }));
@@ -42,7 +45,7 @@ function routes(url, res, send, readBody, req) {
     for (const [k, r] of rovers) {
       if (k === me || t - r.at > STALE) continue;
       if (r.lat < s || r.lat > n || r.lng < w || r.lng > e) continue;
-      out.push({ k: k.slice(0, 6), lat: r.lat, lng: r.lng, heading: r.heading, mph: r.mph, joined: r.joined });
+      out.push({ k: k.slice(0, 6), lat: r.lat, lng: r.lng, heading: r.heading, mph: r.mph, joined: r.joined, look: r.look });
       if (out.length >= 80) break;
     }
     send(res, 200, { rovers: out });

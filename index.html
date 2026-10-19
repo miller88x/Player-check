@@ -186,6 +186,11 @@ body.navigating #recenter{background:#fff;color:#0b5e57;box-shadow:0 2px 8px rgb
 #navBottom{background:#fff!important;color:#202124}
 #navShare{padding:10px 0;font-size:15px;font-weight:600;border-radius:22px;width:100%;color:#1a73e8;background:#e8f0fe;border:0}
 #navShare.on{color:#fff;background:#188038}
+.rvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:8px}
+.rvopt{display:grid;place-items:center;gap:4px;padding:8px 4px;border-radius:12px;border:2px solid transparent;background:rgba(127,127,127,.12);color:inherit;font:600 12px var(--body);cursor:pointer}
+.rvopt[aria-pressed="true"]{border-color:#2f6bff;background:rgba(47,107,255,.14)}
+.rvopt i{width:30px;height:30px;border-radius:50%;display:block}
+.rvopt span{display:grid;line-height:1.2;text-align:center}.rvopt em{font-style:normal;font-size:10px;color:#f2c230;font-weight:700}
 .rover{cursor:pointer;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));transition:transform .15s}.rover:active{transform:scale(1.12)}
 #navMic.on{background:#d93025!important}#navMic.on rect{fill:#fff}#navMic.on path{stroke:#fff}
 #rxPark:empty,#rxWeather:empty{display:none}
@@ -405,6 +410,7 @@ body.navigating #recenter.on{display:grid!important}
     <button class="ltog" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
     <button class="ltog" type="button" data-layer="rovers"><svg width="16" height="17" viewBox="0 0 44 48" aria-hidden="true"><path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="#2f6bff"/></svg>Rovers</button>
     <button class="ltog" type="button" data-rshare aria-pressed="true"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#2f6bff"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2f6bff" stroke-width="2" opacity=".5"/></svg>Show me as a Rover</button>
+    <button class="ltog" type="button" data-myrover>🎨 Customize my Rover</button>
     <button class="ltog" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
   </div>
 </div>
@@ -476,7 +482,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
-const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen"];
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen", "roverLook"];
 let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -2133,11 +2139,51 @@ function towSheet() {
 
 // ================= ROVERS: other Rova drivers on the map =================
 // Real drivers only. Anonymous, rounded to ~10 m, shown while moving, gone 2 min after they stop sharing.
-const ROVER_SVG = `<svg viewBox="0 0 44 48" width="34" height="37" aria-hidden="true"><defs><linearGradient id="rvG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7fb0ff"/><stop offset=".55" stop-color="#2f6bff"/><stop offset="1" stop-color="#1638b8"/></linearGradient></defs>
-  <path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="url(#rvG)" stroke="#fff" stroke-width="2.5"/>
-  <path d="M22 9.5 30 25 22 21.5 14 25z" fill="#fff" opacity=".9"/>
-  <circle cx="16.5" cy="32" r="2.3" fill="#fff"/><circle cx="27.5" cy="32" r="2.3" fill="#fff"/><circle cx="17" cy="32.4" r="1.1" fill="#0b1d4a"/><circle cx="28" cy="32.4" r="1.1" fill="#0b1d4a"/>
-  <path d="M18 36.5c2.3 2 5.7 2 8 0" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+// ---- Rover looks: color, face, hat (premium items get a gentle tag, no paywall yet) ----
+const RV_COLORS = { blue: ["#7fb0ff", "#2f6bff", "#1638b8"], red: ["#ff9a8f", "#e5484d", "#a3171c"], green: ["#8fe3a6", "#1e9e5a", "#0d6a3a"], purple: ["#c9a6ff", "#8a4dff", "#5223b5"],
+  orange: ["#ffc58a", "#f08a24", "#b35a06"], pink: ["#ffb3d6", "#ef4e9b", "#a8185f"], teal: ["#8ee6e0", "#13a89e", "#0a6b65"], gold: ["#fff1a8", "#f2c230", "#b8860b"], midnight: ["#6b7a99", "#2a3550", "#0b1020"] };
+const EYES = '<circle cx="16.5" cy="32" r="2.3" fill="#fff"/><circle cx="27.5" cy="32" r="2.3" fill="#fff"/><circle cx="17" cy="32.4" r="1.1" fill="#0b1d4a"/><circle cx="28" cy="32.4" r="1.1" fill="#0b1d4a"/>';
+const SMILE = '<path d="M18 36.5c2.3 2 5.7 2 8 0" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>';
+const shut = (x) => `<path d="M${x - 2.4} 32.2c1.4 1.4 3.4 1.4 4.8 0" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>`;
+const RV_FACES = {
+  smile: EYES + SMILE,
+  grin: EYES + '<path d="M16.8 35.2h10.4a5.2 5.2 0 0 1-10.4 0z" fill="#fff"/>',
+  cool: '<path d="M12.5 29.3h19v2.3c0 2.2-1.6 3.8-3.8 3.8h-1.5c-1.7 0-3-1.1-3.4-2.7h-1.6c-.4 1.6-1.7 2.7-3.4 2.7h-1.5c-2.2 0-3.8-1.6-3.8-3.8z" fill="#0b1020"/><path d="M19 38c2 .9 4.6.6 6.6-.9" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>',
+  wink: shut(16.5) + '<circle cx="27.5" cy="32" r="2.3" fill="#fff"/><circle cx="28" cy="32.4" r="1.1" fill="#0b1d4a"/>' + SMILE,
+  sleepy: shut(16.5) + shut(27.5) + '<path d="M20 37.3h4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>',
+  wow: EYES + '<ellipse cx="22" cy="37.2" rx="2.4" ry="2.8" fill="#fff"/>',
+};
+const RV_HATS = {
+  none: "",
+  cap: '<path d="M13.5 5.5c0-6.5 4-10.5 8.5-10.5s8.5 4 8.5 10.5z" fill="#d93025"/><path d="M29 4h8.5a1.8 1.8 0 0 1 0 3.6H29z" fill="#a3171c"/><circle cx="22" cy="-5" r="1.4" fill="#a3171c"/>',
+  beanie: '<path d="M13 5.5c0-7.5 4-11.5 9-11.5s9 4 9 11.5z" fill="#13a89e"/><rect x="12" y="3" width="20" height="4.5" rx="2.2" fill="#0a6b65"/><circle cx="22" cy="-7.5" r="2.8" fill="#fff"/>',
+  phones: '<path d="M8.5 23c0-12.5 6-20.5 13.5-20.5S35.5 10.5 35.5 23" fill="none" stroke="#202124" stroke-width="2.8"/><rect x="5" y="19" width="6.5" height="10" rx="3" fill="#202124"/><rect x="32.5" y="19" width="6.5" height="10" rx="3" fill="#202124"/>',
+  crown: '<path d="M13 5 14.6-6.5l4.4 5 3-7.5 3 7.5 4.4-5L31 5z" fill="#f2c230" stroke="#b8860b" stroke-width="1.2" stroke-linejoin="round"/><circle cx="22" cy="0.5" r="1.6" fill="#e5484d"/>',
+  halo: '<ellipse cx="22" cy="-5.5" rx="9.5" ry="2.8" fill="none" stroke="#f2c230" stroke-width="2.4"/>',
+};
+const RV_PREMIUM = new Set(["gold", "midnight", "crown", "halo"]);
+const RV_NAMES = { blue: "Blue", red: "Red", green: "Green", purple: "Purple", orange: "Orange", pink: "Pink", teal: "Teal", gold: "Gold", midnight: "Midnight",
+  smile: "Smile", grin: "Grin", cool: "Cool", wink: "Wink", sleepy: "Sleepy", wow: "Wow", none: "None", cap: "Cap", beanie: "Beanie", phones: "Headphones", crown: "Crown", halo: "Halo" };
+const myLook = () => ({ c: "blue", f: "smile", h: "none", ...store.get("roverLook", {}) });
+function roverSVG(look = {}, w = 34) {
+  const c = RV_COLORS[look.c] ? look.c : "blue", [a, b, d] = RV_COLORS[c];
+  return `<svg viewBox="0 -12 44 60" width="${w}" height="${Math.round(w * 60 / 44)}" aria-hidden="true"><defs><linearGradient id="rv-${c}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset=".55" stop-color="${b}"/><stop offset="1" stop-color="${d}"/></linearGradient></defs>
+    <path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="url(#rv-${c})" stroke="#fff" stroke-width="2.5"/>
+    <path d="M22 9.5 30 25 22 21.5 14 25z" fill="#fff" opacity=".9"/>${RV_FACES[look.f] || RV_FACES.smile}${RV_HATS[look.h] || ""}</svg>`;
+}
+function roverSheet() {
+  const L = myLook();
+  const opt = (k, v, inner) => `<button type="button" class="rvopt" data-rk="${k}" data-rv="${v}" aria-pressed="${L[k] === v}" aria-label="${RV_NAMES[v]}">${inner}<span>${RV_NAMES[v]}${RV_PREMIUM.has(v) ? '<em>Premium</em>' : ""}</span></button>`;
+  openSheet("My Rover", `
+    <div style="display:grid;place-items:center;padding:6px 0 2px">${roverSVG(L, 96)}</div>
+    <div class="muted" style="text-align:center;font-size:14px;margin-top:-4px">This is how other drivers see you on the map</div>
+    <b>Color</b><div class="rvgrid">${Object.keys(RV_COLORS).map((v) => opt("c", v, `<i style="background:linear-gradient(135deg,${RV_COLORS[v][0]},${RV_COLORS[v][2]})"></i>`)).join("")}</div>
+    <b>Face</b><div class="rvgrid">${Object.keys(RV_FACES).map((v) => opt("f", v, roverSVG({ ...L, f: v, h: "none" }, 34))).join("")}</div>
+    <b>Hat</b><div class="rvgrid">${Object.keys(RV_HATS).map((v) => opt("h", v, roverSVG({ ...L, h: v }, 34))).join("")}</div>
+    <button class="ltog" type="button" data-rshare aria-pressed="${roverShare()}" style="justify-self:start">Show me as a Rover while driving</button>
+    <p class="note">Other drivers see your Rover, roughly where you are and your speed. Never your name or plate. You disappear when you park.</p>`, "rover");
+  document.querySelectorAll("[data-rk]").forEach((b) => (b.onclick = () => { const l = myLook(); l[b.dataset.rk] = b.dataset.rv; store.set("roverLook", l); lastPing = 0; roverSheet(); }));
+}
 const roverId = (() => { let id = store.get("roverId", null); if (!id) { id = rid(16); store.set("roverId", id); } return id; })();
 if (!store.get("roverJoined", null)) store.set("roverJoined", Date.now());
 const roverShare = () => store.get("roverShare", true);
@@ -2159,7 +2205,7 @@ function roverPing() {
   if (Date.now() - lastPing < 15000) return;
   lastPing = Date.now(); wasSharing = true;
   fetch("/api/rovers/ping", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: roverId, lat: me[1], lng: me[0], heading: heading ?? null, mph: Math.round(speedMps * 2.237), joined: store.get("roverJoined", Date.now()) }) }).catch(() => {});
+    body: JSON.stringify({ id: roverId, lat: me[1], lng: me[0], heading: heading ?? null, mph: Math.round(speedMps * 2.237), joined: store.get("roverJoined", Date.now()), look: myLook() }) }).catch(() => {});
 }
 async function loadRovers() {
   if (document.hidden) return;
@@ -2173,14 +2219,16 @@ async function loadRovers() {
       keep.add(v.k);
       let m = roverMarkers.get(v.k);
       if (!m) {
-        const el = document.createElement("div"); el.className = "rover"; el.innerHTML = ROVER_SVG; el.setAttribute("role", "button"); el.setAttribute("aria-label", "Rova driver");
+        const el = document.createElement("div"); el.className = "rover"; el.setAttribute("role", "button"); el.setAttribute("aria-label", "Rova driver");
         m = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([v.lng, v.lat]).addTo(map);
         roverMarkers.set(v.k, m);
       } else m.setLngLat([v.lng, v.lat]);
+      const lk = JSON.stringify(v.look || {}), el = m.getElement();
+      if (el.dataset.look !== lk) { el.dataset.look = lk; el.innerHTML = roverSVG(v.look || {}); }
       m.getElement().onclick = (e) => {
         e.stopPropagation(); roverPop?.remove();
         roverPop = new maplibregl.Popup({ offset: 34, closeButton: false, maxWidth: "240px" }).setLngLat([v.lng, v.lat])
-          .setHTML(`<div class="pop" style="text-align:center"><h3 style="margin:0 0 4px">Rover</h3><div class="meta">${joinedText(v.joined)}</div>${v.mph != null ? `<div class="meta">Speed: around ${v.mph} MPH</div>` : ""}</div>`).addTo(map);
+          .setHTML(`<div class="pop" style="text-align:center"><div style="display:grid;place-items:center">${roverSVG(v.look || {}, 44)}</div><h3 style="margin:4px 0">Rover</h3><div class="meta">${joinedText(v.joined)}</div>${v.mph != null ? `<div class="meta">Speed: around ${v.mph} MPH</div>` : ""}</div>`).addTo(map);
       };
     }
     for (const [k, m] of roverMarkers) if (!keep.has(k)) { m.remove(); roverMarkers.delete(k); }
@@ -2542,13 +2590,14 @@ function paintMe() {
 }
 $("#meBtn").onclick = () => accountSheet();
 $("#youBtn").onclick = () => accountSheet();
-document.addEventListener("click", (e) => { if (e.target.closest("[data-mycar]")) carSheet(); });
+document.addEventListener("click", (e) => { if (e.target.closest("[data-mycar]")) carSheet(); if (e.target.closest("[data-myrover]")) { $("#layers").hidden = true; roverSheet(); } });
 function accountSheet(mode) {
   if (account) {
     openSheet("Your account", `
       <div class="acct" style="cursor:default"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>Member since ${new Date(account.since).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</small></span></div>
       ${vehRow()}
       <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
+      <button class="btn" type="button" data-myrover>🎨 My Rover</button>
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
@@ -2569,7 +2618,8 @@ function accountSheet(mode) {
     </form>
     <p class="note">${signup ? "Free forever. Your plates, tickets and parked car follow you to any phone." : "Forgot your password? Password reset by email is coming soon."}</p>
     ${vehRow()}
-    <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>`, "account");
+    <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
+    <button class="btn" type="button" data-myrover>🎨 My Rover</button>`, "account");
   wireAcct();
   document.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => accountSheet(b.dataset.m)));
   $("#authF").onsubmit = async (e) => {
