@@ -2292,7 +2292,7 @@ const TRUCK_PRESETS = {
   straight: { name: "3-axle straight truck", h: 13.5, w: 33000, l: 30, ax: 3 },
   semi: { name: "Tractor-trailer", h: 13.5, w: 80000, l: 70, ax: 5 },
 };
-const truck = () => { const t = { on: false, kind: "box", ...TRUCK_PRESETS.box, hazmat: false, hzc: 3, ...store.get("truck", {}) }; if (!t.ax) t.ax = TRUCK_PRESETS[t.kind]?.ax || 2; return t; };
+const truck = () => { const t = { on: false, kind: "box", ...TRUCK_PRESETS.box, hazmat: false, hzc: 3, ...store.get("truck", {}) }; if (!t.ax || (t.ax === 2 && (TRUCK_PRESETS[t.kind]?.ax || 2) > 2 && !t.axSet)) t.ax = TRUCK_PRESETS[t.kind]?.ax || 2; return t; }; // trucks saved before axles existed got 2
 const HZ_CLASSES = { 1: "1 · Explosives", 2: "2 · Gases", 3: "3 · Flammable liquids", 4: "4 · Flammable solids", 5: "5 · Oxidizers", 6: "6 · Poisons", 7: "7 · Radioactive", 8: "8 · Corrosives", 9: "9 · Miscellaneous" };
 // Truck routing is a per-trip choice: the app always starts in car mode
 let truckTrip = false;
@@ -2320,7 +2320,7 @@ function truckSheet(then) {
   $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked, explosives: $("#tHz").checked && truck().explosives }); truckSheet(then); };
   $("#tHc")?.addEventListener("change", () => { store.set("truck", { ...truck(), hzc: +$("#tHc").value, explosives: +$("#tHc").value === 1 }); truckSheet(then); });
   $("#tSave").onclick = () => {
-    store.set("truck", { ...truck(), saved: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26, ax: +$("#tA").value || 2 });
+    store.set("truck", { ...truck(), saved: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26, ax: +$("#tA").value || 2, axSet: true });
     if (then) { truckTrip = true; paintTruckLayer(); then(); } else closeSheet();
   };
 }
