@@ -186,6 +186,7 @@ body.navigating #recenter{background:#fff;color:#0b5e57;box-shadow:0 2px 8px rgb
 #navBottom{background:#fff!important;color:#202124}
 #navShare{padding:10px 0;font-size:15px;font-weight:600;border-radius:22px;width:100%;color:#1a73e8;background:#e8f0fe;border:0}
 #navShare.on{color:#fff;background:#188038}
+.truckbox{display:grid;gap:8px}
 .rvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:8px}
 .rvopt{display:grid;place-items:center;gap:4px;padding:8px 4px;border-radius:12px;border:2px solid transparent;background:rgba(127,127,127,.12);color:inherit;font:600 12px var(--body);cursor:pointer}
 .rvopt[aria-pressed="true"]{border-color:#2f6bff;background:rgba(47,107,255,.14)}
@@ -410,6 +411,7 @@ body.navigating #recenter.on{display:grid!important}
     <button class="ltog" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
     <button class="ltog" type="button" data-layer="rovers"><svg width="16" height="17" viewBox="0 0 44 48" aria-hidden="true"><path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="#2f6bff"/></svg>Rovers</button>
     <button class="ltog" type="button" data-rshare aria-pressed="true"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#2f6bff"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2f6bff" stroke-width="2" opacity=".5"/></svg>Show me as a Rover</button>
+    <button class="ltog" type="button" data-truckmode>🚚 Truck mode</button>
     <button class="ltog" type="button" data-myrover>🎨 Customize my Rover</button>
     <button class="ltog" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
   </div>
@@ -1442,6 +1444,7 @@ async function getJSON(url, ms = 12000, tries = 2) {
   throw err;
 }
 async function fetchRoutes(from, to, alts = true, via = null) {
+  if (truckOn()) return fetchTruckRoutes(from, to, via);
   const a = avoid(), ex = [a.tolls && "toll", a.highways && "motorway"].filter(Boolean).join(",");
   const pts = [from, via, to].filter(Boolean).map((c) => `${c[0]},${c[1]}`).join(";");
   const base = `https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true&annotations=maxspeed${alts && !via ? "&alternatives=2" : ""}`;
@@ -1497,13 +1500,13 @@ function camsAlong(R) {
   return out.sort((a, b) => a.along - b.along);
 }
 async function planRoute(to) {
-  openSheet("Directions", '<p class="muted" style="margin:0">Finding your location and the fastest route…</p>', "route");
+  openSheet("Directions", `<p class="muted" style="margin:0">${truckOn() ? "Finding a route on NYC truck routes…" : "Finding your location and the fastest route…"}</p>`, "route");
   let from;
   try { from = await getMe(); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
   if (nav.stopFor !== to) { nav.stop = null; nav.stopFor = null; }
   try { routeAlts = await fetchRoutes(from, to.at, true, nav.stop?.at); route = routeAlts[0]; camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
-  catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
+  catch (e) { $("#sheetBody").innerHTML = `<div class="alert stop"><b>No route</b>${truckOn() ? esc(e.message || "Couldn't find a truck route there.") : "Couldn't find a driving route there. Try another place."}</div>`; return; }
   drawRoute();
   const b = new maplibregl.LngLatBounds(); routeAlts.forEach((R) => R.coords.forEach((c) => b.extend(c)));
   map.fitBounds(b, { padding: { top: 150, bottom: Math.round(innerHeight * 0.48), left: 50, right: 60 }, duration: 800 });
@@ -1528,7 +1531,8 @@ function routeSheet(to) {
   const best = Math.min(...routeAlts.map((R) => R.duration));
   document.body.classList.add("routing"); $("#dirTo span").textContent = to.name;
   openSheet("Drive", `
-    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button><button type="button" class="tchip" id="quietV" aria-pressed="${!chatty()}">${!chatty() ? "✓ " : ""}Fewer voice prompts</button></div>
+    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button><button type="button" class="tchip" id="quietV" aria-pressed="${!chatty()}">${!chatty() ? "✓ " : ""}Fewer voice prompts</button><button type="button" class="tchip" id="truckT" aria-pressed="${truckOn()}">${truckOn() ? "✓ " : ""}🚚 Truck</button></div>
+    ${truckCard(route)}<div id="truckLim"></div>
     ${nav.stop ? `<div class="note" style="display:flex;align-items:center;gap:10px">Stop on the way: <b>${esc(nav.stop.name)}</b><button type="button" class="tchip" id="rmStop" style="margin-left:auto">Remove</button></div>`
       : `<div class="tchips"><span class="muted" style="align-self:center;font-size:14px">Add a stop:</span>${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>`}
     ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
@@ -1545,6 +1549,8 @@ function routeSheet(to) {
   const flip = (k) => { const v = avoid(); v[k] = !v[k]; store.set("avoid", v); planRoute(to); };
   $("#avTolls").onclick = () => flip("tolls"); $("#avHwy").onclick = () => flip("highways");
   $("#quietV").onclick = () => { store.set("chatty", !chatty()); routeSheet(to); };
+  $("#truckT").onclick = () => { if (truckOn()) { store.set("truck", { ...truck(), on: false }); paintTruckLayer(); planRoute(to); } else truckSheet(() => planRoute(to)); };
+  truckLimits(route).catch(() => {});
   $("#rmStop")?.addEventListener("click", () => { nav.stop = null; nav.stopFor = null; planRoute(to); });
   document.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = () => stopSearch(b.dataset.stop, to)));
   $("#voicePick").onclick = voiceSheet;
@@ -1560,7 +1566,7 @@ function startNav(sim) {
   unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
   (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
   Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, hzSpoken: {}, wxSaid: 0, follow: true, t0: Date.now(), a0: 0, arrived: false, start: Date.now(), overWarned: 0, nightAt: Date.now() });
-  loadHazards(route); paintShare();
+  loadHazards(route); paintShare(); truckLimits(route).catch(() => {});
   routeWeather(route).then((w) => { if (w && nav.active && !nav.wxSaid) { nav.wxSaid = 1; setTimeout(() => speak(`Heads up. ${w.t} expected on your route around ${new Date(w.when).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`), 4000); } });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
@@ -1871,13 +1877,13 @@ function showHazard({ show: h, say }) {
   const t = HZ[h.type], box = $("#camAlert");
   box.style.display = "flex"; box.style.background = t.c; box.style.animation = "none";
   $("#camIco").textContent = h.e || t.e;
-  $("#camText").textContent = h.type === "weather" ? h.name : h.type === "limit" ? `Speed limit drops to ${h.v}` : h.type === "toll" && h.name ? `${h.name} ahead` : t.t;
+  $("#camText").textContent = h.type === "weather" || h.type === "clearance" ? h.name : h.type === "limit" ? `Speed limit drops to ${h.v}` : h.type === "toll" && h.name ? `${h.name} ahead` : t.t;
   $("#camDist").textContent = h.meters > 15 ? `${fmtDist(h.meters)} ahead` : "Now";
   $("#camLim").style.display = h.type === "limit" ? "block" : "none"; $("#camLim b").textContent = h.v || "";
   if (!say) return;
   nav.hzSpoken[`${say.type}${Math.round(say.along)}`] = 1;
   if (HZ[say.type].quiet && !chatty()) return;
-  speak(say.type === "limit" ? `Speed limit drops to ${say.v} ahead` : say.type === "school" ? "School zone ahead. Slow down" : (say.type === "toll" || say.type === "weather") && say.name ? `${say.name}` : HZ[say.type].t);
+  speak(say.type === "limit" ? `Speed limit drops to ${say.v} ahead` : say.type === "school" ? "School zone ahead. Slow down" : (say.type === "toll" || say.type === "weather" || say.type === "clearance") && say.name ? `${say.name}` : HZ[say.type].t);
 }
 
 // ---------- Add a stop along the route (gas, coffee, food, EV, parking) ----------
@@ -2261,6 +2267,116 @@ document.addEventListener("click", (e) => {
   store.set("roverShare", !roverShare()); t.setAttribute("aria-pressed", roverShare()); roverPing();
 });
 
+// ================= TRUCK MODE =================
+// Routes stay on NYC's official Truck Route Network (checked server-side), plus low-clearance / weight warnings.
+const TRUCK_PRESETS = {
+  van: { name: "Cargo van", h: 9, w: 9000, l: 20 },
+  box: { name: "Box truck", h: 13.5, w: 26000, l: 26 },
+  straight: { name: "3-axle straight truck", h: 13.5, w: 33000, l: 30 },
+  semi: { name: "Tractor-trailer", h: 13.5, w: 80000, l: 70 },
+};
+const truck = () => ({ on: false, kind: "box", ...TRUCK_PRESETS.box, hazmat: false, ...store.get("truck", {}) });
+const truckOn = () => truck().on;
+const ftIn = (ft) => `${Math.floor(ft)}'${Math.round((ft % 1) * 12)}"`;
+function truckSheet(then) {
+  const t = truck();
+  openSheet("My truck", `
+    <div class="rvgrid">${Object.entries(TRUCK_PRESETS).map(([k, p]) => `<button type="button" class="rvopt" data-tp="${k}" aria-pressed="${t.kind === k}"><span style="font-size:22px">${k === "van" ? "🚐" : k === "semi" ? "🚛" : "🚚"}</span><span>${p.name}</span></button>`).join("")}</div>
+    <div class="row" style="gap:10px;flex-wrap:wrap">
+      <label class="lb" style="flex:1;min-width:90px">Height (ft)<input class="inp" id="tH" type="number" step="0.25" min="6" max="16" value="${t.h}"></label>
+      <label class="lb" style="flex:1;min-width:90px">Weight (lb)<input class="inp" id="tW" type="number" step="500" min="3000" max="200000" value="${t.w}"></label>
+      <label class="lb" style="flex:1;min-width:90px">Length (ft)<input class="inp" id="tL" type="number" step="1" min="10" max="120" value="${t.l}"></label>
+    </div>
+    <label style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="tHz" ${t.hazmat ? "checked" : ""}> Carrying hazardous materials</label>
+    ${t.hazmat ? '<div class="alert warn"><b>Hazmat</b>NYC has separate hazmat routing rules and permits that Rova doesn\'t check yet. Follow your hazmat route plan.</div>' : ""}
+    ${t.kind === "van" ? '<div class="note">Cargo vans aren\'t "trucks" under NYC rules (2 axles, 4 tires), so they may use any street, but commercial vehicles are still banned from parkways. Rova warns if a route uses one.</div>' : ""}
+    ${t.w > 80000 || t.l > 65 ? '<div class="alert warn"><b>Check your permit</b>Over 80,000 lb or extra-long vehicles may need an NYC oversize / overweight permit.</div>' : ""}
+    <button class="btn primary" type="button" id="tSave">${t.on ? "Save" : "Turn on truck mode"}</button>
+    ${t.on ? '<button class="btn" type="button" id="tOff">Turn off truck mode</button>' : ""}
+    <p class="note">Truck mode keeps routes on NYC DOT's official Truck Route Network (Through routes when you're crossing a borough, Local routes for stops) and warns about low bridges and weight limits along the way.</p>`, "truck");
+  document.querySelectorAll("[data-tp]").forEach((b) => (b.onclick = () => { const p = TRUCK_PRESETS[b.dataset.tp]; store.set("truck", { ...truck(), kind: b.dataset.tp, h: p.h, w: p.w, l: p.l }); truckSheet(then); }));
+  $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked }); truckSheet(then); };
+  $("#tSave").onclick = () => {
+    store.set("truck", { ...truck(), on: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26 });
+    paintTruckLayer(); then ? then() : closeSheet();
+  };
+  $("#tOff")?.addEventListener("click", () => { store.set("truck", { ...truck(), on: false }); paintTruckLayer(); then ? then() : closeSheet(); });
+}
+async function fetchTruckRoutes(from, to, via) {
+  const pts = [from, via, to].filter(Boolean).map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join(";");
+  const r = await fetch(`/api/truck/route?pts=${pts}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(40000) : undefined });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "No truck route");
+  const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
+  return [R];
+}
+function truckCard(R) {
+  const c = R?.truck; if (!c) return "";
+  const t = truck(), mi = (m) => (m / 1609 < 0.1 ? `${Math.round(m * 3.281)} ft` : `${(m / 1609).toFixed(1)} mi`);
+  const asOf = c.asOf ? new Date(c.asOf + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  let head;
+  if (c.verdict === "outside") head = `<div class="alert warn"><b>Outside NYC</b>The NYC truck route check only covers the five boroughs. Follow posted truck signs.</div>`;
+  else if (c.verdict === "ok") head = `<div class="alert go"><b>✅ Stays on NYC truck routes</b>${c.pctOnNetwork}% on the official network${c.endsOffNetwork ? ` · ${mi(c.endsOffNetwork)} at the start/end to reach your stop (allowed: most direct route)` : ""}.</div>`;
+  else head = `<div class="alert stop"><b>⚠️ Not fully on truck routes</b>${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
+  return `<div class="truckbox">${head}
+    ${c.notes?.length ? `<div class="note">${c.notes.map(esc).join("<br>")}</div>` : ""}
+    <div class="muted" style="font-size:13px">🚚 ${esc(TRUCK_PRESETS[t.kind]?.name || "Truck")} · ${ftIn(t.h)} · ${t.w.toLocaleString()} lb · ${t.l} ft · <a href="#" id="tEdit">Edit</a></div>
+    <div class="note">Checked against NYC DOT's Truck Route Network${asOf ? ` (city data updated ${asOf})` : ""}. NYC changed truck routes in fall 2026; posted signs always win.</div></div>`;
+}
+
+// Truck route network on the map (Through = orange, Local = green, Limited Local = purple)
+let truckNetT = null;
+function paintTruckLayer() {
+  try {
+    if (!map.getSource("trucknet")) map.addSource("trucknet", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    if (!map.getLayer("trucknet-line")) map.addLayer({ id: "trucknet-line", type: "line", source: "trucknet", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": ["match", ["get", "t"], "Through", "#e8710a", "Limited Local", "#8a4dff", "#1e8e3e"], "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 16, 5], "line-opacity": 0.75 } },
+      map.getLayer("route-casing") ? "route-casing" : undefined);
+    const show = truckOn() && layerOn.trucknet !== false;
+    map.setLayoutProperty("trucknet-line", "visibility", show ? "visible" : "none");
+    if (!show || map.getZoom() < 11.5) return;
+    clearTimeout(truckNetT);
+    truckNetT = setTimeout(async () => {
+      const b = map.getBounds();
+      try { const j = await (await fetch(`/api/truck/network?w=${b.getWest().toFixed(4)}&s=${b.getSouth().toFixed(4)}&e=${b.getEast().toFixed(4)}&n=${b.getNorth().toFixed(4)}`)).json(); map.getSource("trucknet")?.setData(j); } catch {}
+    }, 400);
+  } catch (e) { window.reportError2?.("truck layer: " + e.message); }
+}
+map.on("style.load", paintTruckLayer);
+map.on("moveend", () => { if (truckOn()) paintTruckLayer(); });
+if (map.isStyleLoaded?.()) paintTruckLayer();
+
+// Low clearance / weight limit (OpenStreetMap maxheight / maxweight) vs. your truck
+function parseHeightFt(v) {
+  v = String(v || "").trim().toLowerCase(); if (!v || /none|default|below/.test(v)) return null;
+  let m = v.match(/(\d+)\s*'\s*(\d+(?:\.\d+)?)?\s*"?/); if (m) return +m[1] + (+m[2] || 0) / 12;
+  m = v.match(/^(\d+(?:\.\d+)?)\s*(m)?$/); if (m) return +m[1] * 3.281;
+  m = v.match(/^(\d+(?:\.\d+)?)\s*ft$/); if (m) return +m[1];
+  return null;
+}
+function parseWeightLb(v) {
+  v = String(v || "").trim().toLowerCase(); const m = v.match(/^(\d+(?:\.\d+)?)\s*(st|t|lbs?|tons?)?$/); if (!m) return null;
+  const n = +m[1]; return m[2] === "st" || m[2] === "tons" || m[2] === "ton" ? n * 2000 : /lb/.test(m[2] || "") ? n : n * 2204.6;
+}
+async function truckLimits(R) {
+  if (!truckOn() || !R || R.truckLimits) return; R.truckLimits = true;
+  const t = truck(), P = polyStr(R, 0, Math.min(R.total, 60000), 250);
+  const j = await overpassPost(`[out:json][timeout:20];(way["maxheight"](around:15,${P});node["maxheight"](around:15,${P});way["maxweight"](around:15,${P});node["maxweight"](around:15,${P}););out center 300;`);
+  for (const el of j?.elements || []) {
+    const tg = el.tags || {}, lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon; if (lat == null) continue;
+    const pr = project(R, [lng, lat], 0, true); if (pr.off > 25) continue;
+    const hft = parseHeightFt(tg.maxheight), wlb = parseWeightLb(tg.maxweight);
+    let h = null;
+    if (hft && hft < t.h + 0.25) h = { type: "clearance", along: Math.max(0, pr.along - 50), name: `Low clearance ${ftIn(hft)}. Your truck is ${ftIn(t.h)}`, e: "⛔" };
+    else if (wlb && wlb < t.w) h = { type: "clearance", along: Math.max(0, pr.along - 50), name: `Weight limit ${Math.round(wlb).toLocaleString()} lb. Your truck is ${t.w.toLocaleString()} lb`, e: "⚖️" };
+    if (h && !(R.hazards ||= []).some((x) => x.type === "clearance" && Math.abs(x.along - h.along) < 100)) { R.hazards.push(h); (R.limits ||= []).push(h); }
+  }
+  R.hazards?.sort((a, b) => a.along - b.along);
+  if (R.limits?.length && sheetMode === "route" && route === R) $("#truckLim").innerHTML = `<div class="alert stop"><b>Clearance / weight warnings on this route</b>${R.limits.map((h) => esc(h.name)).join("<br>")}</div>`;
+}
+HZ.clearance = { e: "⛔", t: "Low clearance ahead", warn: 900, c: "#d93025" };
+document.addEventListener("click", (e) => { if (e.target.closest("#tEdit")) { e.preventDefault(); truckSheet(() => nav.dest && planRoute(nav.dest)); } });
+
 // ================= IN-APP ALERTS =================
 // Compares what the city shows now with what this phone saw last time.
 // Same rules as the email alerts: new tickets, late penalties coming up, judgment, boot risk.
@@ -2608,7 +2724,7 @@ function paintMe() {
 }
 $("#meBtn").onclick = () => accountSheet();
 $("#youBtn").onclick = () => accountSheet();
-document.addEventListener("click", (e) => { if (e.target.closest("[data-mycar]")) carSheet(); if (e.target.closest("[data-myrover]")) { $("#layers").hidden = true; roverSheet(); } });
+document.addEventListener("click", (e) => { if (e.target.closest("[data-mycar]")) carSheet(); if (e.target.closest("[data-myrover]")) { $("#layers").hidden = true; roverSheet(); } if (e.target.closest("[data-truckmode]")) { $("#layers").hidden = true; truckSheet(); } });
 function accountSheet(mode) {
   if (account) {
     openSheet("Your account", `

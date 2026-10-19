@@ -13,6 +13,7 @@ const auth = require("./auth");
 const tts = require("./tts");
 const trips = require("./trips");
 const rovers = require("./rovers");
+const truck = require("./truck");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -257,6 +258,7 @@ http
       return send(res, 200, { errors: global.appLog || [] });
     }
     if (url.pathname.startsWith("/api/rovers") && rovers.routes(url, res, send, readBody, req)) return;
+    if (url.pathname.startsWith("/api/truck/") && truck.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/trip") && trips.routes(url, res, send, readBody, req)) return;
     if (/^\/t\/[a-z0-9]{8}$/.test(url.pathname)) return send(res, 200, trips.page(url.pathname.slice(3)), "text/html; charset=utf-8");
     if (url.pathname.startsWith("/api/tts") && tts.routes(url, res, send, req)) return;
@@ -290,5 +292,5 @@ http
     }
     sendPage(req, res);
   })
-  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); });
+  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); });
 alerts.init(lookup);
