@@ -106,6 +106,27 @@ function boroAt(p) {
   }
   return null;
 }
+// Road names written the same way for both data sources ("Brooklyn-Queens Expressway" = "BROOKLYN QUEENS EXPRESSWAY")
+const normName = (n) => String(n || "").toUpperCase().replace(/\bEXPY\b|\bEXPWY\b/g, "EXPRESSWAY").replace(/\bPKWY\b/g, "PARKWAY").replace(/\bBR\b|\bBRG\b/g, "BRIDGE")
+  .replace(/\bAVE?\b/g, "AVENUE").replace(/\bST\b/g, "STREET").replace(/\bBLVD\b/g, "BOULEVARD").replace(/Z+/g, "Z").replace(/[^A-Z0-9]/g, "");
+function nearSegNamed(p, maxM, name) {
+  const want = normName(name); if (!want || want.length < 5) return null;
+  let best = null;
+  const cx = Math.floor(p[0] / CELL), cy = Math.floor(p[1] / CELL), r = Math.ceil(maxM / 170), seen = new Set();
+  for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (const id of state.grid.get(`${cx + dx}|${cy + dy}`) || []) {
+    if (seen.has(id)) continue; seen.add(id);
+    const s = state.segs[id], sn = normName(s.street);
+    if (!(sn.includes(want) || want.includes(sn)) || sn.length < 5) continue;
+    for (const q of s.c) { const d = distM(p, q); if (d <= maxM && (!best || d < best.d)) best = { d, seg: s }; }
+    const c = s.c; // also distance to the line between vertices
+    for (let i = 1; i < c.length; i++) {
+      const A = c[i - 1], B = c[i], ax = (B[0] - A[0]) * KX, ay = (B[1] - A[1]) * KY, px = (p[0] - A[0]) * KX, py = (p[1] - A[1]) * KY;
+      const L = ax * ax + ay * ay, t = L ? Math.max(0, Math.min(1, (px * ax + py * ay) / L)) : 0, d = Math.hypot(px - t * ax, py - t * ay);
+      if (d <= maxM && (!best || d < best.d)) best = { d, seg: s };
+    }
+  }
+  return best;
+}
 function nearSeg(p, maxM) {
   let best = null;
   const cx = Math.floor(p[0] / CELL), cy = Math.floor(p[1] / CELL), r = Math.ceil(maxM / 170);
@@ -235,7 +256,11 @@ function check(coords, steps) {
     const b = boroAt(p);
     if (!b) { cur = null; continue; } // outside NYC, or over water on a bridge/tunnel
     nyc++; boros.add(b);
-    const hit = nearSeg(p, 28); // city centerlines and map roads can differ by a few meters on wide roads
+    // City maps draw one center line; real expressways and bridges have separate roadways up to ~50 m apart.
+    // So: close to any truck segment, or on a highway/bridge/tunnel truck segment with the same road name nearby.
+    let hit = nearSeg(p, 28);
+    if (!hit) { const nm = nameAt(d); if (nm) hit = nearSegNamed(p, 90, nm); }
+    if (!hit) { const h2 = nearSeg(p, 60); if (h2 && h2.seg.fast) hit = h2; }
     if (hit) { on++; if (cur && d - cur.to > 60) cur = null; used.set(hit.seg.type, (used.get(hit.seg.type) || 0) + 20); if (hit.seg.restr) restr.add(`${hit.seg.street}: ${hit.seg.restr}`); if (hit.seg.ltd) restr.add(`${hit.seg.street}: Limited Local (${hit.seg.ltd})`); continue; }
     const allowed = d < ALLOW || total - d < ALLOW;
     if (cur && cur.allowed === allowed && d - cur.to <= 60) { cur.to = Math.round(d + 20); continue; }
@@ -255,11 +280,13 @@ function check(coords, steps) {
 }
 
 // ---------- the truck route ----------
+const recentErrors = [];
+function logErr(m) { console.error(m); recentErrors.unshift({ t: new Date().toISOString(), m: String(m).slice(0, 300) }); recentErrors.length = Math.min(recentErrors.length, 20); }
 async function osrm(points, keepIdx) {
   const coords = points.map((x) => `${x.p[0].toFixed(6)},${x.p[1].toFixed(6)}`).join(";");
   for (const host of OSRM_HOSTS) {
     try { return await osrmOn(host, coords, points, keepIdx); }
-    catch (e) { if (e.final) throw e; console.error("route engine", host, e.message); }
+    catch (e) { if (e.final) throw e; logErr(`route engine ${host.split("/")[2]}: ${e.message}`); }
   }
   throw new Error("Route servers are busy. Try again in a minute.");
 }
@@ -378,7 +405,7 @@ function addRules(c, rt, veh, stops) {
 const ENTRY = [{ name: "George Washington Bridge (upper level)", p: [-73.9527, 40.8517] }, { name: "Goethals Bridge", p: [-74.1975, 40.6356] },
   { name: "Bayonne Bridge", p: [-74.1422, 40.6421] }, { name: "Outerbridge Crossing", p: [-74.2296, 40.5246] }, { name: "Throgs Neck Bridge", p: [-73.7942, 40.8007] }];
 async function truckRoute(stops, veh = {}) {
-  const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh).catch((e) => { console.error("TomTom:", e.message); return osrm(pts, keep); }) : osrm;
+  const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh).catch((e) => { logErr("TomTom: " + e.message); return osrm(pts, keep); }) : osrm;
   if (state.status !== "ready" && state.status !== "loading") build(); // nationwide routing works meanwhile; NYC check needs the city map
   const okBoros = new Set(stops.map(boroAt).filter(Boolean));
   const ban = banned(veh), banKeys = new Set(ban.map((c) => c.key));
@@ -439,7 +466,7 @@ async function truckRoute(stops, veh = {}) {
 
 function routes(url, res, send, readBody, req) {
   if (url.pathname === "/api/truck/status") {
-    send(res, 200, { status: state.status, error: state.error, asOf: state.asOf, builtAt: state.builtAt, stats: state.stats });
+    send(res, 200, { status: state.status, error: state.error, asOf: state.asOf, builtAt: state.builtAt, stats: state.stats, tomtom: !!TOMTOM_KEY, recentErrors });
     return true;
   }
   if (url.pathname === "/api/truck/network") {
