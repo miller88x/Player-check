@@ -136,7 +136,7 @@ function heapPop(h) {
   if (h.length) { h[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < h.length && h[l][0] < h[m][0]) m = l; if (r < h.length && h[r][0] < h[m][0]) m = r; if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } }
   return top;
 }
-function netPath(from, to, okBoros) {
+function netPath(from, to, okBoros, avoidRe) {
   const src = nearNodes(from, 1500), dst = nearNodes(to, 1500);
   if (!src.length || !dst.length) return null;
   const goal = new Map(dst.map((x) => [x.i, x.d]));
@@ -149,6 +149,7 @@ function netPath(from, to, okBoros) {
     if (goal.has(u) && d + goal.get(u) * 2 < endCost) { endCost = d + goal.get(u) * 2; end = u; }
     for (const id of state.adj[u]) {
       const s = state.segs[id], v = s.a === u ? s.b : s.a;
+      if (avoidRe && avoidRe.test(s.street)) continue; // tunnel/bridge this vehicle may not use
       // City rule: crossing a borough with no stop in it -> Through routes only
       let w = s.len * (s.type === "Through" ? 1 : s.type === "Local" ? 1.15 : 1.6) * (s.fast ? 0.6 : 1);
       if (s.type !== "Through" && s.boro && !okBoros.has(s.boro)) w *= 6;
@@ -181,6 +182,38 @@ function viaPoints(path, step) {
     acc += d;
   }
   return { pts: out, total: acc };
+}
+
+// ---------- crossings with official hazmat / height rules ----------
+// MTA: all hazmat prohibited in Queens-Midtown and Hugh L. Carey tunnels; both 12'1" high (mta.info).
+// Port Authority: hazmat restricted in Holland and Lincoln tunnels and on the GWB lower level.
+// FDNY (FMCSA hazmat route registry): explosives prohibited on the Verrazzano-Narrows Bridge.
+// "box" is the underwater/over-water part, so it's only matched where the route is outside every borough's land.
+const CROSSINGS = [
+  { key: "qmt", name: "Queens-Midtown Tunnel", re: /QUEENS.?MIDTOWN/i, box: [-73.972, 40.741, -73.947, 40.751], hazmat: true, maxH: 12 + 1 / 12 },
+  { key: "carey", name: "Hugh L. Carey Tunnel", re: /HUGH L\.? CAREY|BROOKLYN.?BATTERY/i, box: [-74.019, 40.689, -73.999, 40.704], hazmat: true, maxH: 12 + 1 / 12 },
+  { key: "holland", name: "Holland Tunnel", re: /HOLLAND TUNNEL/i, box: [-74.036, 40.722, -74.011, 40.732], hazmat: true },
+  { key: "lincoln", name: "Lincoln Tunnel", re: /LINCOLN TUNNEL/i, box: [-74.026, 40.756, -73.999, 40.768], hazmat: true },
+  { key: "gwblower", name: "George Washington Bridge lower level", re: /GEORGE WASHINGTON.*LOWER|LOWER LEVEL/i, box: null, hazmat: true },
+  { key: "verrazzano", name: "Verrazzano-Narrows Bridge", re: /VERRAZ+ANO/i, box: [-74.056, 40.598, -74.033, 40.616], explosives: true },
+];
+const inBox = (p, b) => b && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+function crossingsUsed(coords, steps) {
+  const used = new Set();
+  for (const s of steps || []) for (const c of CROSSINGS) if (c.re.test(`${s.name || ""} ${s.ref || ""}`)) used.add(c.key);
+  for (let i = 0; i < coords.length; i++) {
+    const p = coords[i];
+    for (const c of CROSSINGS) if (!used.has(c.key) && inBox(p, c.box) && !boroAt(p)) used.add(c.key);
+  }
+  return CROSSINGS.filter((c) => used.has(c.key));
+}
+function banned(veh) {
+  return CROSSINGS.filter((c) => (veh.hz && c.hazmat) || (veh.hz === 2 && c.explosives) || (c.maxH && veh.h && veh.h > c.maxH - 0.01));
+}
+function whyBanned(c, veh) {
+  if (veh.hz === 2 && c.explosives) return `${c.name}: explosives prohibited (FDNY)`;
+  if (veh.hz && c.hazmat) return `${c.name}: hazardous materials prohibited`;
+  return `${c.name}: ${Math.floor(c.maxH)}'${Math.round((c.maxH % 1) * 12)}" clearance, your truck is too tall`;
 }
 
 // ---------- check a route against the official network ----------
@@ -256,22 +289,55 @@ function normalize(rt, n, keepIdx) {
 }
 function stepsAt(rt) { let acc = 0; return rt.legs.flatMap((l) => l.steps).map((s) => { const x = { ...s, at: acc }; acc += s.distance; return x; }); }
 
-async function truckRoute(stops) {
+// Hazmat + official clearance rules on top of the truck-network check
+function addRules(c, rt, veh, stops) {
+  const used = crossingsUsed(rt.geometry.coordinates, stepsAt(rt));
+  const blocked = used.filter((x) => banned(veh).some((b) => b.key === x.key)).map((x) => whyBanned(x, veh));
+  const hz = { on: !!veh.hz, explosives: veh.hz === 2, blocked, avoided: [], notes: [] };
+  if (veh.hz) {
+    hz.avoided = CROSSINGS.filter((x) => banned(veh).some((b) => b.key === x.key) && !used.some((u) => u.key === x.key)).map((x) => x.name);
+    const through = c.inNYC && stops.every((p) => !boroAt(p));
+    if (through) hz.notes.push(veh.hz === 2 ? "Passing through NYC with explosives: only 10 AM–3 PM and 7 PM–6 AM on weekdays, with FDNY authorization and escort." : "Passing through NYC without a stop: weekdays only 9 AM–4 PM and 6 PM–7 AM (FDNY).");
+    hz.notes.push("FDNY permits apply to many hazardous materials in NYC. Carry your permit and shipping papers.");
+    if (used.some((u) => u.key === "gwblower") || /GEORGE WASHINGTON/i.test(stepsAt(rt).map((s) => s.name).join(" "))) hz.notes.push("On the George Washington Bridge use the UPPER level (hazmat is restricted on the lower level).");
+  }
+  const verdict = blocked.length ? "warn" : c.verdict;
+  return { ...c, verdict, blocked, hazmat: hz, entry: rt.entryName || null };
+}
+// Ways into NYC that FDNY's hazmat routes use, tried when the direct way in uses a banned crossing
+const ENTRY = [{ name: "George Washington Bridge (upper level)", p: [-73.9527, 40.8517] }, { name: "Goethals Bridge", p: [-74.1975, 40.6356] },
+  { name: "Bayonne Bridge", p: [-74.1422, 40.6421] }, { name: "Outerbridge Crossing", p: [-74.2296, 40.5246] }, { name: "Throgs Neck Bridge", p: [-73.7942, 40.8007] }];
+async function truckRoute(stops, veh = {}) {
   if (state.status !== "ready") { if (state.status !== "loading") build(); throw Object.assign(new Error("The NYC truck route map is still loading. Try again in a minute."), { code: 503 }); }
   const okBoros = new Set(stops.map(boroAt).filter(Boolean));
+  const ban = banned(veh), banKeys = new Set(ban.map((c) => c.key));
+  const avoidRe = ban.length ? new RegExp(ban.map((c) => c.re.source).join("|"), "i") : null;
   // plain route first: where does the trip enter and leave NYC?
-  const plain = await osrm(stops.map((p) => ({ p })), stops.map((_, i) => i));
+  let plain = await osrm(stops.map((p) => ({ p })), stops.map((_, i) => i)), entry = null;
+  if (ban.length && crossingsUsed(plain.geometry.coordinates, stepsAt(plain)).some((c) => banKeys.has(c.key))) {
+    // the direct way uses a banned tunnel/bridge: try the official ways in and keep the shortest legal one
+    let best = null;
+    for (const e of ENTRY) {
+      try {
+        const pts = [{ p: stops[0] }, { p: e.p }, ...stops.slice(1).map((p) => ({ p }))];
+        const rt = await osrm(pts, [0, ...stops.slice(1).map((_, i) => i + 2)]);
+        if (!crossingsUsed(rt.geometry.coordinates, stepsAt(rt)).some((c) => banKeys.has(c.key)) && (!best || rt.distance < best.distance)) { best = rt; entry = e; }
+      } catch {}
+    }
+    if (best) plain = best;
+  }
   const pc = plain.geometry.coordinates;
   const firstIn = pc.find((p) => boroAt(p)), lastIn = [...pc].reverse().find((p) => boroAt(p));
-  if (!firstIn) return { route: plain, compliance: { ...check(pc, stepsAt(plain)), verdict: "outside" } };
+  if (!firstIn) return { route: plain, compliance: addRules({ ...check(pc, stepsAt(plain)), verdict: "outside" }, plain, veh, stops) };
   // build the network path leg by leg, then thread the route through it
   const legs = [];
   for (let k = 1; k < stops.length; k++) {
     const a = k === 1 && !boroAt(stops[0]) ? firstIn : stops[k - 1], b = k === stops.length - 1 && !boroAt(stops[k]) ? lastIn : stops[k];
-    legs.push({ a, b, path: netPath(a, b, okBoros) });
+    legs.push({ a, b, path: netPath(a, b, okBoros, avoidRe) });
   }
   const make = (step) => {
     const pts = [{ p: stops[0] }], keep = [0];
+    if (entry && !boroAt(stops[0])) pts.push({ p: entry.p }); // stay on the legal bridge we picked
     legs.forEach(({ a, b, path }, j) => {
       if (a !== stops[j]) pts.push({ p: a });
       if (path) for (const v of viaPoints(path, step).pts) pts.push(v);
@@ -280,18 +346,18 @@ async function truckRoute(stops) {
     });
     return { pts, keep };
   };
-  const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 5000;
+  const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
   let best = null;
   for (const step of [1200, 450]) {
     const { pts, keep } = make(step);
     if (pts.length > 95) break;
     try {
-      const rt = await osrm(pts, keep), c = check(rt.geometry.coordinates, stepsAt(rt));
+      const rt = await osrm(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       if (!best || offM(c) < offM(best.compliance)) best = { route: rt, compliance: c };
     } catch {}
     if (best && best.compliance.verdict === "ok") break;
   }
-  if (!best) { best = { route: plain, compliance: check(pc, stepsAt(plain)) }; best.compliance.fallback = true; }
+  if (!best) { best = { route: plain, compliance: addRules(check(pc, stepsAt(plain)), plain, veh, stops) }; best.compliance.fallback = true; }
   return best;
 }
 
@@ -317,11 +383,12 @@ function routes(url, res, send, readBody, req) {
   if (url.pathname === "/api/truck/route") {
     const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
     if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
-    truckRoute(pts).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, asOf: state.asOf } }))
+    const veh = { h: Math.min(20, Math.max(0, +url.searchParams.get("h") || 0)), hz: [0, 1, 2].includes(+url.searchParams.get("hz")) ? +url.searchParams.get("hz") : 0 };
+    truckRoute(pts, veh).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, asOf: state.asOf } }))
       .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
     return true;
   }
   return false;
 }
 
-module.exports = { routes, start, check, netPath, state, _build: build };
+module.exports = { routes, start, check, netPath, state, crossingsUsed, banned, addRules, truckRoute, _build: build };

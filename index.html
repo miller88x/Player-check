@@ -2291,14 +2291,16 @@ function truckSheet(then) {
       <label class="lb" style="flex:1;min-width:90px">Length (ft)<input class="inp" id="tL" type="number" step="1" min="10" max="120" value="${t.l}"></label>
     </div>
     <label style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="tHz" ${t.hazmat ? "checked" : ""}> Carrying hazardous materials</label>
-    ${t.hazmat ? '<div class="alert warn"><b>Hazmat</b>NYC has separate hazmat routing rules and permits that Rova doesn\'t check yet. Follow your hazmat route plan.</div>' : ""}
+    ${t.hazmat ? `<label style="display:flex;gap:10px;align-items:center;margin-left:28px"><input type="checkbox" id="tEx" ${t.explosives ? "checked" : ""}> Explosives (Class 1)</label>
+      <div class="note">Hazmat routes avoid the Holland, Lincoln, Queens-Midtown and Hugh L. Carey tunnels${t.explosives ? " and the Verrazzano-Narrows Bridge" : ""}, and use the GWB upper level. You still need your FDNY permit and shipping papers.</div>` : ""}
     ${t.kind === "van" ? '<div class="note">Cargo vans aren\'t "trucks" under NYC rules (2 axles, 4 tires), so they may use any street, but commercial vehicles are still banned from parkways. Rova warns if a route uses one.</div>' : ""}
     ${t.w > 80000 || t.l > 65 ? '<div class="alert warn"><b>Check your permit</b>Over 80,000 lb or extra-long vehicles may need an NYC oversize / overweight permit.</div>' : ""}
     <button class="btn primary" type="button" id="tSave">${t.on ? "Save" : "Turn on truck mode"}</button>
     ${t.on ? '<button class="btn" type="button" id="tOff">Turn off truck mode</button>' : ""}
     <p class="note">Truck mode keeps routes on NYC DOT's official Truck Route Network (Through routes when you're crossing a borough, Local routes for stops) and warns about low bridges and weight limits along the way.</p>`, "truck");
   document.querySelectorAll("[data-tp]").forEach((b) => (b.onclick = () => { const p = TRUCK_PRESETS[b.dataset.tp]; store.set("truck", { ...truck(), kind: b.dataset.tp, h: p.h, w: p.w, l: p.l }); truckSheet(then); }));
-  $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked }); truckSheet(then); };
+  $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked, explosives: $("#tHz").checked && truck().explosives }); truckSheet(then); };
+  $("#tEx")?.addEventListener("change", () => { store.set("truck", { ...truck(), explosives: $("#tEx").checked }); truckSheet(then); });
   $("#tSave").onclick = () => {
     store.set("truck", { ...truck(), on: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26 });
     paintTruckLayer(); then ? then() : closeSheet();
@@ -2308,7 +2310,8 @@ function truckSheet(then) {
 async function fetchTruckRoutes(from, to, via) {
   const pts = [from, via, to].filter(Boolean).map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join(";");
   try {
-    const r = await fetch(`/api/truck/route?pts=${pts}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(40000) : undefined });
+    const t = truck(), hz = t.hazmat ? (t.explosives ? 2 : 1) : 0;
+    const r = await fetch(`/api/truck/route?pts=${pts}&h=${t.h}&hz=${hz}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(40000) : undefined });
     const j = await r.json();
     if (!r.ok || !j.routes?.[0]) throw new Error(j.error || "No truck route");
     const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
@@ -2329,10 +2332,11 @@ function truckCard(R) {
   if (c.verdict === "unchecked") head = `<div class="alert stop"><b>⚠️ Truck route not verified</b>Rova couldn't check this route against NYC truck routes right now${c.reason ? ` (${esc(c.reason)})` : ""}. This is the regular route: follow posted truck route signs.</div>`;
   else if (c.verdict === "outside") head = `<div class="alert warn"><b>Outside NYC</b>The NYC truck route check only covers the five boroughs. Follow posted truck signs.</div>`;
   else if (c.verdict === "ok") head = `<div class="alert go"><b>✅ Stays on NYC truck routes</b>${c.pctOnNetwork}% on the official network${c.endsOffNetwork ? ` · ${mi(c.endsOffNetwork)} at the start/end to reach your stop (allowed: most direct route)` : ""}.</div>`;
-  else head = `<div class="alert stop"><b>⚠️ Not fully on truck routes</b>${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
+  else head = `<div class="alert stop"><b>⚠️ ${c.blocked?.length ? "Not legal for your truck" : "Not fully on truck routes"}</b>${(c.blocked || []).map((b) => `⛔ ${esc(b)}<br>`).join("")}${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
   return `<div class="truckbox">${head}
+    ${c.hazmat?.on ? `<div class="alert ${c.blocked?.length ? "stop" : "go"}"><b>☣️ Hazmat ${c.blocked?.length ? "check failed" : "check passed"}${c.hazmat.explosives ? " (explosives)" : ""}</b>${c.hazmat.avoided?.length ? `Avoids: ${c.hazmat.avoided.map(esc).join(", ")}.<br>` : ""}${(c.hazmat.notes || []).map(esc).join("<br>")}</div>` : ""}
     ${c.notes?.length ? `<div class="note">${c.notes.map(esc).join("<br>")}</div>` : ""}
-    <div class="muted" style="font-size:13px">🚚 ${esc(TRUCK_PRESETS[t.kind]?.name || "Truck")} · ${ftIn(t.h)} · ${t.w.toLocaleString()} lb · ${t.l} ft · <a href="#" id="tEdit">Edit</a></div>
+    <div class="muted" style="font-size:13px">🚚 ${esc(TRUCK_PRESETS[t.kind]?.name || "Truck")} · ${ftIn(t.h)} · ${t.w.toLocaleString()} lb · ${t.l} ft${t.hazmat ? (t.explosives ? " · ☣️ explosives" : " · ☣️ hazmat") : ""} · <a href="#" id="tEdit">Edit</a></div>
     <div class="note">Checked against NYC DOT's Truck Route Network${asOf ? ` (city data updated ${asOf})` : ""}. NYC changed truck routes in fall 2026; posted signs always win.</div></div>`;
 }
 
