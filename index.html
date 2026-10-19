@@ -186,6 +186,7 @@ body.navigating #recenter{background:#fff;color:#0b5e57;box-shadow:0 2px 8px rgb
 #navBottom{background:#fff!important;color:#202124}
 #navShare{padding:10px 0;font-size:15px;font-weight:600;border-radius:22px;width:100%;color:#1a73e8;background:#e8f0fe;border:0}
 #navShare.on{color:#fff;background:#188038}
+.rover{cursor:pointer;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));transition:transform .15s}.rover:active{transform:scale(1.12)}
 #navMic.on{background:#d93025!important}#navMic.on rect{fill:#fff}#navMic.on path{stroke:#fff}
 #rxPark:empty,#rxWeather:empty{display:none}
 #navBottom::before{background:#dadce0!important}
@@ -402,6 +403,8 @@ body.navigating #recenter.on{display:grid!important}
   <div class="lcol">
     <button class="ltog" type="button" data-layer="tickets"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#e5484d"/></svg>Tickets</button>
     <button class="ltog" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
+    <button class="ltog" type="button" data-layer="rovers"><svg width="16" height="17" viewBox="0 0 44 48" aria-hidden="true"><path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="#2f6bff"/></svg>Rovers</button>
+    <button class="ltog" type="button" data-rshare aria-pressed="true"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#2f6bff"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2f6bff" stroke-width="2" opacity=".5"/></svg>Show me as a Rover</button>
     <button class="ltog" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
   </div>
 </div>
@@ -737,7 +740,7 @@ map.on("mousemove", (e) => { const f = map.queryRenderedFeatures(e.point).find((
 function paintChips() { document.querySelectorAll("[data-layer]").forEach((b) => b.setAttribute("aria-pressed", !!layerOn[b.dataset.layer])); }
 paintChips();
 document.querySelectorAll("[data-layer]").forEach((b) => (b.onclick = () => {
-  const k = b.dataset.layer; layerOn[k] = !layerOn[k]; store.set("layers", layerOn); paintChips();
+  const k = b.dataset.layer; layerOn[k] = !layerOn[k]; store.set("layers", layerOn); paintChips(); if (k === "rovers") loadRovers?.();
   if (k === "tickets") drawPins(false); else if (map.getLayer("cams")) map.setFilter("cams", camFilter());
 }));
 
@@ -2127,6 +2130,70 @@ function towSheet() {
     </div>
     <p class="note">Fees from NYPD. Go early: storage adds up every night.</p>`, "car");
 }
+
+// ================= ROVERS: other Rova drivers on the map =================
+// Real drivers only. Anonymous, rounded to ~10 m, shown while moving, gone 2 min after they stop sharing.
+const ROVER_SVG = `<svg viewBox="0 0 44 48" width="34" height="37" aria-hidden="true"><defs><linearGradient id="rvG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7fb0ff"/><stop offset=".55" stop-color="#2f6bff"/><stop offset="1" stop-color="#1638b8"/></linearGradient></defs>
+  <path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="url(#rvG)" stroke="#fff" stroke-width="2.5"/>
+  <path d="M22 9.5 30 25 22 21.5 14 25z" fill="#fff" opacity=".9"/>
+  <circle cx="16.5" cy="32" r="2.3" fill="#fff"/><circle cx="27.5" cy="32" r="2.3" fill="#fff"/><circle cx="17" cy="32.4" r="1.1" fill="#0b1d4a"/><circle cx="28" cy="32.4" r="1.1" fill="#0b1d4a"/>
+  <path d="M18 36.5c2.3 2 5.7 2 8 0" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+const roverId = (() => { let id = store.get("roverId", null); if (!id) { id = rid(16); store.set("roverId", id); } return id; })();
+if (!store.get("roverJoined", null)) store.set("roverJoined", Date.now());
+const roverShare = () => store.get("roverShare", true);
+if (layerOn.rovers === undefined) { layerOn.rovers = true; store.set("layers", layerOn); }
+let roverMarkers = new Map(), roverPop = null, lastPing = 0, wasSharing = false;
+function joinedText(t) {
+  if (!t) return "New Rover";
+  const d = (Date.now() - t) / 864e5;
+  return d < 1 ? "Joined today" : d < 30 ? `Joined ${Math.round(d)} day${Math.round(d) === 1 ? "" : "s"} ago` : d < 365 ? `Joined ${Math.round(d / 30)} month${Math.round(d / 30) === 1 ? "" : "s"} ago` : `Joined ${Math.floor(d / 365)} year${Math.floor(d / 365) === 1 ? "" : "s"} ago`;
+}
+// Share my position while moving (every ~15 s), stop sharing when parked or turned off
+function roverPing() {
+  if (!me || document.hidden) return;
+  const moving = speedMps > 2;
+  if (!roverShare() || !moving) {
+    if (wasSharing && (!roverShare() || Date.now() - lastPing > 90000)) { wasSharing = false; fetch("/api/rovers/ping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: roverId, off: true }) }).catch(() => {}); }
+    return;
+  }
+  if (Date.now() - lastPing < 15000) return;
+  lastPing = Date.now(); wasSharing = true;
+  fetch("/api/rovers/ping", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: roverId, lat: me[1], lng: me[0], heading: heading ?? null, mph: Math.round(speedMps * 2.237), joined: store.get("roverJoined", Date.now()) }) }).catch(() => {});
+}
+async function loadRovers() {
+  if (document.hidden) return;
+  if (!layerOn.rovers || map.getZoom() < 12.5) { roverMarkers.forEach((m) => m.remove()); roverMarkers.clear(); return; }
+  const b = map.getBounds();
+  try {
+    const r = await fetch(`/api/rovers?w=${b.getWest().toFixed(4)}&s=${b.getSouth().toFixed(4)}&e=${b.getEast().toFixed(4)}&n=${b.getNorth().toFixed(4)}&me=${roverId}`);
+    if (!r.ok) return;
+    const { rovers } = await r.json(), keep = new Set();
+    for (const v of rovers) {
+      keep.add(v.k);
+      let m = roverMarkers.get(v.k);
+      if (!m) {
+        const el = document.createElement("div"); el.className = "rover"; el.innerHTML = ROVER_SVG; el.setAttribute("role", "button"); el.setAttribute("aria-label", "Rova driver");
+        m = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([v.lng, v.lat]).addTo(map);
+        roverMarkers.set(v.k, m);
+      } else m.setLngLat([v.lng, v.lat]);
+      m.getElement().onclick = (e) => {
+        e.stopPropagation(); roverPop?.remove();
+        roverPop = new maplibregl.Popup({ offset: 34, closeButton: false, maxWidth: "240px" }).setLngLat([v.lng, v.lat])
+          .setHTML(`<div class="pop" style="text-align:center"><h3 style="margin:0 0 4px">Rover</h3><div class="meta">${joinedText(v.joined)}</div>${v.mph != null ? `<div class="meta">Speed: around ${v.mph} MPH</div>` : ""}</div>`).addTo(map);
+      };
+    }
+    for (const [k, m] of roverMarkers) if (!keep.has(k)) { m.remove(); roverMarkers.delete(k); }
+  } catch {}
+}
+paintChips(); $("[data-rshare]")?.setAttribute("aria-pressed", roverShare());
+setInterval(() => { roverPing(); loadRovers(); }, 15000);
+map.on("moveend", () => { clearTimeout(loadRovers.t); loadRovers.t = setTimeout(loadRovers, 800); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadRovers(); });
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-rshare]"); if (!t) return;
+  store.set("roverShare", !roverShare()); t.setAttribute("aria-pressed", roverShare()); roverPing();
+});
 
 // ================= IN-APP ALERTS =================
 // Compares what the city shows now with what this phone saw last time.

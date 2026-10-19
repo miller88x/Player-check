@@ -16,3 +16,4 @@ Live at https://player-check.onrender.com
 - Parking at your destination shown on the route screen before you leave
 - My car hub: "My car is gone" tow help (NYC towed-vehicle finder, precinct, fees, what to bring) and registration / inspection / insurance renewal reminders (in-app at 30 and 7 days, plus calendar reminder)
 - Pay-before-penalty: each open ticket shows its pay-by date, a Pay now link (CityPay) and a calendar reminder 2 days before the late fee
+- Rovers: other Rova drivers shown live on the map (like Waze's Wazers). Real drivers only, anonymous, rounded to ~10 m, shown only while moving, removed 2 min after they stop; never stored. Toggles in the map layers panel: "Rovers" (see others) and "Show me as a Rover" (share yourself)
