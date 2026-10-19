@@ -181,6 +181,8 @@ body.navigating #recenter{background:#fff;color:#0b5e57;box-shadow:0 2px 8px rgb
 #navBottom{background:#fff!important;color:#202124}
 #navShare{padding:10px 0;font-size:15px;font-weight:600;border-radius:22px;width:100%;color:#1a73e8;background:#e8f0fe;border:0}
 #navShare.on{color:#fff;background:#188038}
+#navMic.on{background:#d93025!important}#navMic.on rect{fill:#fff}#navMic.on path{stroke:#fff}
+#rxPark:empty,#rxWeather:empty{display:none}
 #navBottom::before{background:#dadce0!important}
 #navBottom .eta{color:#188038!important}
 #navBottom .sub{color:#3c4043!important}
@@ -409,6 +411,7 @@ body.navigating #recenter.on{display:grid!important}
   <button class="fab" id="navCompass" type="button" aria-label="Compass: tap to switch north up or heading up"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 15 12h-6z" fill="#e5484d"/><path d="M12 21.5 9 12h6z" fill="#9aa0a6"/></svg></button>
   <button class="fab" id="navMute" type="button" aria-label="Mute voice"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3.5 3.5l17 17" stroke="#e5484d" stroke-width="2.4" stroke-linecap="round" style="display:none"/></svg></button>
   <button class="fab" id="navOv" type="button" aria-label="Route overview"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-6.5L7 9.5M12 14.5l5-5M7 9.5V5M17 9.5V5M4.5 7.5 7 5l2.5 2.5M14.5 7.5 17 5l2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button class="fab" id="navMic" type="button" aria-label="Voice command: report, add a stop, share your drive, or ask your arrival time"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="#1a73e8"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="#1a73e8" stroke-width="2" stroke-linecap="round"/></svg></button>
   <button class="fab" id="navStop" type="button" aria-label="Add a stop: gas, coffee, food, EV charging, parking"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V5a1.5 1.5 0 0 1 1.5-1.5h6A1.5 1.5 0 0 1 14 5v15M3.5 20h12M7.5 7h4v3.5h-4zM14 9.5h2a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 0 3 0V8.5L18 6" fill="none" stroke="#1a73e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <button class="fab" id="navReport" type="button" aria-label="Report something on the road"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" fill="none" stroke="#e37400" stroke-width="2" stroke-linejoin="round"/><path d="M12 9.5v6M9 12.5h6" stroke="#e37400" stroke-width="2" stroke-linecap="round"/></svg></button>
 </div>
@@ -1459,6 +1462,8 @@ function routeSheet(to) {
       return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
       ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
+    <div class="camline" id="rxWeather" style="color:var(--muted);font-weight:500"></div>
+    <div class="camline" id="rxPark" style="color:var(--muted);font-weight:500"></div>
     <div class="row" style="align-items:center"><button class="startbtn" type="button" id="startNav"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Start</button><button class="btn" type="button" id="simNav">Test drive</button><button type="button" class="btn" id="voicePick" style="margin-left:auto;padding:8px 12px;font-size:13px">🔊 ${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</button></div>
     <p class="note">Test drive plays the trip so you can hear turn and camera warnings from home. Keep the app open while driving.</p>`, "route");
   paintBubbles();
@@ -1469,6 +1474,7 @@ function routeSheet(to) {
   $("#rmStop")?.addEventListener("click", () => { nav.stop = null; nav.stopFor = null; planRoute(to); });
   document.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = () => stopSearch(b.dataset.stop, to)));
   $("#voicePick").onclick = voiceSheet;
+  paintRouteExtras(to);
   $("#startNav").onclick = () => startNav(false);
   $("#simNav").onclick = () => startNav(true);
 }
@@ -1479,8 +1485,9 @@ function startNav(sim) {
   if (!route) return;
   unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
   (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
-  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, hzSpoken: {}, follow: true, t0: Date.now(), a0: 0, arrived: false, start: Date.now(), overWarned: 0, nightAt: Date.now() });
+  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, hzSpoken: {}, wxSaid: 0, follow: true, t0: Date.now(), a0: 0, arrived: false, start: Date.now(), overWarned: 0, nightAt: Date.now() });
   loadHazards(route); paintShare();
+  routeWeather(route).then((w) => { if (w && nav.active && !nav.wxSaid) { nav.wxSaid = 1; setTimeout(() => speak(`Heads up. ${w.t} expected on your route around ${new Date(w.when).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`), 4000); } });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
@@ -1766,7 +1773,7 @@ async function osmHazards(R, from, to) {
 const HZ_CHUNK = 40000; // load OSM hazards 40 km at a time along the route
 function loadHazards(R) {
   if (!R || R.hazards) return;
-  R.hazards = [...limitDrops(R), ...sharpCurves(R), ...tollsFromSteps(R)].sort((a, b) => a.along - b.along);
+  R.hazards = [...limitDrops(R), ...sharpCurves(R), ...tollsFromSteps(R), ...(R.wxHz ? [R.wxHz] : [])].sort((a, b) => a.along - b.along);
   R.hzUpTo = Math.min(R.total, HZ_CHUNK);
   osmHazards(R, 0, R.hzUpTo).catch(() => {});
 }
@@ -1789,14 +1796,14 @@ function hazardAhead(R) {
 function showHazard({ show: h, say }) {
   const t = HZ[h.type], box = $("#camAlert");
   box.style.display = "flex"; box.style.background = t.c; box.style.animation = "none";
-  $("#camIco").textContent = t.e;
-  $("#camText").textContent = h.type === "limit" ? `Speed limit drops to ${h.v}` : h.type === "toll" && h.name ? `${h.name} ahead` : t.t;
+  $("#camIco").textContent = h.e || t.e;
+  $("#camText").textContent = h.type === "weather" ? h.name : h.type === "limit" ? `Speed limit drops to ${h.v}` : h.type === "toll" && h.name ? `${h.name} ahead` : t.t;
   $("#camDist").textContent = h.meters > 15 ? `${fmtDist(h.meters)} ahead` : "Now";
   $("#camLim").style.display = h.type === "limit" ? "block" : "none"; $("#camLim b").textContent = h.v || "";
   if (!say) return;
   nav.hzSpoken[`${say.type}${Math.round(say.along)}`] = 1;
   if (HZ[say.type].quiet && !chatty()) return;
-  speak(say.type === "limit" ? `Speed limit drops to ${say.v} ahead` : say.type === "school" ? "School zone ahead. Slow down" : say.type === "toll" && say.name ? `${say.name} ahead` : HZ[say.type].t);
+  speak(say.type === "limit" ? `Speed limit drops to ${say.v} ahead` : say.type === "school" ? "School zone ahead. Slow down" : (say.type === "toll" || say.type === "weather") && say.name ? `${say.name}` : HZ[say.type].t);
 }
 
 // ---------- Add a stop along the route (gas, coffee, food, EV, parking) ----------
@@ -1877,6 +1884,117 @@ function stopPicker(to) {
   document.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = () => stopSearch(b.dataset.stop, to)));
 }
 $("#navStop").onclick = () => { if (nav.active && route && nav.dest) stopPicker(nav.dest); };
+
+// ---------- Pay for parking (ParkNYC, the city's official app) + meter timer ----------
+const PARKNYC_WEB = "https://my.nyc.flowbirdapp.com/#/Parking";
+const PARKNYC_IOS = "https://apps.apple.com/app/id1135073877";
+const PARKNYC_ANDROID = "https://play.google.com/store/search?q=ParkNYC%20Flowbird&c=apps";
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+function payBlock(j) {
+  const m = j.meter; if (!m) return "";
+  const cap = Math.min(m.hours ? m.hours * 60 : 240, m.minsLeft ?? 240);
+  const opts = [15, 30, 60, 90, 120, 180, 240].filter((x) => x <= cap);
+  if (cap > 15 && !opts.includes(cap) && cap < 240) opts.push(cap);
+  const lab = (x) => (x === cap && m.minsLeft != null && x === m.minsLeft ? `Until ${clock(x * 60)}` : x < 60 ? `${x} min` : `${x / 60} hr`);
+  return `<div class="paybox" style="display:grid;gap:10px;background:rgba(26,115,232,.1);border-radius:14px;padding:14px">
+    ${m.paid ? `<b>Pay for parking</b>
+    <a class="btn primary" style="text-decoration:none;text-align:center" href="${PARKNYC_WEB}" target="_blank" rel="noopener">Pay with ParkNYC</a>
+    <div class="muted" style="font-size:13px">Use the zone number on the meter or sign. No account? <a href="${isIOS ? PARKNYC_IOS : PARKNYC_ANDROID}" target="_blank" rel="noopener">Get the ParkNYC app</a> or pay at the muni-meter.</div>` : `<b>${m.hours}-hour time limit</b>`}
+    ${opts.length ? `<div class="muted" style="font-size:14px">${m.paid ? "Paid for how long? Rova reminds you before it runs out:" : "Start a timer so you move before the limit:"}</div>
+    <div class="tchips">${opts.map((x) => `<button type="button" class="tchip" data-meter="${x}">${lab(x)}</button>`).join("")}</div>` : ""}
+  </div>`;
+}
+function startMeter(j, at, mins) {
+  const end = new Date(Date.now() + mins * 60000);
+  const moveBy = j.moveBy && new Date(j.moveBy) < end ? j.moveBy : end.toISOString();
+  saveParked({ ...j, moveBy, meterEnd: end.toISOString() }, at);
+}
+
+// ---------- Hands-free voice commands while driving ----------
+const VOICE_REPORTS = [[/police|cop/, "police"], [/accident|crash|wreck/, "accident"], [/traffic|jam/, "traffic"], [/construction|work zone|road ?work/, "construction"],
+  [/closed|closure|road ?block/, "closed"], [/pot ?hole/, "pothole"], [/tow/, "tow"], [/ticket|meter maid|traffic agent/, "agent"], [/sweeper/, "sweeper"], [/camera/, "camera"], [/hazard|debris|object|something on the road/, "hazard"]];
+const VOICE_STOPS = [[/gas|fuel/, "gas"], [/coffee/, "coffee"], [/food|eat|restaurant/, "food"], [/charg|ev\b/, "ev"], [/parking|garage/, "parking"]];
+function heard(text) {
+  const t = text.toLowerCase();
+  if (/share|send.*(eta|location|drive)/.test(t)) return shareDrive();
+  if (/unmute|voice on/.test(t)) { voiceOn = true; store.set("voice", true); paintMute(); return speak("Voice on"); }
+  if (/mute|quiet|voice off/.test(t)) { speak("Muting voice"); setTimeout(() => { voiceOn = false; store.set("voice", false); stopVoice(); paintMute(); }, 900); return; }
+  if (/how long|when.*arrive|eta|how far|time left/.test(t) && route) return speak(`You'll arrive around ${clock(tripEta(route))}. ${fmtMin(tripEta(route))} and ${sayDist(route.total - nav.along)} to go.`);
+  if (/park/.test(t) && /(can i|where|destination|there)/.test(t) && nav.dest?.at) { speak("Checking parking at your destination"); return destParking(nav.dest, true); }
+  for (const [re, cat] of VOICE_STOPS) if (re.test(t) && /stop|find|add|need|get|nearest|on the way/.test(t) && nav.dest) { speak(`Looking for ${CATS[cat][2].toLowerCase()} on your route`); return stopSearch(cat, nav.dest); }
+  for (const [re, type] of VOICE_REPORTS) if (re.test(t)) return sendReport(type);
+  speak("Sorry, I didn't get that. Try: report police, add a gas stop, share my drive, or when will I arrive.");
+}
+function listen() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return speak("Voice commands aren't available on this phone yet");
+  try {
+    stopVoice();
+    const rec = new SR(); rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
+    $("#navMic").classList.add("on");
+    rec.onresult = (e) => heard(e.results[0][0].transcript || "");
+    rec.onerror = (e) => { if (e.error === "not-allowed") speak("Allow the microphone for Rova to use voice commands"); };
+    rec.onend = () => $("#navMic").classList.remove("on");
+    rec.start();
+  } catch { $("#navMic").classList.remove("on"); }
+}
+$("#navMic").onclick = listen;
+
+// ---------- Weather on your route (Open-Meteo, free) ----------
+function weatherWord(code, mm, vis, snow) {
+  if (code >= 95) return { e: "⛈️", t: "Thunderstorms", bad: 3 };
+  if (code === 66 || code === 67 || code === 56 || code === 57) return { e: "🧊", t: "Freezing rain", bad: 3 };
+  if (snow > 0.3 || (code >= 71 && code <= 77) || code === 85 || code === 86) return { e: "🌨️", t: "Snow", bad: 3 };
+  if (code === 65 || code === 82 || mm >= 4) return { e: "🌧️", t: "Heavy rain", bad: 2 };
+  if (vis != null && vis < 500 || code === 45 || code === 48) return { e: "🌫️", t: "Fog, low visibility", bad: 2 };
+  if (code === 63 || code === 81 || mm >= 1.5) return { e: "🌧️", t: "Rain", bad: 1 };
+  return null;
+}
+async function routeWeather(R) {
+  if (!R || R.weather !== undefined) return R?.weather;
+  R.weather = null;
+  const n = Math.min(8, Math.max(2, Math.ceil(R.total / 15000)));
+  const marks = Array.from({ length: n }, (_, i) => R.total * (i / (n - 1)));
+  const pts = marks.map((d) => pointAt(R, d)), t0 = timeLeft(R, 0);
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${pts.map((p) => p[1].toFixed(3)).join(",")}&longitude=${pts.map((p) => p[0].toFixed(3)).join(",")}&hourly=precipitation,weather_code,visibility,snowfall&forecast_hours=12&timezone=GMT`;
+    let j = await (await fetch(u, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })).json(); if (!Array.isArray(j)) j = [j];
+    let worst = null;
+    j.forEach((loc, i) => {
+      const when = Date.now() + (t0 - timeLeft(R, marks[i])) * 1000, h = loc.hourly; if (!h) return;
+      const k = h.time.findIndex((x) => new Date(x + "Z").getTime() + 3600e3 > when); if (k < 0) return;
+      const w = weatherWord(h.weather_code[k], h.precipitation[k], h.visibility?.[k], h.snowfall?.[k]);
+      if (w && (!worst || w.bad > worst.bad)) worst = { ...w, along: marks[i], when };
+    });
+    R.weather = worst;
+    if (worst) { R.wxHz = { type: "weather", along: Math.max(0, worst.along - 3000), name: `${worst.t} ahead`, e: worst.e }; if (R.hazards) { R.hazards.push(R.wxHz); R.hazards.sort((a, b) => a.along - b.along); } }
+  } catch {}
+  return R.weather;
+}
+HZ.weather = { e: "🌧️", t: "Bad weather ahead", warn: 2500, c: "#5f6368" };
+
+// ---------- Parking at your destination (before you get there) ----------
+const destParkCache = new Map();
+async function destParking(to, open = false) {
+  if (!to?.at || !inNYC(to.at[0], to.at[1])) return null;
+  if (open) { if (nav.active) { closeSheet(); } return parkCheck(to.at, true); }
+  const k = to.at.join(",");
+  if (!destParkCache.has(k)) destParkCache.set(k, fetch(`/api/park?lat=${to.at[1]}&lng=${to.at[0]}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  return destParkCache.get(k);
+}
+function paintRouteExtras(to) {
+  const R = route;
+  routeWeather(R).then((w) => {
+    const el = $("#rxWeather"); if (!el || route !== R) return;
+    el.innerHTML = w ? `${w.e} <b>${esc(w.t)}</b>&nbsp;on your route around ${new Date(w.when).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "☀️ No bad weather on your route";
+  });
+  destParking(to).then((j) => {
+    const el = $("#rxPark"); if (!el || !j) return;
+    const dot = { green: "#1e8e3e", yellow: "#f29900", red: "#d93025" }[j.status] || "#9aa0a6";
+    el.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot}"></span> <b>Parking there:</b>&nbsp;${esc(j.headline)}`;
+    el.style.cursor = "pointer"; el.onclick = () => parkCheck(to.at, true);
+  });
+}
 
 // ================= IN-APP ALERTS =================
 // Compares what the city shows now with what this phone saw last time.
@@ -2098,9 +2216,11 @@ async function parkCheck(at, fromTap) {
       ${j.where ? `<div class="muted">📍 ${esc(j.where)}</div>` : ""}
       ${j.rules.length ? `<div><b>At your spot</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${j.rulesElse?.length ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${payBlock(j)}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
       <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Long-press anywhere on the map to check another spot."}</p>`, "park");
     $("#parkHere")?.addEventListener("click", () => saveParked(j, at));
+    document.querySelectorAll("[data-meter]").forEach((b) => (b.onclick = () => startMeter(j, at, +b.dataset.meter)));
   } catch (e) { openSheet("Can I park here?", `<div class="alert stop"><b>Couldn't check this spot</b>${esc(e.message || "Try again.")}</div>`, "park"); }
 }
 $("#parkBtn").onclick = async () => {
@@ -2115,11 +2235,11 @@ map.on("touchstart", (e) => { if (e.originalEvent.touches.length !== 1 || nav.ac
 
 // ---------- Parked car + move-by countdown ----------
 function saveParked(j, at) {
-  const car = { at, moveBy: j.moveBy, where: j.where, headline: j.headline, savedAt: Date.now() };
+  const car = { at, moveBy: j.moveBy, where: j.where, headline: j.headline, savedAt: Date.now(), meterEnd: j.meterEnd || null, meter: j.meter || null };
   store.set("parked", car); clearCheck(); closeSheet(); drawParked();
   if (j.moveBy) {
     openSheet("Parked ✓", `
-      <div class="verdict green"><div class="ic">P</div><div><div class="big2">Move by ${esc(new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div><div class="muted" style="color:var(--ink)">The app will warn you 30 minutes before when it's open.</div></div></div>
+      <div class="verdict green"><div class="ic">P</div><div><div class="big2">${j.meterEnd && j.moveBy === j.meterEnd ? "Meter runs out" : "Move by"} ${esc(new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div><div class="muted" style="color:var(--ink)">The app will warn you ${j.meterEnd ? 10 : 30} minutes before when it's open.</div></div></div>
       <a class="btn primary" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(j.moveBy)}&w=${encodeURIComponent(j.where || "")}">Add phone reminder</a>
       <p class="note">The phone reminder goes in your Calendar app and alerts you 30 and 5 minutes before, even when this app is closed.</p>`, "parked");
   }
@@ -2141,14 +2261,15 @@ function tickParked() {
   const mins = Math.round((new Date(car.moveBy) - Date.now()) / 60000);
   const left = mins <= 0 ? "Move your car now" : mins < 60 ? `Move in ${mins} min` : mins < 1440 ? `Move in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Move by ${new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
   pill.textContent = `🅿️ ${left}`;
-  pill.classList.toggle("soon", mins <= 30);
-  if (mins <= 30 && !car.warned) {
+  const warnAt = car.meterEnd && car.moveBy === car.meterEnd ? 10 : 30;
+  pill.classList.toggle("soon", mins <= warnAt);
+  if (mins <= warnAt && !car.warned) {
     car.warned = true; store.set("parked", car);
     const box = $("#inAlert");
     box.innerHTML = `<div class="ico" style="background:#d93025;color:#fff;font-weight:800">P</div><div style="min-width:0"><b>${mins <= 0 ? "Move your car now" : `Move your car in ${mins} min`}</b><div class="sub">${esc(car.where || "")} · parking rules start soon</div></div><button class="xx" type="button" aria-label="Dismiss">✕</button>`;
     box.hidden = false; box.querySelector(".xx").onclick = (e) => { e.stopPropagation(); box.hidden = true; };
     box.onclick = () => { box.hidden = true; parkedSheet(); };
-    speak(mins <= 0 ? "Move your car now. Parking rules are in effect." : `Move your car in ${mins} minutes.`);
+    speak(warnAt === 10 ? (mins <= 0 ? "Your parking meter has run out." : `Your parking meter runs out in ${mins} minutes.`) : mins <= 0 ? "Move your car now. Parking rules are in effect." : `Move your car in ${mins} minutes.`);
   }
 }
 function parkedSheet() {
@@ -2158,6 +2279,7 @@ function parkedSheet() {
     <div class="muted">📍 ${esc(car.where || "Saved spot")} · parked ${new Date(car.savedAt).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</div>
     ${car.moveBy ? `<div class="verdict ${new Date(car.moveBy) - Date.now() < 1800000 ? "red" : "green"}"><div class="ic">P</div><div class="big2">Move by ${esc(new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div></div>
       <a class="btn" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(car.moveBy)}&w=${encodeURIComponent(car.where || "")}">Add phone reminder</a>` : ""}
+    ${car.meter?.paid ? `<a class="btn" style="text-decoration:none;text-align:center" href="${PARKNYC_WEB}" target="_blank" rel="noopener">Add time with ParkNYC</a>` : ""}
     <div class="row"><button class="btn primary grow" type="button" id="walkCar">Directions to my car</button><button class="btn" type="button" id="movedCar">I moved it</button></div>`, "parked");
   $("#movedCar").onclick = () => { store.set("parked", null); parkedMarker?.remove(); parkedMarker = null; $("#parkedPill").hidden = true; closeSheet(); };
   $("#walkCar").onclick = () => { dest = { name: "My car", line: car.where || "", at: car.at }; planRoute(dest); };

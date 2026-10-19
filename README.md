@@ -10,3 +10,7 @@ Live at https://player-check.onrender.com
 - Share your drive: live ETA link at `/t/<id>` that updates every ~10s and ends on arrival
 - Auto night map during drives after sunset (when the default map is selected)
 - "Fewer voice prompts" mode
+- Pay for parking: ParkNYC (city's official app/web) button on metered spots + meter timer with reminder before it runs out
+- Hands-free voice commands while driving: report (police, accident, closed road…), add a gas/coffee/food/EV/parking stop, share my drive, "when will I arrive", "where can I park there"
+- Weather on your route (Open-Meteo): rain, snow, storms, fog at the time you'll be there, spoken heads-up
+- Parking at your destination shown on the route screen before you leave

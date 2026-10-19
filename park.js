@@ -253,6 +253,8 @@ async function check(lat, lng, at = new Date()) {
   return {
     status, headline, detail: detail + suspensionNote(rules, now) + (nearZone && status !== "red" ? " You're near the edge of a no-parking stretch, so check which way the sign arrows point." : ""), moveBy, where,
     suspendedToday: rules.some((r) => r.sweeping) ? ASP_SUSPENDED[now.dates[0]] || null : null,
+    // Meter in force now: how long you may pay for (sign's hour limit, and when the meter hours end)
+    meter: meterNow ? (() => { const w = schedule(meterNow, now).find((x) => x.start <= 0 && x.end > 0); return { paid: !!meterNow.paid, hours: +meterNow.hours || null, minsLeft: w ? w.end : null, nextRuleMins: next ? next.w.start : null }; })() : null,
     rules: rules.map(describe),
     rulesElse: elsewhere.map(describe),
     sweeping: rules.some((r) => r.sweeping),
