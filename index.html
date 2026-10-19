@@ -1323,7 +1323,7 @@ function showPlace(r) {
   if (pendingSave) {
     const k = pendingSave; pendingSave = null; $("#q").placeholder = "Search here"; savePlace(k, r);
     r = { ...r, name: PNAME[k], line: r.name };
-  } else addRecent(r);
+  } else if (!r.pin) addRecent(r);
   dest = r; $("#results").hidden = true; $("#q").blur(); $("#q").value = r.name; $("#qClear").style.display = "block";
   destMarker?.remove();
   const el = document.createElement("div"); el.className = "pin";
@@ -1331,7 +1331,7 @@ function showPlace(r) {
   destMarker = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.at).addTo(map);
   map.flyTo({ center: r.at, zoom: 15.5, offset: [0, -60], duration: 800 });
   const isSaved = Object.values(PNAME).includes(r.name);
-  openSheet(r.name, `${r.line ? `<div class="muted">${esc(r.line)}</div>` : ""}${me ? `<div class="muted">${fmtDist(dist(me, r.at))} away</div>` : ""}
+  openSheet(r.name, `${r.line ? `<div class="muted" id="plLine">${esc(r.line)}</div>` : ""}${me ? `<div class="muted">${fmtDist(dist(me, r.at))} away</div>` : ""}
     <div class="pbtns">
       <button class="pbtn main" type="button" id="goDir"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="currentColor"/></svg>Directions</button>
       <button class="pbtn" type="button" id="goStart"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Start</button>
@@ -1347,6 +1347,24 @@ function showPlace(r) {
     try { if (navigator.share) await navigator.share({ title: r.name, text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); $("#goShare").lastChild.textContent = "Copied"; } } catch {}
   };
   $("#parkNear")?.addEventListener("click", () => parkCheck(r.at, true));
+}
+// Press and hold anywhere: drop a pin there with Directions, Start, Share and (in NYC) Parking
+async function dropPin(at) {
+  if (Date.now() - (dropPin.last || 0) < 900) return; dropPin.last = Date.now(); // long-press can fire twice on some phones
+  try { navigator.vibrate?.(15); } catch {}
+  const r = { name: "Dropped pin", line: "Finding the address…", at, pin: true };
+  showPlace(r);
+  try {
+    const j = await (await fetch(`https://photon.komoot.io/reverse?lat=${at[1]}&lon=${at[0]}&lang=en`, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined })).json();
+    const p = j.features?.[0]?.properties || {};
+    const street = [p.housenumber, p.street].filter(Boolean).join(" ");
+    r.name = p.name && !street ? p.name : street || p.name || "Dropped pin";
+    r.line = [p.name && street ? p.name : null, p.district || p.locality, p.city || p.county, p.state].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i && x !== r.name).join(", ");
+  } catch { r.line = `${at[1].toFixed(5)}, ${at[0].toFixed(5)}`; }
+  if (dest !== r || sheetMode !== "place") return;
+  $("#sheetTitle").textContent = r.name;
+  const l = $("#plLine"); if (l) l.textContent = r.line || `${at[1].toFixed(5)}, ${at[0].toFixed(5)}`;
+  $("#q").value = r.name;
 }
 $("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeholder = "Where to?"; $("#q").focus(); } };
 
@@ -2465,7 +2483,7 @@ async function parkCheck(at, fromTap) {
       ${j.rulesElse?.length ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${payBlock(j)}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
-      <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Long-press anywhere on the map to check another spot."}</p>`, "park");
+      <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Press and hold anywhere on the map to drop a pin there."}</p>`, "park");
     $("#parkHere")?.addEventListener("click", () => saveParked(j, at));
     document.querySelectorAll("[data-meter]").forEach((b) => (b.onclick = () => startMeter(j, at, +b.dataset.meter)));
   } catch (e) { openSheet("Can I park here?", `<div class="alert stop"><b>Couldn't check this spot</b>${esc(e.message || "Try again.")}</div>`, "park"); }
@@ -2474,10 +2492,10 @@ $("#parkBtn").onclick = async () => {
   try { const p = await getMe(); parkCheck(p, false); }
   catch { const c = map.getCenter(); parkCheck([c.lng, c.lat], false); }
 };
-// Long-press (or right-click) anywhere on the map to check that spot
-map.on("contextmenu", (e) => { if (!nav.active) parkCheck([e.lngLat.lng, e.lngLat.lat], true); });
+// Long-press (or right-click) anywhere on the map: drop a pin (directions, start, share, parking)
+map.on("contextmenu", (e) => { if (!nav.active) dropPin([e.lngLat.lng, e.lngLat.lat]); });
 let pressT = null;
-map.on("touchstart", (e) => { if (e.originalEvent.touches.length !== 1 || nav.active) return; const ll = e.lngLat; pressT = setTimeout(() => parkCheck([ll.lng, ll.lat], true), 650); });
+map.on("touchstart", (e) => { if (e.originalEvent.touches.length !== 1 || nav.active) return; const ll = e.lngLat; pressT = setTimeout(() => dropPin([ll.lng, ll.lat]), 650); });
 ["touchend", "touchmove", "dragstart", "zoomstart"].forEach((ev) => map.on(ev, () => clearTimeout(pressT)));
 
 // ---------- Parked car + move-by countdown ----------
