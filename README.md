@@ -14,3 +14,5 @@ Live at https://player-check.onrender.com
 - Hands-free voice commands while driving: report (police, accident, closed road…), add a gas/coffee/food/EV/parking stop, share my drive, "when will I arrive", "where can I park there"
 - Weather on your route (Open-Meteo): rain, snow, storms, fog at the time you'll be there, spoken heads-up
 - Parking at your destination shown on the route screen before you leave
+- My car hub: "My car is gone" tow help (NYC towed-vehicle finder, precinct, fees, what to bring) and registration / inspection / insurance renewal reminders (in-app at 30 and 7 days, plus calendar reminder)
+- Pay-before-penalty: each open ticket shows its pay-by date, a Pay now link (CityPay) and a calendar reminder 2 days before the late fee

@@ -267,15 +267,18 @@ async function check(lat, lng, at = new Date()) {
 // Calendar reminder (.ics): iPhone shows "Add to Calendar" and alerts 30 min before
 function ics(url, res) {
   const t = new Date(url.searchParams.get("t") || ""), where = String(url.searchParams.get("w") || "your car").replace(/[\r\n,;]/g, " ").slice(0, 120);
+  const clean = (v, n) => String(v || "").replace(/[\r\n,;\\]/g, " ").slice(0, n);
+  const title = clean(url.searchParams.get("s"), 80) || "Move your car", desc = clean(url.searchParams.get("d"), 200) || `Parking rules start at this time on ${where}.`;
+  const allDay = url.searchParams.get("allday") === "1";
   if (isNaN(t)) { res.writeHead(400); res.end("Bad time"); return; }
   const f = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const body = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Plate Check//EN", "BEGIN:VEVENT",
-    `UID:${Date.now()}@platecheck`, `DTSTAMP:${f(new Date())}`, `DTSTART:${f(new Date(t - 15 * 60000))}`, `DTEND:${f(t)}`,
-    "SUMMARY:Move your car", `DESCRIPTION:Parking rules start at this time on ${where}.`, `LOCATION:${where}`,
-    "BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "DESCRIPTION:Move your car", "END:VALARM",
-    "BEGIN:VALARM", "TRIGGER:-PT5M", "ACTION:DISPLAY", "DESCRIPTION:Move your car now", "END:VALARM",
+  const body = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Rova//EN", "BEGIN:VEVENT",
+    `UID:${Date.now()}@rova`, `DTSTAMP:${f(new Date())}`, `DTSTART:${f(new Date(t - 15 * 60000))}`, `DTEND:${f(t)}`,
+    `SUMMARY:${title}`, `DESCRIPTION:${desc}`, ...(allDay ? [] : [`LOCATION:${where}`]),
+    "BEGIN:VALARM", allDay ? "TRIGGER:-P1D" : "TRIGGER:-PT30M", "ACTION:DISPLAY", `DESCRIPTION:${title}`, "END:VALARM",
+    "BEGIN:VALARM", allDay ? "TRIGGER:PT0M" : "TRIGGER:-PT5M", "ACTION:DISPLAY", `DESCRIPTION:${title}`, "END:VALARM",
     "END:VEVENT", "END:VCALENDAR"].join("\r\n");
-  res.writeHead(200, { "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'inline; filename="move-your-car.ics"' });
+  res.writeHead(200, { "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'inline; filename="rova-reminder.ics"' });
   res.end(body);
 }
 
