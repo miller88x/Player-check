@@ -179,6 +179,8 @@ body.routing .top,body.routing #layersBtn{display:none}
 body.navigating #navSide .fab{background:#fff;color:#3c4043;box-shadow:0 2px 6px rgba(0,0,0,.25),0 6px 14px rgba(0,0,0,.12)}
 body.navigating #recenter{background:#fff;color:#0b5e57;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 #navBottom{background:#fff!important;color:#202124}
+#navShare{padding:10px 0;font-size:15px;font-weight:600;border-radius:22px;width:100%;color:#1a73e8;background:#e8f0fe;border:0}
+#navShare.on{color:#fff;background:#188038}
 #navBottom::before{background:#dadce0!important}
 #navBottom .eta{color:#188038!important}
 #navBottom .sub{color:#3c4043!important}
@@ -407,10 +409,11 @@ body.navigating #recenter.on{display:grid!important}
   <button class="fab" id="navCompass" type="button" aria-label="Compass: tap to switch north up or heading up"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 15 12h-6z" fill="#e5484d"/><path d="M12 21.5 9 12h6z" fill="#9aa0a6"/></svg></button>
   <button class="fab" id="navMute" type="button" aria-label="Mute voice"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3.5 3.5l17 17" stroke="#e5484d" stroke-width="2.4" stroke-linecap="round" style="display:none"/></svg></button>
   <button class="fab" id="navOv" type="button" aria-label="Route overview"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-6.5L7 9.5M12 14.5l5-5M7 9.5V5M17 9.5V5M4.5 7.5 7 5l2.5 2.5M14.5 7.5 17 5l2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button class="fab" id="navStop" type="button" aria-label="Add a stop: gas, coffee, food, EV charging, parking"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V5a1.5 1.5 0 0 1 1.5-1.5h6A1.5 1.5 0 0 1 14 5v15M3.5 20h12M7.5 7h4v3.5h-4zM14 9.5h2a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 0 3 0V8.5L18 6" fill="none" stroke="#1a73e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <button class="fab" id="navReport" type="button" aria-label="Report something on the road"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" fill="none" stroke="#e37400" stroke-width="2" stroke-linejoin="round"/><path d="M12 9.5v6M9 12.5h6" stroke="#e37400" stroke-width="2" stroke-linecap="round"/></svg></button>
 </div>
 <div id="navBottom">
-  <span></span>
+  <button class="btn" id="navShare" type="button" aria-label="Share your drive and ETA">Share</button>
   <div class="mid"><div class="eta" id="navEta"></div><div class="sub" id="navSub"></div></div>
   <button class="btn end" id="navEnd" type="button">Exit</button>
 </div>
@@ -1345,28 +1348,36 @@ function buildRoute(r, from) {
   const coords = r.geometry.coordinates;
   const cum = [0]; for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + dist(coords[i - 1], coords[i]));
   let acc = 0;
-  const steps = r.legs[0].steps.map((s) => { const st = { ...s, at: acc }; acc += s.distance; return st; });
-  const R = { coords, cum, steps, duration: realTimes(steps, from), distance: r.distance, total: cum[cum.length - 1] || 1, from };
-  R.maxspeed = r.legs[0].annotation?.maxspeed || [];
+  const steps = [];
+  let stopAt = null;
+  r.legs.forEach((leg, li) => leg.steps.forEach((s) => {
+    const st = { ...s, at: acc };
+    if (li < r.legs.length - 1 && s.maneuver.type === "arrive") { st.waypoint = true; stopAt = acc; }
+    if (li > 0 && s.maneuver.type === "depart") st.resume = true;
+    acc += s.distance; steps.push(st);
+  }));
+  const R = { coords, cum, steps, duration: realTimes(steps, from), distance: r.distance, total: cum[cum.length - 1] || 1, from, stopAt };
+  R.maxspeed = r.legs.flatMap((l) => l.annotation?.maxspeed || []);
   const main = steps.filter((x) => x.name).sort((a, b) => b.distance - a.distance)[0];
   R.via = main ? main.name : "";
   R.camsOnRoute = camsAlong(R);
   return R;
 }
 const avoid = () => store.get("avoid", { tolls: false, highways: false });
-async function fetchRoutes(from, to, alts = true) {
+async function fetchRoutes(from, to, alts = true, via = null) {
   const a = avoid(), ex = [a.tolls && "toll", a.highways && "motorway"].filter(Boolean).join(",");
-  const base = `https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true&annotations=maxspeed${alts ? "&alternatives=2" : ""}`;
+  const pts = [from, via, to].filter(Boolean).map((c) => `${c[0]},${c[1]}`).join(";");
+  const base = `https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true&annotations=maxspeed${alts && !via ? "&alternatives=2" : ""}`;
   let j = await (await fetch(base + (ex ? `&exclude=${ex}` : ""))).json();
   let avoidFailed = false;
   if (ex && j.code !== "Ok") { j = await (await fetch(base)).json(); avoidFailed = true; } // route engine can't avoid here: fall back
-  if (j.code !== "Ok") j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true`)).json(); // plain request as a last resort
+  if (j.code !== "Ok") j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson&steps=true`)).json(); // plain request as a last resort
   if (j.code !== "Ok" || !j.routes?.length) throw new Error("No route");
   const list = j.routes.map((r) => buildRoute(r, from)).sort((x, y) => x.duration - y.duration);
   list.forEach((R) => (R.avoidFailed = avoidFailed));
   return list;
 }
-async function fetchRoute(from, to) { return (await fetchRoutes(from, to, false))[0]; }
+async function fetchRoute(from, to, via = null) { return (await fetchRoutes(from, to, false, via))[0]; }
 // Posted speed limit (mph) where the car is now. NYC's default is 25 on city streets.
 function limitAt(R, idx) {
   const m = R.maxspeed?.[Math.min(idx, (R.maxspeed?.length || 1) - 1)];
@@ -1413,7 +1424,8 @@ async function planRoute(to) {
   let from;
   try { from = await getMe(); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
-  try { routeAlts = await fetchRoutes(from, to.at); route = routeAlts[0]; camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
+  if (nav.stopFor !== to) { nav.stop = null; nav.stopFor = null; }
+  try { routeAlts = await fetchRoutes(from, to.at, true, nav.stop?.at); route = routeAlts[0]; camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>No route</b>Couldn\'t find a driving route there. Try another place.</div>'; return; }
   drawRoute();
   const b = new maplibregl.LngLatBounds(); routeAlts.forEach((R) => R.coords.forEach((c) => b.extend(c)));
@@ -1439,7 +1451,9 @@ function routeSheet(to) {
   const best = Math.min(...routeAlts.map((R) => R.duration));
   document.body.classList.add("routing"); $("#dirTo span").textContent = to.name;
   openSheet("Drive", `
-    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button></div>
+    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button><button type="button" class="tchip" id="quietV" aria-pressed="${!chatty()}">${!chatty() ? "✓ " : ""}Fewer voice prompts</button></div>
+    ${nav.stop ? `<div class="note" style="display:flex;align-items:center;gap:10px">Stop on the way: <b>${esc(nav.stop.name)}</b><button type="button" class="tchip" id="rmStop" style="margin-left:auto">Remove</button></div>`
+      : `<div class="tchips"><span class="muted" style="align-self:center;font-size:14px">Add a stop:</span>${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>`}
     ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
     <div class="rlist">${routeAlts.map((R, i) => { const extra = Math.round((R.duration - best) / 60);
       return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
@@ -1451,6 +1465,9 @@ function routeSheet(to) {
   document.querySelectorAll("[data-ro]").forEach((b) => (b.onclick = () => pickRoute(routeAlts[+b.dataset.ro], to)));
   const flip = (k) => { const v = avoid(); v[k] = !v[k]; store.set("avoid", v); planRoute(to); };
   $("#avTolls").onclick = () => flip("tolls"); $("#avHwy").onclick = () => flip("highways");
+  $("#quietV").onclick = () => { store.set("chatty", !chatty()); routeSheet(to); };
+  $("#rmStop")?.addEventListener("click", () => { nav.stop = null; nav.stopFor = null; planRoute(to); });
+  document.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = () => stopSearch(b.dataset.stop, to)));
   $("#voicePick").onclick = voiceSheet;
   $("#startNav").onclick = () => startNav(false);
   $("#simNav").onclick = () => startNav(true);
@@ -1462,11 +1479,13 @@ function startNav(sim) {
   if (!route) return;
   unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
   (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
-  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, t0: Date.now(), a0: 0, arrived: false, start: Date.now(), overWarned: 0 });
+  Object.assign(nav, { active: true, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, hzSpoken: {}, follow: true, t0: Date.now(), a0: 0, arrived: false, start: Date.now(), overWarned: 0, nightAt: Date.now() });
+  loadHazards(route); paintShare();
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
   $("#sheet").classList.remove("show"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
   routeAlts = [route]; drawRoute(); // only the chosen route while driving
+  try { autoNight(); } catch {}
   document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = [];
   try { navigator.wakeLock?.request("screen").then((l) => (nav.lock = l)).catch(() => {}); } catch {}
   if (sim) {
@@ -1501,7 +1520,9 @@ function arrived() {
 }
 function endNav() {
   const wasSim = !!nav.sim;
-  nav.active = false; clearInterval(nav.sim); nav.sim = null;
+  shareEnd(nav.arrived);
+  nav.active = false; clearInterval(nav.sim); nav.sim = null; nav.stop = null; nav.stopFor = null;
+  try { nightOff(); } catch {}
   try { nav.lock?.release(); } catch {}
   document.body.classList.remove("navigating"); setPOI(true); $("#camAlert").style.display = "none"; $("#camAlert").style.background = ""; $("#camAlert").style.animation = ""; $("#recenter").classList.remove("on"); nav.northUp = false;
   stopVoice();
@@ -1534,8 +1555,8 @@ function instruction(s) {
   const turn = { left: "Turn left", right: "Turn right", "slight left": "Bear left", "slight right": "Bear right", "sharp left": "Make a sharp left", "sharp right": "Make a sharp right", uturn: "Make a U-turn", straight: "Continue straight" }[mod] || "Continue";
   const toward = s.destinations ? s.destinations.split(",")[0] : name;
   switch (m.type) {
-    case "depart": return `Head ${["north", "east", "south", "west"][Math.round((m.bearing_after || 0) / 90) % 4]} on ${name}`;
-    case "arrive": return "You have arrived";
+    case "depart": if (s.resume) return `Continue on ${name}`; return `Head ${["north", "east", "south", "west"][Math.round((m.bearing_after || 0) / 90) % 4]} on ${name}`;
+    case "arrive": return s.waypoint ? `You've reached your stop${nav.stop?.name ? ", " + nav.stop.name : ""}` : "You have arrived";
     case "merge": return `Merge onto ${name}`;
     case "on ramp": return `Take the ramp toward ${toward}`;
     case "off ramp": return `Take the exit${s.exits ? " " + s.exits.split(";")[0] : ""} toward ${toward}`;
@@ -1577,7 +1598,8 @@ function navTickInner(pos) {
   if (pr.off > 50) nav.offCount++; else nav.offCount = 0;
   if (nav.offCount >= 3 && Date.now() - nav.lastReroute > 15000 && !nav.sim) {
     nav.lastReroute = Date.now(); speak("Rerouting");
-    fetchRoute(pos, R.coords[R.coords.length - 1]).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; nav.t0 = Date.now(); nav.a0 = 0; drawRoute(); }).catch(() => {});
+    const via = nav.stop && R.stopAt != null && nav.along < R.stopAt - 30 ? nav.stop.at : null;
+    fetchRoute(pos, R.coords[R.coords.length - 1], via).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; nav.hzSpoken = {}; nav.t0 = Date.now(); nav.a0 = 0; loadHazards(nr); drawRoute(); }).catch(() => {});
   }
   let k = R.steps.findIndex((s) => s.at > nav.along + 5); if (k < 0) k = R.steps.length - 1;
   const next = R.steps[k], after = R.steps[k + 1];
@@ -1591,7 +1613,7 @@ function navTickInner(pos) {
   $("#navStreet").textContent = next.maneuver.type === "arrive" ? "Destination" : next.name || next.ref || instruction(next);
   $("#navThen").innerHTML = after && toNext < 400 ? `Then <svg width="26" height="26" viewBox="0 0 24 24" role="img" aria-label="${esc(instruction(after))}">${arrowSVG(after)}</svg>` : "";
   const spk = (key, txt) => { if (!nav.spoken[key]) { nav.spoken[key] = 1; speak(txt); } };
-  if (toNext < 600 && toNext > 250) spk(`f${k}`, `In ${sayDist(toNext)}, ${instruction(next)}`);
+  if (toNext < 600 && toNext > 250 && chatty()) spk(`f${k}`, `In ${sayDist(toNext)}, ${instruction(next)}`);
   if (toNext <= 90) spk(`n${k}`, instruction(next));
   const left = Math.max(0, R.total - nav.along), secs = tripEta(R);
   $("#navEta").textContent = fmtMin(secs);
@@ -1600,11 +1622,15 @@ function navTickInner(pos) {
   if (ahead) showCam({ ...ahead, meters: ahead.along - nav.along });
   else {
     const ra = reportsAhead(pos, heading, R);
-    if (ra) { const t = RTYPES[ra.r.type]; const box = $("#camAlert"); box.style.display = "flex"; box.style.background = t.c; box.style.animation = "none"; $("#camIco").textContent = t.e; $("#camText").textContent = `${t.label} reported`; $("#camDist").textContent = `${fmtDist(ra.d)} ahead · ${ago(ra.r.created_at)}`; $("#camLim").style.display = "none"; }
+    const hz = !ra && hazardAhead(R);
+    if (hz) showHazard(hz);
+    else if (ra) { const t = RTYPES[ra.r.type]; const box = $("#camAlert"); box.style.display = "flex"; box.style.background = t.c; box.style.animation = "none"; $("#camIco").textContent = t.e; $("#camText").textContent = `${t.label} reported`; $("#camDist").textContent = `${fmtDist(ra.d)} ahead · ${ago(ra.r.created_at)}`; $("#camLim").style.display = "none"; }
     else showCam(null);
   }
   updateSpeedo((ahead?.type === "speed" && ahead.limit) || limitAt(R, nav.idx));
   if (left < 25 && !nav.arrived) { nav.arrived = true; spk("arr", `You have arrived${nav.dest?.name ? " at " + nav.dest.name : ""}`); setTimeout(arrived, 1200); }
+  shareTick();
+  if (Date.now() - (nav.nightAt || 0) > 300000) { nav.nightAt = Date.now(); try { autoNight(); } catch {} }
   const doneCoords = R.coords.slice(0, nav.idx + 1).concat([pointAt(R, nav.along)]);
   map.getSource("done")?.setData({ type: "FeatureCollection", features: doneCoords.length > 1 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: doneCoords } }] : [] });
 }
@@ -1650,6 +1676,207 @@ function freeDriveCams(pos) {
     break;
   }
 }
+
+// ================= DRIVE EXTRAS (Waze / Google parity) =================
+// Road-ahead warnings, stops along the route, live ETA sharing, auto night map, fewer voice prompts.
+const chatty = () => store.get("chatty", true);
+async function overpassPost(q) {
+  for (const url of OVERPASS) {
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent(q), signal: AbortSignal.timeout ? AbortSignal.timeout(25000) : undefined });
+      if (r.ok) return await r.json();
+    } catch {}
+  }
+  return null;
+}
+// Route as an Overpass polyline "lat,lng,lat,lng…" between two distances along it
+function polyStr(R, from = 0, to = R.total, maxPts = 250) {
+  const span = Math.max(1, to - from), step = Math.max(60, span / maxPts), out = [];
+  for (let d = from; d <= to; d += step) { const p = pointAt(R, d); out.push(`${p[1].toFixed(5)},${p[0].toFixed(5)}`); }
+  const e = pointAt(R, to); out.push(`${e[1].toFixed(5)},${e[0].toFixed(5)}`);
+  return out.join(",");
+}
+
+// ---------- Road-ahead warnings ----------
+const HZ = {
+  limit:  { e: "⚠️", t: "Speed limit drops ahead", warn: 350, c: "#d93025" },
+  school: { e: "🏫", t: "School zone ahead", warn: 300, c: "#f29900" },
+  toll:   { e: "💵", t: "Toll ahead", warn: 800, c: "#5f6368" },
+  rail:   { e: "🚆", t: "Railroad crossing ahead", warn: 300, c: "#e8710a", quiet: true },
+  curve:  { e: "↪️", t: "Sharp curve ahead", warn: 300, c: "#e8710a", quiet: true },
+  bump:   { e: "🔺", t: "Speed bump ahead", warn: 160, c: "#e8710a", quiet: true },
+};
+const mphOf = (m) => (m && m.speed ? (m.unit === "km/h" ? Math.round(m.speed * 0.621 / 5) * 5 : m.speed) : null);
+function limitDrops(R) {
+  const out = []; let prev = null;
+  (R.maxspeed || []).forEach((m, i) => {
+    const v = mphOf(m); if (!v) return;
+    const at = R.cum[Math.min(i, R.cum.length - 1)];
+    if (prev && v <= prev - 10 && at > 100 && !out.some((h) => at - h.along < 300)) out.push({ type: "limit", v, along: at });
+    prev = v;
+  });
+  return out;
+}
+function sharpCurves(R) {
+  if (R.coords.length < 3) return [];
+  const step = 15, pts = []; let i = 0;
+  for (let d = 0; d <= R.total; d += step) {
+    while (i < R.cum.length - 2 && R.cum[i + 1] < d) i++;
+    const seg = R.cum[i + 1] - R.cum[i] || 1, t = Math.min(1, (d - R.cum[i]) / seg);
+    pts.push([R.coords[i][0] + (R.coords[i + 1][0] - R.coords[i][0]) * t, R.coords[i][1] + (R.coords[i + 1][1] - R.coords[i][1]) * t]);
+  }
+  const out = [];
+  for (let j = 4; j < pts.length - 4; j++) {
+    const d = j * step;
+    if (dist(pts[j - 4], pts[j]) < 40 || dist(pts[j], pts[j + 4]) < 40) continue;
+    if (angDiff(bearing(pts[j - 4], pts[j]), bearing(pts[j], pts[j + 4])) < 50) continue;
+    // a planned turn isn't a curve; city-speed roads aren't either
+    if (R.steps.some((s) => Math.abs(s.at - d) < 80 && !(/new name|continue/.test(s.maneuver.type) && /straight|slight|^$/.test(s.maneuver.modifier || "")))) continue;
+    const st = R.steps.find((s) => s.at + s.distance > d);
+    if (!st || st.distance / Math.max(1, st.duration) < 13) continue;
+    if (out.length && d - out[out.length - 1].along < 250) continue;
+    out.push({ type: "curve", along: Math.max(0, d - 30) });
+  }
+  return out;
+}
+function tollsFromSteps(R) {
+  const out = []; let prev = false;
+  for (const s of R.steps) for (const x of s.intersections || []) {
+    const toll = (x.classes || []).includes("toll");
+    if (toll && !prev && x.location) { const pr = project(R, x.location, 0, true); if (pr.off < 60 && !out.some((h) => Math.abs(h.along - pr.along) < 500)) out.push({ type: "toll", along: pr.along }); }
+    prev = toll;
+  }
+  return out;
+}
+async function osmHazards(R, from, to) {
+  const P = polyStr(R, from, to);
+  const q = `[out:json][timeout:20];(node["traffic_calming"~"^(bump|hump|table|cushion|yes|dip)$"](around:18,${P});node["barrier"="toll_booth"](around:35,${P});node["railway"="level_crossing"](around:18,${P});way["amenity"="school"](around:90,${P}););out center 500;`;
+  const j = await overpassPost(q); if (!j || route !== R && !routeAlts.includes(R)) return;
+  for (const el of j.elements || []) {
+    const t = el.tags || {}, lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon; if (lat == null) continue;
+    const type = t.amenity === "school" ? "school" : t.barrier === "toll_booth" ? "toll" : t.railway === "level_crossing" ? "rail" : "bump";
+    const pr = project(R, [lng, lat], 0, true);
+    if (pr.off > ({ school: 130, toll: 45, rail: 20, bump: 20 })[type]) continue;
+    const along = Math.max(0, pr.along - (type === "school" ? 80 : 0));
+    if (R.hazards.some((h) => h.type === type && Math.abs(h.along - along) < (type === "bump" ? 40 : type === "school" ? 400 : 300))) continue;
+    R.hazards.push({ type, along, name: t.name || "" });
+  }
+  R.hazards.sort((a, b) => a.along - b.along);
+}
+const HZ_CHUNK = 40000; // load OSM hazards 40 km at a time along the route
+function loadHazards(R) {
+  if (!R || R.hazards) return;
+  R.hazards = [...limitDrops(R), ...sharpCurves(R), ...tollsFromSteps(R)].sort((a, b) => a.along - b.along);
+  R.hzUpTo = Math.min(R.total, HZ_CHUNK);
+  osmHazards(R, 0, R.hzUpTo).catch(() => {});
+}
+function schoolHours() { const d = new Date(), h = d.getHours() + d.getMinutes() / 60; return d.getDay() > 0 && d.getDay() < 6 && h >= 6.5 && h < 17.5; }
+function hazardAhead(R) {
+  if (!R?.hazards) return null;
+  if (R.hzUpTo < R.total && nav.along > R.hzUpTo - 8000) { const a = R.hzUpTo; R.hzUpTo = Math.min(R.total, a + HZ_CHUNK); osmHazards(R, a, R.hzUpTo).catch(() => {}); }
+  const near = [];
+  for (const h of R.hazards) {
+    const m = h.along - nav.along;
+    if (m < -10 || m > HZ[h.type].warn) { if (m > 1000) break; continue; }
+    if (h.type === "curve" && speedMps < 11) continue;
+    if (h.type === "school" && !schoolHours()) continue;
+    near.push({ ...h, meters: m });
+  }
+  if (!near.length) return null;
+  // show the closest; announce any not yet spoken so overlapping warnings each get said
+  return { show: near[0], say: near.find((h) => !nav.hzSpoken?.[`${h.type}${Math.round(h.along)}`]) || null };
+}
+function showHazard({ show: h, say }) {
+  const t = HZ[h.type], box = $("#camAlert");
+  box.style.display = "flex"; box.style.background = t.c; box.style.animation = "none";
+  $("#camIco").textContent = t.e;
+  $("#camText").textContent = h.type === "limit" ? `Speed limit drops to ${h.v}` : h.type === "toll" && h.name ? `${h.name} ahead` : t.t;
+  $("#camDist").textContent = h.meters > 15 ? `${fmtDist(h.meters)} ahead` : "Now";
+  $("#camLim").style.display = h.type === "limit" ? "block" : "none"; $("#camLim b").textContent = h.v || "";
+  if (!say) return;
+  nav.hzSpoken[`${say.type}${Math.round(say.along)}`] = 1;
+  if (HZ[say.type].quiet && !chatty()) return;
+  speak(say.type === "limit" ? `Speed limit drops to ${say.v} ahead` : say.type === "school" ? "School zone ahead. Slow down" : say.type === "toll" && say.name ? `${say.name} ahead` : HZ[say.type].t);
+}
+
+// ---------- Add a stop along the route (gas, coffee, food, EV, parking) ----------
+const STOP_CATS = ["gas", "coffee", "food", "ev", "parking"];
+async function stopSearch(cat, to) {
+  const [, tag, label] = CATS[cat], [k, v] = tag.split(":"), R = route;
+  openSheet(`${label} along your route`, '<p class="muted" style="margin:0">Looking along your route…</p>', "route");
+  const startAt = nav.active ? nav.along : 0, endAt = Math.min(R.total, startAt + 80000);
+  const j = await overpassPost(`[out:json][timeout:20];nwr["${k}"="${v}"](around:500,${polyStr(R, startAt, endAt, 200)});out center 80;`);
+  if (sheetMode !== "route") return;
+  const list = (j?.elements || []).map((el) => {
+    const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon; if (lat == null) return null;
+    const pr = project(R, [lng, lat], 0, true);
+    return { name: el.tags?.name || el.tags?.brand || label, at: [lng, lat], along: pr.along, off: pr.off, extra: Math.round((pr.off * 2) / 7 + 90) };
+  }).filter((x) => x && x.off < 550 && x.along > startAt + 150 && x.along < R.total - 150).sort((a, b) => a.off - b.off).slice(0, 8).sort((a, b) => a.along - b.along);
+  const back = () => (nav.active ? closeSheet() : routeSheet(to));
+  if (!list.length) { $("#sheetBody").innerHTML = `<p class="muted" style="margin:0 0 12px">Nothing found close to your route.</p><button class="btn" type="button" id="stopBack">Back</button>`; $("#stopBack").onclick = back; return; }
+  $("#sheetBody").innerHTML = `<div class="rlist">${list.map((s, i) => `<button type="button" class="rl" data-sp="${i}"><span class="tm" style="font-size:20px">+${Math.max(1, Math.round(s.extra / 60))}<small>min</small></span><span class="a">${esc(s.name)}</span><span class="b">${fmtDist(s.along - startAt)} ahead · ${s.off < 60 ? "on your route" : fmtDist(s.off) + " off route"}</span></button>`).join("")}</div><button class="btn" type="button" id="stopBack">Back</button>`;
+  $("#stopBack").onclick = back;
+  document.querySelectorAll("[data-sp]").forEach((b) => (b.onclick = () => addStop(list[+b.dataset.sp], to)));
+}
+async function addStop(s, to) {
+  nav.stop = { name: s.name, at: s.at }; nav.stopFor = to;
+  if (!nav.active) return planRoute(to);
+  closeSheet(); speak(`Adding a stop at ${s.name}`);
+  try { const nr = await fetchRoute(me || pointAt(route, nav.along), to.at, s.at); route = nr; routeAlts = [nr]; Object.assign(nav, { idx: 0, along: 0, spoken: {}, hzSpoken: {}, t0: Date.now(), a0: 0 }); loadHazards(nr); drawRoute(); } catch { speak("Couldn't add that stop"); }
+}
+
+// ---------- Share your drive (live ETA link) ----------
+const rid = (n) => Array.from({ length: n }, () => "abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 31)]).join("");
+function shareBody(extra = {}) {
+  const p = me || (route ? pointAt(route, nav.along) : null), secs = route ? tripEta(route) : 0;
+  return JSON.stringify({ key: nav.share?.key, lat: p?.[1], lng: p?.[0], eta: Math.round(secs), left: Math.round(route ? route.total - nav.along : 0), ...extra });
+}
+async function shareDrive() {
+  if (!nav.active || !route) return;
+  if (!nav.share) {
+    nav.share = { id: rid(8), key: rid(16), last: Date.now() };
+    fetch("/api/trip", { method: "POST", headers: { "Content-Type": "application/json" }, body: shareBody({ id: nav.share.id, name: store.get("name", "") || account?.name || "", dest: nav.dest?.name || "" }) }).catch(() => {});
+    paintShare();
+  }
+  const url = `${location.origin}/t/${nav.share.id}`, text = `I'm on my way to ${nav.dest?.name || "you"}, arriving around ${clock(tripEta(route))}. Follow my drive live:`;
+  try { if (navigator.share) await navigator.share({ title: "My drive", text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); $("#navShare").textContent = "Copied"; setTimeout(paintShare, 1500); } } catch {}
+}
+function shareTick() {
+  if (!nav.share || Date.now() - nav.share.last < 10000) return;
+  nav.share.last = Date.now();
+  fetch(`/api/trip/${nav.share.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: shareBody() }).catch(() => {});
+}
+function shareEnd(arrivedOk) {
+  if (!nav.share) return;
+  const id = nav.share.id, body = shareBody({ ended: true, arrived: !!arrivedOk });
+  nav.share = null; paintShare();
+  try { navigator.sendBeacon(`/api/trip/${id}`, new Blob([body], { type: "application/json" })); } catch {}
+}
+function paintShare() { const b = $("#navShare"); if (!b) return; b.textContent = nav.share ? "Sharing" : "Share"; b.classList.toggle("on", !!nav.share); b.setAttribute("aria-label", nav.share ? "Sharing your drive. Tap to share the link again" : "Share your drive and ETA"); }
+$("#navShare").onclick = shareDrive;
+
+// ---------- Auto night map while driving ----------
+function sunDown(lng, lat, d = new Date()) {
+  const rad = Math.PI / 180, day = (d - Date.UTC(d.getUTCFullYear(), 0, 0)) / 864e5;
+  const g = (2 * Math.PI / 365) * (day - 1 + (d.getUTCHours() - 12) / 24);
+  const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+  const eqt = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+  const tst = (((d.getUTCHours() * 60 + d.getUTCMinutes() + eqt + 4 * lng) % 1440) + 1440) % 1440, ha = (tst / 4 - 180) * rad;
+  return Math.asin(Math.sin(lat * rad) * Math.sin(decl) + Math.cos(lat * rad) * Math.cos(decl) * Math.cos(ha)) / rad < -1;
+}
+function autoNight() {
+  const p = me || route?.from; if (!nav.active || !p || store.get("mapType", "map") !== "map") return;
+  const dark = sunDown(p[0], p[1]);
+  if (dark && !nav.night) { nav.night = true; mapType = "dark"; map.setStyle(STYLES.dark); }
+  else if (!dark && nav.night) { nav.night = false; mapType = "map"; map.setStyle(STYLES.map); }
+}
+function nightOff() { if (!nav.night) return; nav.night = false; mapType = store.get("mapType", "map"); map.setStyle(STYLES[mapType]); paintCredit(); }
+function stopPicker(to) {
+  openSheet("Add a stop", `<div class="tchips">${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>
+    ${nav.stop ? `<p class="note">Current stop: <b>${esc(nav.stop.name)}</b></p>` : ""}`, "route");
+  document.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = () => stopSearch(b.dataset.stop, to)));
+}
+$("#navStop").onclick = () => { if (nav.active && route && nav.dest) stopPicker(nav.dest); };
 
 // ================= IN-APP ALERTS =================
 // Compares what the city shows now with what this phone saw last time.

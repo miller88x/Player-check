@@ -11,6 +11,7 @@ const reports = require("./reports");
 const uscams = require("./uscams");
 const auth = require("./auth");
 const tts = require("./tts");
+const trips = require("./trips");
 
 const PORT = process.env.PORT || 3000;
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
@@ -213,6 +214,8 @@ http
       if (req.method === "POST") return readBody(req).then((b) => { (global.appLog ||= []).unshift({ ...b, ip: undefined }); global.appLog.length = Math.min(global.appLog.length, 100); send(res, 200, { ok: true }); }).catch(() => send(res, 400, {}));
       return send(res, 200, { errors: global.appLog || [] });
     }
+    if (url.pathname.startsWith("/api/trip") && trips.routes(url, res, send, readBody, req)) return;
+    if (/^\/t\/[a-z0-9]{8}$/.test(url.pathname)) return send(res, 200, trips.page(url.pathname.slice(3)), "text/html; charset=utf-8");
     if (url.pathname.startsWith("/api/tts") && tts.routes(url, res, send, req)) return;
     if ((url.pathname.startsWith("/api/auth/") || url.pathname === "/api/me") && auth.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/reports") && reports.routes(url, res, send, readBody, req)) return;
