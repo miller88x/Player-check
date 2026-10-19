@@ -7,7 +7,10 @@
 //      to pass through points along it, pointed in the direction of travel.
 //   3. Check every 20 m of the final route against the official network and report anything off it.
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
-const OSRM = process.env.OSRM_URL || "https://router.project-osrm.org";
+// Free route engines, tried in order if one doesn't answer (the public demo server is often busy)
+const OSRM_HOSTS = [process.env.OSRM_URL, "https://router.project-osrm.org/route/v1/driving", "https://routing.openstreetmap.de/routed-car/route/v1/driving"].filter(Boolean);
+// TomTom: real truck routing nationwide (height, weight, length, axles, US hazmat classes) + live traffic
+const TOMTOM_KEY = (process.env.TOMTOM_KEY || "").replace(/\s+/g, "");
 const H = APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {};
 const KX = 84300, KY = 111200; // meters per degree near NYC
 const R = (d) => (d * Math.PI) / 180;
@@ -254,7 +257,14 @@ function check(coords, steps) {
 // ---------- the truck route ----------
 async function osrm(points, keepIdx) {
   const coords = points.map((x) => `${x.p[0].toFixed(6)},${x.p[1].toFixed(6)}`).join(";");
-  const core = `${OSRM}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
+  for (const host of OSRM_HOSTS) {
+    try { return await osrmOn(host, coords, points, keepIdx); }
+    catch (e) { if (e.final) throw e; console.error("route engine", host, e.message); }
+  }
+  throw new Error("Route servers are busy. Try again in a minute.");
+}
+async function osrmOn(host, coords, points, keepIdx) {
+  const core = `${host}/${coords}?overview=full&geometries=geojson&steps=true`;
   const hasVia = points.some((x, i) => x.brg != null && !keepIdx.includes(i));
   const bearings = points.map((x, i) => (x.brg != null && !keepIdx.includes(i) ? `${Math.round(x.brg) % 360},60` : "")).join(";");
   // From richest to plainest. If the engine rejects an option ("InvalidQuery"), drop it and try again.
@@ -274,10 +284,62 @@ async function osrm(points, keepIdx) {
       if (j.code === "Ok" && j.routes?.length) return normalize(j.routes[0], points.length, keepIdx);
       last = j.message ? `${j.code}: ${j.message}` : j.code || `HTTP ${r.status}`;
       console.error("truck route engine:", last, "| try", k);
-      if (j.code === "NoRoute" || j.code === "NoSegment") break;
-    } catch (e) { last = e.message; }
+      if (j.code === "NoRoute" || j.code === "NoSegment") throw Object.assign(new Error("No route found between these places"), { final: true });
+    } catch (e) { if (e.final) throw e; last = e.message; if (/fetch failed|timed? ?out|abort/i.test(last)) break; }
   }
   throw new Error(last);
+}
+const TT_MAN = {
+  DEPART: ["depart"], ARRIVE: ["arrive"], ARRIVE_LEFT: ["arrive"], ARRIVE_RIGHT: ["arrive"],
+  STRAIGHT: ["continue", "straight"], FOLLOW: ["continue", "straight"], SWITCH_MAIN_ROAD: ["continue", "straight"], SWITCH_PARALLEL_ROAD: ["continue", "straight"],
+  KEEP_LEFT: ["fork", "slight left"], KEEP_RIGHT: ["fork", "slight right"], BEAR_LEFT: ["turn", "slight left"], BEAR_RIGHT: ["turn", "slight right"],
+  TURN_LEFT: ["turn", "left"], TURN_RIGHT: ["turn", "right"], SHARP_LEFT: ["turn", "sharp left"], SHARP_RIGHT: ["turn", "sharp right"],
+  MAKE_UTURN: ["turn", "uturn"], TRY_MAKE_UTURN: ["turn", "uturn"], ENTER_MOTORWAY: ["on ramp", "slight right"], ENTER_FREEWAY: ["on ramp", "slight right"],
+  ENTER_HIGHWAY: ["on ramp", "slight right"], ENTRANCE_RAMP: ["on ramp", "slight right"], TAKE_EXIT: ["off ramp", "slight right"],
+  MOTORWAY_EXIT_LEFT: ["off ramp", "slight left"], MOTORWAY_EXIT_RIGHT: ["off ramp", "slight right"], TAKE_FERRY: ["continue", "straight"],
+  ROUNDABOUT_CROSS: ["roundabout", "straight"], ROUNDABOUT_RIGHT: ["roundabout", "right"], ROUNDABOUT_LEFT: ["roundabout", "left"], ROUNDABOUT_BACK: ["roundabout", "uturn"],
+};
+async function tomtom(points, keepIdx, veh = {}) {
+  const loc = points.map((x) => `${x.p[1].toFixed(6)},${x.p[0].toFixed(6)}`).join(":");
+  const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: "truck", vehicleCommercial: "true", traffic: "true", routeType: "fastest",
+    instructionsType: "text", language: "en-US", routeRepresentation: "polyline" });
+  if (veh.h) q.set("vehicleHeight", (veh.h * 0.3048).toFixed(2));
+  if (veh.w) q.set("vehicleWeight", String(Math.round(veh.w * 0.4536)));
+  if (veh.l) q.set("vehicleLength", (veh.l * 0.3048).toFixed(2));
+  q.set("vehicleWidth", "2.59"); // 8'6" standard width
+  if (veh.axles) q.set("vehicleNumberOfAxles", String(veh.axles));
+  const url = `https://api.tomtom.com/routing/1/calculateRoute/${loc}/json?${q}${veh.hzc ? `&vehicleLoadType=USHazmatClass${veh.hzc}` : ""}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.routes?.length) throw new Error(j.error?.description || j.detailedError?.message || `TomTom ${r.status}`);
+  return fromTomTom(j.routes[0], points, keepIdx);
+}
+// TomTom answer -> the same shape the app already understands (legs split only at real stops)
+function fromTomTom(rt, points, keepIdx) {
+  const coords = [];
+  for (const lg of rt.legs || []) for (const p of lg.points || []) { const c = [p.longitude, p.latitude], l = coords[coords.length - 1]; if (!l || l[0] !== c[0] || l[1] !== c[1]) coords.push(c); }
+  const ins = rt.guidance?.instructions || [], total = rt.summary.lengthInMeters, ttot = rt.summary.travelTimeInSeconds;
+  const newLeg = () => ({ steps: [], distance: 0, duration: 0, annotation: { maxspeed: [] } });
+  const legs = [newLeg()];
+  let wp = 0;
+  ins.forEach((x, i) => {
+    const nx = ins[i + 1], dist = Math.max(0, (nx ? nx.routeOffsetInMeters : total) - x.routeOffsetInMeters), dur = Math.max(0, (nx ? nx.travelTimeInSeconds : ttot) - x.travelTimeInSeconds);
+    const loc = x.point ? [x.point.longitude, x.point.latitude] : null, m = x.maneuver || "";
+    if (/^WAYPOINT/.test(m)) {
+      wp++;
+      const L = legs[legs.length - 1];
+      if (!keepIdx.includes(wp)) { if (L.steps.length) { L.steps[L.steps.length - 1].distance += dist; L.steps[L.steps.length - 1].duration += dur; } return; } // silent via point
+      L.steps.push({ distance: 0, duration: 0, name: "", maneuver: { type: "arrive", location: loc }, intersections: [{ location: loc }] });
+      legs.push(newLeg());
+      legs[legs.length - 1].steps.push({ distance: dist, duration: dur, name: x.street || "", ref: (x.roadNumbers || [])[0] || "", maneuver: { type: "depart", location: loc }, intersections: [{ location: loc }] });
+      return;
+    }
+    const [type, modifier] = TT_MAN[m] || ["continue", "straight"];
+    legs[legs.length - 1].steps.push({ distance: dist, duration: dur, name: x.street || "", ref: (x.roadNumbers || []).join(";"), destinations: x.signpostText || undefined, exits: x.exitNumber || undefined,
+      maneuver: { type, modifier, location: loc, exit: x.roundaboutExitNumber || undefined, bearing_after: 0 }, intersections: [{ location: loc }] });
+  });
+  for (const L of legs) { L.distance = L.steps.reduce((s, x) => s + x.distance, 0); L.duration = L.steps.reduce((s, x) => s + x.duration, 0); }
+  return { geometry: { coordinates: coords }, distance: total, duration: ttot, legs, live: true, trafficDelay: rt.summary.trafficDelayInSeconds || 0, engine: "tomtom" };
 }
 // One leg per real stop (via points are silent even if the engine split legs at them)
 function normalize(rt, n, keepIdx) {
@@ -316,19 +378,25 @@ function addRules(c, rt, veh, stops) {
 const ENTRY = [{ name: "George Washington Bridge (upper level)", p: [-73.9527, 40.8517] }, { name: "Goethals Bridge", p: [-74.1975, 40.6356] },
   { name: "Bayonne Bridge", p: [-74.1422, 40.6421] }, { name: "Outerbridge Crossing", p: [-74.2296, 40.5246] }, { name: "Throgs Neck Bridge", p: [-73.7942, 40.8007] }];
 async function truckRoute(stops, veh = {}) {
-  if (state.status !== "ready") { if (state.status !== "loading") build(); throw Object.assign(new Error("The NYC truck route map is still loading. Try again in a minute."), { code: 503 }); }
+  const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh).catch((e) => { console.error("TomTom:", e.message); return osrm(pts, keep); }) : osrm;
+  if (state.status !== "ready" && state.status !== "loading") build(); // nationwide routing works meanwhile; NYC check needs the city map
   const okBoros = new Set(stops.map(boroAt).filter(Boolean));
   const ban = banned(veh), banKeys = new Set(ban.map((c) => c.key));
   const avoidRe = ban.length ? new RegExp(ban.map((c) => c.re.source).join("|"), "i") : null;
   // plain route first: where does the trip enter and leave NYC?
-  let plain = await osrm(stops.map((p) => ({ p })), stops.map((_, i) => i)), entry = null;
+  let plain = await engine(stops.map((p) => ({ p })), stops.map((_, i) => i)), entry = null;
+  // TomTom already follows truck restrictions nationwide: if NYC's own network check passes too, we're done
+  if (plain.engine === "tomtom") {
+    const c0 = addRules(check(plain.geometry.coordinates, stepsAt(plain)), plain, veh, stops);
+    if (c0.verdict === "ok" || c0.verdict === "outside") return { route: plain, compliance: c0 };
+  }
   if (ban.length && crossingsUsed(plain.geometry.coordinates, stepsAt(plain)).some((c) => banKeys.has(c.key))) {
     // the direct way uses a banned tunnel/bridge: try the official ways in and keep the shortest legal one
     let best = null;
     for (const e of ENTRY) {
       try {
         const pts = [{ p: stops[0] }, { p: e.p }, ...stops.slice(1).map((p) => ({ p }))];
-        const rt = await osrm(pts, [0, ...stops.slice(1).map((_, i) => i + 2)]);
+        const rt = await engine(pts, [0, ...stops.slice(1).map((_, i) => i + 2)]);
         if (!crossingsUsed(rt.geometry.coordinates, stepsAt(rt)).some((c) => banKeys.has(c.key)) && (!best || rt.distance < best.distance)) { best = rt; entry = e; }
       } catch {}
     }
@@ -360,7 +428,7 @@ async function truckRoute(stops, veh = {}) {
     const { pts, keep } = make(step);
     if (pts.length > 95) break;
     try {
-      const rt = await osrm(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
+      const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       if (!best || offM(c) < offM(best.compliance)) best = { route: rt, compliance: c };
     } catch {}
     if (best && best.compliance.verdict === "ok") break;
@@ -391,8 +459,12 @@ function routes(url, res, send, readBody, req) {
   if (url.pathname === "/api/truck/route") {
     const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
     if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
-    const veh = { h: Math.min(20, Math.max(0, +url.searchParams.get("h") || 0)), hz: [0, 1, 2].includes(+url.searchParams.get("hz")) ? +url.searchParams.get("hz") : 0 };
-    truckRoute(pts, veh).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, asOf: state.asOf } }))
+    const hzc = Math.min(9, Math.max(0, Math.round(+url.searchParams.get("hzc") || 0))), hzOld = +url.searchParams.get("hz") || 0;
+    const veh = { h: Math.min(20, Math.max(0, +url.searchParams.get("h") || 0)), w: Math.min(250000, Math.max(0, +url.searchParams.get("w") || 0)), l: Math.min(150, Math.max(0, +url.searchParams.get("l") || 0)),
+      axles: Math.min(12, Math.max(0, Math.round(+url.searchParams.get("ax") || 0))),
+      hzc: hzc || (hzOld === 2 ? 1 : hzOld === 1 ? 3 : 0) };
+    veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
+    truckRoute(pts, veh).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf } }))
       .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
     return true;
   }
