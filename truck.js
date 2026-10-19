@@ -241,7 +241,7 @@ function whyBanned(c, veh) {
 }
 
 // ---------- check a route against the official network ----------
-const PARKWAY = /\b(PARKWAY|PKWY|FDR DRIVE|HARLEM RIVER DRIVE|HENRY HUDSON|HUTCHINSON|BRONX RIVER|MOSHOLU|BELT|CROSS ISLAND|GRAND CENTRAL|JACKIE ROBINSON|KOREAN WAR|LAURELTON|CLEARVIEW)\b/i;
+const PARKWAY = /\b(PARKWAY|PKWY|FDR DRIVE|HARLEM RIVER DRIVE|HENRY HUDSON|HUTCHINSON|BRONX RIVER|MOSHOLU|BELT|CROSS ISLAND|GRAND CENTRAL|JACKIE ROBINSON|KOREAN WAR|LAURELTON)\b/i;
 function check(coords, steps) {
   const ALLOW = 600; // leaving a truck route for the stop: nearest intersection, most direct route
   const cum = [0]; for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + distM(coords[i - 1], coords[i]));
@@ -280,7 +280,7 @@ function check(coords, steps) {
 }
 
 // ---------- the truck route ----------
-const recentErrors = [];
+const recentErrors = [], testRuns = new Map();
 function logErr(m) { console.error(m); recentErrors.unshift({ t: new Date().toISOString(), m: String(m).slice(0, 300) }); recentErrors.length = Math.min(recentErrors.length, 20); }
 async function osrm(points, keepIdx) {
   const coords = points.map((x) => `${x.p[0].toFixed(6)},${x.p[1].toFixed(6)}`).join(";");
@@ -454,10 +454,11 @@ async function truckRoute(stops, veh = {}, out = {}) {
   };
   const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
   let best = out.best;
-  for (const step of [1200, 450]) {
-    if (timeLeft() < (step === 1200 ? 6000 : 10000)) break; // not enough time for another full pass
-    const { pts, keep } = make(step);
-    if (pts.length > 95) break;
+  const maxPts = plain.engine === "tomtom" ? 140 : 95;
+  for (const step of [600, 300]) {
+    if (timeLeft() < (step === 600 ? 6000 : 9000)) break; // not enough time for another full pass
+    let { pts, keep } = make(step);
+    if (pts.length > maxPts) { if (step !== 600) break; ({ pts, keep } = make(1200)); if (pts.length > maxPts) break; }
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       if (!best || offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
@@ -484,6 +485,22 @@ function routes(url, res, send, readBody, req) {
         if (feats.length > 6000) break;
       }
     send(res, 200, { type: "FeatureCollection", features: feats, asOf: state.asOf }, "application/json", "public, max-age=3600");
+    return true;
+  }
+  if (url.pathname === "/api/truck/test") {
+    const id = url.searchParams.get("id");
+    if (id) { send(res, 200, testRuns.get(id) || { status: "unknown id" }); return true; }
+    const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
+    if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
+    const veh = { h: +url.searchParams.get("h") || 13.5, w: +url.searchParams.get("w") || 80000, l: +url.searchParams.get("l") || 70, axles: +url.searchParams.get("ax") || 5, hzc: +url.searchParams.get("hzc") || 0 };
+    veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
+    const rid = Math.random().toString(36).slice(2, 10), t0 = Date.now();
+    testRuns.set(rid, { status: "running" }); if (testRuns.size > 50) testRuns.delete(testRuns.keys().next().value);
+    truckRoute(pts, veh).then((r) => testRuns.set(rid, { status: "done", secs: (Date.now() - t0) / 1000, engine: r.route.engine || "basic", miles: Math.round(r.route.distance / 160.9) / 10, minutes: Math.round(r.route.duration / 60),
+      verdict: r.compliance.verdict, pct: r.compliance.pctOnNetwork, offRoute: r.compliance.offRoute, parkways: r.compliance.parkways, blocked: r.compliance.blocked,
+      roads: [...new Set(stepsAt(r.route).map((x) => x.name).filter(Boolean))].slice(0, 40) }))
+      .catch((e) => testRuns.set(rid, { status: "error", error: e.message }));
+    send(res, 200, { id: rid });
     return true;
   }
   if (url.pathname === "/api/truck/route") {
