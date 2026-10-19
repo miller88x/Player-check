@@ -411,7 +411,7 @@ body.navigating #recenter.on{display:grid!important}
     <button class="ltog" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
     <button class="ltog" type="button" data-layer="rovers"><svg width="16" height="17" viewBox="0 0 44 48" aria-hidden="true"><path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="#2f6bff"/></svg>Rovers</button>
     <button class="ltog" type="button" data-rshare aria-pressed="true"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#2f6bff"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2f6bff" stroke-width="2" opacity=".5"/></svg>Show me as a Rover</button>
-    <button class="ltog" type="button" data-truckmode>🚚 Truck mode</button>
+    <button class="ltog" type="button" data-truckmode>🚚 My truck</button>
     <button class="ltog" type="button" data-myrover>🎨 Customize my Rover</button>
     <button class="ltog" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
   </div>
@@ -1540,7 +1540,8 @@ function routeSheet(to) {
   const best = Math.min(...routeAlts.map((R) => R.duration));
   document.body.classList.add("routing"); $("#dirTo span").textContent = to.name;
   openSheet("Drive", `
-    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button><button type="button" class="tchip" id="quietV" aria-pressed="${!chatty()}">${!chatty() ? "✓ " : ""}Fewer voice prompts</button><button type="button" class="tchip" id="truckT" aria-pressed="${truckOn()}">${truckOn() ? "✓ " : ""}🚚 Truck</button></div>
+    <div class="seg" style="margin-bottom:2px"><button type="button" data-mode="car" aria-pressed="${!truckOn()}">🚗 Car</button><button type="button" data-mode="truck" aria-pressed="${truckOn()}">🚚 Truck</button></div>
+    <div class="tchips"><button type="button" class="tchip" id="avTolls" aria-pressed="${a.tolls}">${a.tolls ? "✓ " : ""}Avoid tolls</button><button type="button" class="tchip" id="avHwy" aria-pressed="${a.highways}">${a.highways ? "✓ " : ""}Avoid highways</button><button type="button" class="tchip" id="quietV" aria-pressed="${!chatty()}">${!chatty() ? "✓ " : ""}Fewer voice prompts</button></div>
     ${truckCard(route)}<div id="truckLim"></div>
     ${nav.stop ? `<div class="note" style="display:flex;align-items:center;gap:10px">Stop on the way: <b>${esc(nav.stop.name)}</b><button type="button" class="tchip" id="rmStop" style="margin-left:auto">Remove</button></div>`
       : `<div class="tchips"><span class="muted" style="align-self:center;font-size:14px">Add a stop:</span>${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>`}
@@ -1558,7 +1559,13 @@ function routeSheet(to) {
   const flip = (k) => { const v = avoid(); v[k] = !v[k]; store.set("avoid", v); planRoute(to); };
   $("#avTolls").onclick = () => flip("tolls"); $("#avHwy").onclick = () => flip("highways");
   $("#quietV").onclick = () => { store.set("chatty", !chatty()); routeSheet(to); };
-  $("#truckT").onclick = () => { if (truckOn()) { store.set("truck", { ...truck(), on: false }); paintTruckLayer(); planRoute(to); } else truckSheet(() => planRoute(to)); };
+  document.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => {
+    const wantTruck = b.dataset.mode === "truck";
+    if (wantTruck === truckOn()) return;
+    if (!wantTruck) { truckTrip = false; paintTruckLayer(); return planRoute(to); }
+    if (truckSaved()) { truckTrip = true; paintTruckLayer(); return planRoute(to); }
+    truckSheet(() => planRoute(to)); // first time: enter truck details once
+  }));
   truckLimits(route).catch(() => {});
   $("#rmStop")?.addEventListener("click", () => { nav.stop = null; nav.stopFor = null; planRoute(to); });
   document.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = () => stopSearch(b.dataset.stop, to)));
@@ -1617,6 +1624,7 @@ function arrived() {
 function endNav() {
   const wasSim = !!nav.sim;
   shareEnd(nav.arrived);
+  if (truckTrip) { truckTrip = false; setTimeout(() => paintTruckLayer(), 0); }
   nav.active = false; clearInterval(nav.sim); nav.sim = null; nav.stop = null; nav.stopFor = null;
   try { nightOff(); } catch {}
   try { nav.lock?.release(); } catch {}
@@ -2286,7 +2294,10 @@ const TRUCK_PRESETS = {
 };
 const truck = () => { const t = { on: false, kind: "box", ...TRUCK_PRESETS.box, hazmat: false, hzc: 3, ...store.get("truck", {}) }; if (!t.ax) t.ax = TRUCK_PRESETS[t.kind]?.ax || 2; return t; };
 const HZ_CLASSES = { 1: "1 · Explosives", 2: "2 · Gases", 3: "3 · Flammable liquids", 4: "4 · Flammable solids", 5: "5 · Oxidizers", 6: "6 · Poisons", 7: "7 · Radioactive", 8: "8 · Corrosives", 9: "9 · Miscellaneous" };
-const truckOn = () => truck().on;
+// Truck routing is a per-trip choice: the app always starts in car mode
+let truckTrip = false;
+const truckOn = () => truckTrip;
+const truckSaved = () => { const st = store.get("truck", {}); return !!(st.saved || st.h); }; // trucks saved before this change count too
 const ftIn = (ft) => `${Math.floor(ft)}'${Math.round((ft % 1) * 12)}"`;
 function truckSheet(then) {
   const t = truck();
@@ -2303,17 +2314,15 @@ function truckSheet(then) {
     <label class="lb" style="max-width:140px">Axles<input class="inp" id="tA" type="number" min="2" max="12" step="1" value="${t.ax || 2}"></label>
     ${t.kind === "van" ? '<div class="note">Cargo vans aren\'t "trucks" under NYC rules (2 axles, 4 tires), so they may use any street, but commercial vehicles are still banned from parkways. Rova warns if a route uses one.</div>' : ""}
     ${t.w > 80000 || t.l > 65 ? '<div class="alert warn"><b>Check your permit</b>Over 80,000 lb or extra-long vehicles may need an NYC oversize / overweight permit.</div>' : ""}
-    <button class="btn primary" type="button" id="tSave">${t.on ? "Save" : "Turn on truck mode"}</button>
-    ${t.on ? '<button class="btn" type="button" id="tOff">Turn off truck mode</button>' : ""}
+    <button class="btn primary" type="button" id="tSave">${then ? "Save and route as a truck" : "Save my truck"}</button>
     <p class="note">Truck mode keeps routes on NYC DOT's official Truck Route Network (Through routes when you're crossing a borough, Local routes for stops) and warns about low bridges and weight limits along the way.</p>`, "truck");
   document.querySelectorAll("[data-tp]").forEach((b) => (b.onclick = () => { const p = TRUCK_PRESETS[b.dataset.tp]; store.set("truck", { ...truck(), kind: b.dataset.tp, h: p.h, w: p.w, l: p.l, ax: p.ax }); truckSheet(then); }));
   $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked, explosives: $("#tHz").checked && truck().explosives }); truckSheet(then); };
   $("#tHc")?.addEventListener("change", () => { store.set("truck", { ...truck(), hzc: +$("#tHc").value, explosives: +$("#tHc").value === 1 }); truckSheet(then); });
   $("#tSave").onclick = () => {
-    store.set("truck", { ...truck(), on: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26, ax: +$("#tA").value || 2 });
-    paintTruckLayer(); then ? then() : closeSheet();
+    store.set("truck", { ...truck(), saved: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26, ax: +$("#tA").value || 2 });
+    if (then) { truckTrip = true; paintTruckLayer(); then(); } else closeSheet();
   };
-  $("#tOff")?.addEventListener("click", () => { store.set("truck", { ...truck(), on: false }); paintTruckLayer(); then ? then() : closeSheet(); });
 }
 async function fetchTruckRoutes(from, to, via) {
   const pts = [from, via, to].filter(Boolean).map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join(";");
