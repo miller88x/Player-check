@@ -2096,7 +2096,8 @@ async function parkCheck(at, fromTap) {
     openSheet("Can I park here?", `
       <div class="verdict ${j.status}"><div class="ic">${ICON_P[j.status]}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink);opacity:.85">${esc(j.detail)}</div></div></div>
       ${j.where ? `<div class="muted">📍 ${esc(j.where)}</div>` : ""}
-      ${j.rules.length ? `<div><b>Signs on this block</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${j.rules.length ? `<div><b>At your spot</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${j.rulesElse?.length ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
       <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Long-press anywhere on the map to check another spot."}</p>`, "park");
     $("#parkHere")?.addEventListener("click", () => saveParked(j, at));

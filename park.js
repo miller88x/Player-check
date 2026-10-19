@@ -39,13 +39,18 @@ function parseTime(h, m, ap) {
   return hh * 60 + (+m || 0);
 }
 
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const MONNAME = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function parseSign(desc) {
   const d = String(desc || "").toUpperCase().replace(/\(SUPERSEDES[^)]*\)/g, "").replace(/\s+/g, " ").trim();
+  // Info plates, not rules (pay-by-cell number, Open Streets info, etc.)
+  if (/LOCATOR|INFORMATION SIGN|\(INFO|^OPEN STREETS|^SEE OTHER SIDE/.test(d)) return null;
   let kind = null;
   if (/NO STOPPING/.test(d)) kind = "stop";
   else if (/NO STANDING/.test(d)) kind = "stand";
   else if (/NO PARKING/.test(d)) kind = "park";
-  else if (/(\d+|ONE|TWO|THREE|1\/2)\s*(HOUR|HR|MIN)/.test(d) || /METER|PAY-?BY|PAY BY|MUNI/.test(d)) kind = "meter";
+  else if (/TRUCK LOADING ONLY|COMMERCIAL VEHICLES ONLY|LOADING ZONE|LOADING ONLY/.test(d)) kind = "truck";
+  else if (/(\d+|ONE|TWO|THREE|1\/2)\s*(HOUR|HR|MIN|HMP|HMCP)\b/.test(d) || /METER|MUNI|\bHMP\b/.test(d)) kind = "meter";
   if (!kind) return null;
 
   // Time windows like 8AM-9:30AM, 7:30AM-NOON, MIDNIGHT-3AM
@@ -74,14 +79,25 @@ function parseSign(desc) {
   }
   if (!days || !days.length) days = [0, 1, 2, 3, 4, 5, 6];
 
+  // Seasonal rules, e.g. "MAY-OCTOBER" or "NOV 1 - MAR 31"
+  let months = null;
+  const mr = d.match(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?(?:\s*\d{1,2})?\s*(?:-|THRU|THROUGH|TO)\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*/);
+  if (mr) { months = []; let i = MONTHS.indexOf(mr[1]); const j = MONTHS.indexOf(mr[2]); for (let k = 0; k < 12; k++) { months.push(i); if (i === j) break; i = (i + 1) % 12; } }
+
   const sweeping = /BROOM|SANITATION/.test(d);
-  const limit = d.match(/(\d+|ONE|TWO|THREE)\s*(HOUR|HR)/);
+  const hrs = d.match(/(\d+|ONE|TWO|THREE)\s*(?:HOUR|HR|HMP|HMCP)\b/);
   const commercial = /COMMERCIAL|TRUCK|LOADING/.test(d) && kind !== "meter";
+  const n = hrs && (hrs[1] === "ONE" ? 1 : hrs[1] === "TWO" ? 2 : hrs[1] === "THREE" ? 3 : hrs[1]);
   const label = {
     stop: "No stopping", stand: "No standing", park: sweeping ? "Street cleaning: no parking" : "No parking",
-    meter: limit ? `${limit[1] === "ONE" ? 1 : limit[1] === "TWO" ? 2 : limit[1] === "THREE" ? 3 : limit[1]}-hour metered parking` : "Metered parking",
+    truck: /COMMERCIAL VEHICLES ONLY/.test(d) ? "Commercial vehicles only" : "Truck loading only",
+    meter: n ? `${n}-hour ${/HMP|HMCP|METER|MUNI/.test(d) ? "metered " : ""}parking` : "Metered parking",
   }[kind];
-  return { kind, sweeping, commercial, anytime, days, windows: anytime ? [[0, 24 * 60]] : windows.length ? windows : [[0, 24 * 60]], label, raw: d.replace(/\s*<?-+>?\s*$/, "").replace(/<->|-->|<--/g, "").trim() };
+  const paid = kind === "meter" && (!n || /HMP|HMCP|METER|MUNI/.test(d));
+  const raw = d.replace(/\s*<?-+>?\s*$/, "").replace(/<->|-->|<--/g, "").trim();
+  // A meter sign with no hours printed doesn't say when it applies; don't invent "all day"
+  if (kind === "meter" && !windows.length) return { kind, sweeping, commercial, anytime: false, days, months, windows: [], label, noHours: true, paid, hours: n, raw };
+  return { kind, sweeping, commercial, anytime, days, months, windows: anytime ? [[0, 24 * 60]] : windows.length ? windows : [[0, 24 * 60]], label, paid, hours: n, raw };
 }
 
 // ---------- Is it in force now, and when next? ----------
@@ -114,6 +130,7 @@ function schedule(rule, now) {
     const day = (now.day + k) % 7;
     if (!rule.days.includes(day)) continue;
     if (rule.sweeping && now.dates && ASP_SUSPENDED[now.dates[k]]) continue; // street cleaning suspended that day
+    if (rule.months && now.dates && !rule.months.includes(+now.dates[k].slice(5, 7) - 1)) continue; // out of season
     for (const [s, e] of rule.windows) out.push({ start: k * 1440 + s - now.min, end: k * 1440 + e - now.min, day, s, e });
   }
   return out.sort((a, b) => a.start - b.start);
@@ -126,15 +143,17 @@ function fmtWhen(w, now) {
 }
 function describe(rule) {
   if (rule.anytime) return `${rule.label} anytime`;
+  if (rule.noHours) return rule.label;
+  const season = rule.months ? ` · ${MONNAME[rule.months[0]]}–${MONNAME[rule.months[rule.months.length - 1]]} only` : "";
   const days = rule.days.length === 7 ? "every day" : rule.days.length === 6 ? `except ${DAYNAME[DAYS[[0,1,2,3,4,5,6].find((x) => !rule.days.includes(x))]]}` :
     rule.days.join() === "1,2,3,4,5" ? "Mon–Fri" : rule.days.map((x) => DAYNAME[DAYS[x]]).join(", ");
-  return `${rule.label} ${rule.windows.map(([s, e]) => `${fmtClock(s)}–${fmtClock(e)}`).join(", ")} · ${days}`;
+  return `${rule.label} ${rule.windows.map(([s, e]) => `${fmtClock(s)}–${fmtClock(e)}`).join(", ")} · ${days}${season}`;
 }
 
 function suspensionNote(rules, now) {
   if (!rules.some((r) => r.sweeping)) return "";
   const today = ASP_SUSPENDED[now.dates[0]];
-  if (today) return ` Street cleaning is suspended today (${today}).`;
+  if (today && rules.some((r) => r.sweeping && r.days.includes(now.day))) return ` Street cleaning is suspended today (${today}).`;
   const k = [1, 2, 3, 4, 5, 6].find((i) => ASP_SUSPENDED[now.dates[i]] && rules.some((r) => r.sweeping && r.days.includes((now.day + i) % 7)));
   return k ? ` Street cleaning is suspended ${k === 1 ? "tomorrow" : DAYNAME[DAYS[(now.day + k) % 7]]} (${ASP_SUSPENDED[now.dates[k]]}).` : "";
 }
@@ -156,6 +175,40 @@ async function signsNear(lat, lng, radiusFt = 260) {
 const SIDES = { N: "north", S: "south", E: "east", W: "west" };
 const tc = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 
+// Signs sit along one curb. Project them onto the block's line; an arrow (-->) means the rule runs from that
+// sign in the arrow's direction until a sign of the same rule pointing back, or the end of the block.
+// "<->" (no arrow) means the sign is in the middle of its stretch.
+const COMPASS = { EAST: [1, 0], WEST: [-1, 0], NORTH: [0, 1], SOUTH: [0, -1], E: [1, 0], W: [-1, 0], N: [0, 1], S: [0, -1] };
+function curbZones(face, px, py) {
+  let ux = 1, uy = 0, best = 0; // block direction = the two signs farthest apart
+  for (const a of face) for (const b of face) { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > best) { best = d; ux = (b.x - a.x) / d; uy = (b.y - a.y) / d; } }
+  const pos = (x, y) => x * ux + y * uy;
+  const ps = face.map((s) => pos(s.x, s.y)), lo = Math.min(...ps) - 40, hi = Math.max(...ps) + 40;
+  const me = Math.max(lo, Math.min(hi, pos(px, py)));
+  const groups = new Map();
+  for (const s of face) {
+    const r = parseSign(s.sign_description); if (!r) continue;
+    const v = COMPASS[String(s.arrow_direction || "").toUpperCase()];
+    const dir = v ? Math.sign(v[0] * ux + v[1] * uy) : 0;
+    if (!groups.has(r.raw)) groups.set(r.raw, { rule: r, signs: [] });
+    groups.get(r.raw).signs.push({ p: pos(s.x, s.y), dir });
+  }
+  const out = [];
+  for (const { rule, signs } of groups.values()) {
+    const iv = signs.map((g) => {
+      const back = (side) => signs.filter((o) => (side > 0 ? o.p > g.p + 5 && o.dir === -1 : o.p < g.p - 5 && o.dir === 1)).map((o) => o.p);
+      const L = back(-1), R = back(1);
+      if (g.dir === 1) return [g.p, R.length ? Math.min(...R) : hi];
+      if (g.dir === -1) return [L.length ? Math.max(...L) : lo, g.p];
+      return [L.length ? Math.max(...L) : lo, R.length ? Math.min(...R) : hi];
+    });
+    const here = iv.some(([a, b]) => me >= a - 8 && me <= b + 8);
+    const edge = Math.min(...iv.map(([a, b]) => (me >= a && me <= b ? 0 : Math.min(Math.abs(me - a), Math.abs(me - b)))));
+    out.push({ rule, here, edge, iv });
+  }
+  return out;
+}
+
 async function check(lat, lng, at = new Date()) {
   const signs = await signsNear(lat, lng);
   if (!signs.length) return { status: "unknown", headline: "No sign data for this spot", detail: "The city has no parking signs mapped within about 250 ft. Check the posted signs before you leave the car.", rules: [], signs: [] };
@@ -163,13 +216,13 @@ async function check(lat, lng, at = new Date()) {
   const near = signs[0];
   const face = signs.filter((s) => s.on_street === near.on_street && s.side_of_street === near.side_of_street && s.from_street === near.from_street && s.to_street === near.to_street && s.dist < 400);
   const now = nyNow(at);
-  const seen = new Set(), rules = [];
-  for (const s of face) {
-    const r = parseSign(s.sign_description);
-    if (!r || seen.has(r.raw)) continue; seen.add(r.raw); rules.push(r);
-  }
+  // Which part of the curb is the car on? Each rule covers stretches marked by its sign arrows.
+  const [px, py] = toStatePlane(lat, lng);
+  const zones = curbZones(face, px, py);
+  const rules = zones.filter((z) => z.here).map((z) => z.rule), elsewhere = zones.filter((z) => !z.here).map((z) => z.rule);
+  const nearZone = zones.some((z) => !z.here && z.edge < 25 && z.rule.kind !== "meter");
   const blocking = rules.filter((r) => r.kind !== "meter");
-  const meters = rules.filter((r) => r.kind === "meter");
+  const meters = rules.filter((r) => r.kind === "meter" && !r.noHours);
   let active = null, activeEnd = null, next = null;
   for (const r of blocking) {
     for (const w of schedule(r, now)) {
@@ -183,11 +236,11 @@ async function check(lat, lng, at = new Date()) {
   if (active) {
     status = "red";
     headline = active.anytime ? `${active.label} anytime` : `${active.label} right now`;
-    detail = active.anytime ? "You can't leave the car here." : `Until ${fmtWhen({ ...activeEnd, s: activeEnd.e, start: -1 }, now)}.`;
+    detail = active.anytime ? "You can't leave the car here." : `Until ${fmtWhen({ ...activeEnd, s: activeEnd.e, start: -1 }, now)}.${active.kind === "truck" ? " Only commercial vehicles loading or unloading." : ""}`;
   } else if (meterNow) {
     status = "yellow";
     headline = `${meterNow.label} now`;
-    detail = `Pay at the muni-meter or with the ParkNYC app.${next ? ` Then ${next.r.label.toLowerCase()} ${fmtWhen(next.w, now)}.` : ""}`;
+    detail = `${meterNow.paid ? "Pay at the muni-meter or with the ParkNYC app." : `${meterNow.hours}-hour limit.`}${next ? ` Then ${next.r.label.toLowerCase()} ${fmtWhen(next.w, now)}.` : ""}`;
     if (next) moveBy = new Date(at.getTime() + next.w.start * 60000).toISOString();
   } else {
     status = "green";
@@ -198,9 +251,10 @@ async function check(lat, lng, at = new Date()) {
     } else { headline = "You can park here"; detail = "No restrictions found on this block's signs this week."; }
   }
   return {
-    status, headline, detail: detail + suspensionNote(rules, now), moveBy, where,
+    status, headline, detail: detail + suspensionNote(rules, now) + (nearZone && status !== "red" ? " You're near the edge of a no-parking stretch, so check which way the sign arrows point." : ""), moveBy, where,
     suspendedToday: rules.some((r) => r.sweeping) ? ASP_SUSPENDED[now.dates[0]] || null : null,
     rules: rules.map(describe),
+    rulesElse: elsewhere.map(describe),
     sweeping: rules.some((r) => r.sweeping),
     commercial: rules.some((r) => r.commercial),
     signs: face.slice(0, 12).map((s) => { const [la, ln] = toLatLng(s.x, s.y); return { lat: +la.toFixed(6), lng: +ln.toFixed(6), text: tc(parseSign(s.sign_description)?.raw || s.sign_description) }; }),
@@ -232,4 +286,4 @@ function routes(url, res, sendJSON) {
   return true;
 }
 
-module.exports = { ASP_SUSPENDED, routes, parseSign, toStatePlane, toLatLng, check, schedule, nyNow, describe };
+module.exports = { ASP_SUSPENDED, routes, parseSign, curbZones, toStatePlane, toLatLng, check, schedule, nyNow, describe };
