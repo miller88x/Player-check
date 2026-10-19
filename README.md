@@ -21,3 +21,5 @@ Live at https://player-check.onrender.com
 - Hazmat in truck mode: avoids Holland, Lincoln, Queens-Midtown and Hugh L. Carey tunnels and the GWB lower level (explosives: also Verrazzano); when the direct way into NYC uses a banned crossing, re-routes through an FDNY-designated entry (GWB upper, Goethals, Bayonne, Outerbridge, Throgs Neck). Official MTA clearances: Queens-Midtown and Hugh L. Carey tunnels 12'1" are avoided for taller trucks. Shows FDNY through-transit hours and permit reminder.
 - Nationwide truck routing: set Render env `TOMTOM_KEY` (TomTom developer key) to route trucks anywhere in the US with height, weight, length, axles, US hazmat class 1–9 and live traffic; NYC routes are still checked against the official NYC truck network. Without the key, truck mode uses the free route engine + NYC check.
 - Route server backup: if the public OSRM server doesn't answer, routes come from routing.openstreetmap.de (car and truck).
+
+_Deploys: Render auto-deploys `main` on every commit._
