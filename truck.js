@@ -490,7 +490,7 @@ function routes(url, res, send, readBody, req) {
   if (url.pathname === "/api/truck/test") {
     const id = url.searchParams.get("id");
     if (id) { send(res, 200, testRuns.get(id) || { status: "unknown id" }); return true; }
-    const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
+    const pts = (url.searchParams.get("pts") || [url.searchParams.get("from"), url.searchParams.get("to")].filter(Boolean).join(";")).split(/[;~]/).map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
     if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
     const veh = { h: +url.searchParams.get("h") || 13.5, w: +url.searchParams.get("w") || 80000, l: +url.searchParams.get("l") || 70, axles: +url.searchParams.get("ax") || 5, hzc: +url.searchParams.get("hzc") || 0 };
     veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
