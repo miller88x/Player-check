@@ -404,7 +404,9 @@ function addRules(c, rt, veh, stops) {
 // Ways into NYC that FDNY's hazmat routes use, tried when the direct way in uses a banned crossing
 const ENTRY = [{ name: "George Washington Bridge (upper level)", p: [-73.9527, 40.8517] }, { name: "Goethals Bridge", p: [-74.1975, 40.6356] },
   { name: "Bayonne Bridge", p: [-74.1422, 40.6421] }, { name: "Outerbridge Crossing", p: [-74.2296, 40.5246] }, { name: "Throgs Neck Bridge", p: [-73.7942, 40.8007] }];
-async function truckRoute(stops, veh = {}) {
+const BUDGET = 22000; // answer within ~25 s with the best verified route so far
+async function truckRoute(stops, veh = {}, out = {}) {
+  const t0 = Date.now(), timeLeft = () => BUDGET - (Date.now() - t0);
   const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh).catch((e) => { logErr("TomTom: " + e.message); return osrm(pts, keep); }) : osrm;
   if (state.status !== "ready" && state.status !== "loading") build(); // nationwide routing works meanwhile; NYC check needs the city map
   const okBoros = new Set(stops.map(boroAt).filter(Boolean));
@@ -413,21 +415,22 @@ async function truckRoute(stops, veh = {}) {
   // plain route first: where does the trip enter and leave NYC?
   let plain = await engine(stops.map((p) => ({ p })), stops.map((_, i) => i)), entry = null;
   // TomTom already follows truck restrictions nationwide: if NYC's own network check passes too, we're done
-  if (plain.engine === "tomtom") {
+  {
     const c0 = addRules(check(plain.geometry.coordinates, stepsAt(plain)), plain, veh, stops);
-    if (c0.verdict === "ok" || c0.verdict === "outside") return { route: plain, compliance: c0 };
+    out.best = { route: plain, compliance: c0 }; // always have an answer ready
+    if (plain.engine === "tomtom" && (c0.verdict === "ok" || c0.verdict === "outside")) return out.best;
   }
   if (ban.length && crossingsUsed(plain.geometry.coordinates, stepsAt(plain)).some((c) => banKeys.has(c.key))) {
     // the direct way uses a banned tunnel/bridge: try the official ways in and keep the shortest legal one
     let best = null;
-    for (const e of ENTRY) {
+    const tries = await Promise.all(ENTRY.map(async (e) => { // all at once, not one by one
       try {
         const pts = [{ p: stops[0] }, { p: e.p }, ...stops.slice(1).map((p) => ({ p }))];
-        const rt = await engine(pts, [0, ...stops.slice(1).map((_, i) => i + 2)]);
-        if (!crossingsUsed(rt.geometry.coordinates, stepsAt(rt)).some((c) => banKeys.has(c.key)) && (!best || rt.distance < best.distance)) { best = rt; entry = e; }
-      } catch {}
-    }
-    if (best) plain = best;
+        return { e, rt: await engine(pts, [0, ...stops.slice(1).map((_, i) => i + 2)]) };
+      } catch { return null; }
+    }));
+    for (const t of tries) if (t && !crossingsUsed(t.rt.geometry.coordinates, stepsAt(t.rt)).some((c) => banKeys.has(c.key)) && (!best || t.rt.distance < best.distance)) { best = t.rt; entry = t.e; }
+    if (best) { plain = best; out.best = { route: plain, compliance: addRules(check(plain.geometry.coordinates, stepsAt(plain)), plain, veh, stops) }; }
   }
   const pc = plain.geometry.coordinates;
   const firstIn = pc.find((p) => boroAt(p)), lastIn = [...pc].reverse().find((p) => boroAt(p));
@@ -450,17 +453,17 @@ async function truckRoute(stops, veh = {}) {
     return { pts, keep };
   };
   const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
-  let best = null;
+  let best = out.best;
   for (const step of [1200, 450]) {
+    if (timeLeft() < (step === 1200 ? 6000 : 10000)) break; // not enough time for another full pass
     const { pts, keep } = make(step);
     if (pts.length > 95) break;
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
-      if (!best || offM(c) < offM(best.compliance)) best = { route: rt, compliance: c };
+      if (!best || offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
     } catch {}
     if (best && best.compliance.verdict === "ok") break;
   }
-  if (!best) { best = { route: plain, compliance: addRules(check(pc, stepsAt(plain)), plain, veh, stops) }; best.compliance.fallback = true; }
   return best;
 }
 
@@ -491,7 +494,10 @@ function routes(url, res, send, readBody, req) {
       axles: Math.min(12, Math.max(0, Math.round(+url.searchParams.get("ax") || 0))),
       hzc: hzc || (hzOld === 2 ? 1 : hzOld === 1 ? 3 : 0) };
     veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
-    truckRoute(pts, veh).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf } }))
+    const out = {};
+    const timer = new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), BUDGET + 3000));
+    const job = truckRoute(pts, veh, out);
+    Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf } }))
       .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
     return true;
   }

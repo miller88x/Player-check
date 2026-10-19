@@ -2328,7 +2328,7 @@ async function fetchTruckRoutes(from, to, via) {
   const pts = [from, via, to].filter(Boolean).map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join(";");
   try {
     const t = truck(), hzc = t.hazmat ? +t.hzc || 3 : 0;
-    const r = await fetch(`/api/truck/route?pts=${pts}&h=${t.h}&w=${t.w}&l=${t.l}&ax=${t.ax || 2}&hzc=${hzc}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(40000) : undefined });
+    const r = await fetch(`/api/truck/route?pts=${pts}&h=${t.h}&w=${t.w}&l=${t.l}&ax=${t.ax || 2}&hzc=${hzc}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
     const j = await r.json();
     if (!r.ok || !j.routes?.[0]) throw new Error(j.error || "No truck route");
     const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
