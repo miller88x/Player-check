@@ -284,7 +284,7 @@ http
     }
     if (url.pathname === "/manifest.json") {
       return send(res, 200, JSON.stringify({ name: "Rova", short_name: "Rova", start_url: "/", display: "standalone", orientation: "portrait",
-        background_color: "#202124", theme_color: "#202124", icons: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] }), "application/manifest+json");
+        background_color: "#01050e", theme_color: "#01050e", icons: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }] }), "application/manifest+json");
     }
     sendPage(req, res);
   })
