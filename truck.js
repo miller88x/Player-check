@@ -575,6 +575,15 @@ async function truckRoute(stops, veh = {}, out = {}) {
 }
 
 function routes(url, res, send, readBody, req) {
+  if (url.pathname === "/api/truck/tt") { // probe: one TomTom request, summary only
+    const pts = [url.searchParams.get("from"), url.searchParams.get("to")].map((x) => (x || "").split(",").map(Number));
+    const n = (k) => +url.searchParams.get(k) || 0;
+    const veh = url.searchParams.get("mode") === "car" ? { car: true } : { h: n("h"), w: n("w"), l: n("l"), axles: n("ax"), hzc: n("hzc") };
+    const id = Math.random().toString(36).slice(2, 10); testRuns.set(id, { status: "running" });
+    tomtom(pts.map((p) => ({ p })), [0, 1], veh).then((rt) => testRuns.set(id, { status: "done", mi: Math.round(rt.distance / 160.9) / 10, min: Math.round(rt.duration / 60), roads: [...new Set(stepsAt(rt).map((x) => x.name).filter(Boolean))].slice(0, 20) }))
+      .catch((e) => testRuns.set(id, { status: "error", error: e.message }));
+    send(res, 200, { id }); return true;
+  }
   if (url.pathname === "/api/truck/recent") { send(res, 200, { runs: recentRuns }); return true; }
   if (url.pathname === "/api/truck/status") {
     send(res, 200, { status: state.status, error: state.error, asOf: state.asOf, builtAt: state.builtAt, stats: state.stats, tomtom: !!TOMTOM_KEY, recentErrors });
