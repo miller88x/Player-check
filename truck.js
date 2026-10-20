@@ -298,7 +298,14 @@ function check(coords, steps) {
     cur.to = Math.round(d + 20);
   }
   const bad = off.filter((o) => !o.allowed && o.to - o.from >= 80);
-  const parkways = [...new Set((steps || []).map((s) => s.name || "").filter((n) => PARKWAY.test(n) && !/EASTERN PARKWAY|OCEAN PARKWAY|PELHAM PARKWAY/i.test(n)))];
+  // A parkway counts only where the truck is really off the truck network (in NYC). Some truck routes carry
+  // parkway names in map data, e.g. NY-440 into the Outerbridge Crossing is labeled "Korean War Veterans Pkwy".
+  const parkways = [...new Set((steps || []).filter((s) => {
+    const n = s.name || "", loc = s.maneuver?.location;
+    if (!PARKWAY.test(n) || /EASTERN PARKWAY|OCEAN PARKWAY|PELHAM PARKWAY/i.test(n)) return false;
+    if (!loc || !boroAt(loc)) return false; // outside NYC the routing engine applies the truck bans itself
+    return !nearSeg(loc, 60) || (s.distance > 0 && off.some((o) => !o.allowed && o.to - o.from >= 80 && o.to > s.at && o.from < s.at + s.distance));
+  }).map((s) => s.name))];
   const pct = nyc ? Math.round((on / nyc) * 1000) / 10 : null;
   return {
     inNYC: nyc > 0, pctOnNetwork: pct, boroughs: [...boros],
