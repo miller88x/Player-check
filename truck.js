@@ -453,6 +453,8 @@ async function truckRoute(stops, veh = {}, out = {}) {
   // plain route first: where does the trip enter and leave NYC?
   // Ask for alternatives too: the "fastest" truck route can backtrack miles to save a minute; drivers want the sensible one.
   const P = stops.map((p) => ({ p })), K = stops.map((_, i) => i);
+  // For heavy trucks also ask (at the same time) for the route without weight/axle limits, to catch huge detours
+  const lightP = TOMTOM_KEY && (veh.w || veh.axles) ? tomtom(P, K, { ...veh, w: 0, axles: 0 }).catch(() => null) : null;
   let cands;
   if (TOMTOM_KEY) cands = await tomtom(P, K, veh, 2).catch((e) => { logErr("TomTom: " + e.message); return null; });
   if (!cands) cands = [await osrm(P, K)];
@@ -468,8 +470,8 @@ async function truckRoute(stops, veh = {}, out = {}) {
   // Heavy-truck sanity: TomTom sometimes sends an 80,000 lb / 5-axle truck 100+ miles around for one marked weight limit
   // (a single bridge or a closure). If dropping weight/axles gives a far shorter route, use it and keep the long one as an option.
   const crow0 = stops.slice(1).reduce((d, p, i) => d + distM(stops[i], p), 0);
-  if (TOMTOM_KEY && pick.rt.engine === "tomtom" && (veh.w || veh.axles) && pick.rt.distance > crow0 * 1.5 + 8000 && timeLeft() > 8000) {
-    const light = await tomtom(P, K, { ...veh, w: 0, axles: 0 }).catch(() => null);
+  if (lightP && pick.rt.engine === "tomtom" && pick.rt.distance > crow0 * 1.5 + 8000) {
+    const light = await lightP;
     if (light && light.distance * 1.35 < pick.rt.distance && pick.rt.distance - light.distance > 24000) {
       const mi = (m) => Math.round(m / 1609);
       out.heavyAlt = { route: pick.rt, compliance: { ...pick.c, notes: [`Weight-safe route (${mi(pick.rt.distance)} mi): avoids every road marked with a weight or axle limit for your truck.`, ...(pick.c.notes || [])] } };
