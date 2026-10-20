@@ -512,7 +512,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       (out.attempts ||= []).push({ pass: step, points: pts.length, engine: rt.engine || "basic", pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-      if ((!best || offM(c) < offM(best.compliance)) && rt.distance <= plain.distance * 1.35) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
+      if ((!best || offM(c) < offM(best.compliance)) && rt.distance <= plain.distance * 1.15) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
     } catch (e) { (out.attempts ||= []).push({ pass: step, points: pts.length, error: e.message }); }
     if (best && best.compliance.verdict === "ok") break;
   }
@@ -534,7 +534,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
       try {
         const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
         out.attempts.push({ pass: "avoid-turns", points: pts.length, penalized: penal.size, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-        if (offM(c) < offM(best.compliance) && rt.distance <= plain.distance * 1.35) { best = { route: rt, compliance: c }; out.best = best; }
+        if (offM(c) < offM(best.compliance) && rt.distance <= plain.distance * 1.15) { best = { route: rt, compliance: c }; out.best = best; }
       } catch (e) { out.attempts.push({ pass: "avoid-turns", error: e.message }); }
     }
   }
