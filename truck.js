@@ -310,7 +310,14 @@ function check(coords, steps) {
 }
 
 // ---------- the truck route ----------
-const recentErrors = [], testRuns = new Map();
+const recentErrors = [], testRuns = new Map(), recentRuns = [];
+// Last real driver requests (rounded points, no identity) so problems can be traced
+function logRun(pts, veh, r, out, t0, err) {
+  recentRuns.unshift({ t: new Date().toISOString(), pts: pts.map((p) => p.map((x) => Math.round(x * 1000) / 1000)), veh,
+    mi: r ? Math.round(r.route.distance / 160.9) / 10 : null, min: r ? Math.round(r.route.duration / 60) : null, verdict: r?.compliance?.verdict, err: err?.message,
+    secs: (Date.now() - t0) / 1000, attempts: (out.attempts || []).map((a) => ({ ...a, streets: undefined })) });
+  recentRuns.length = Math.min(recentRuns.length, 15);
+}
 function logErr(m) { console.error(m); recentErrors.unshift({ t: new Date().toISOString(), m: String(m).slice(0, 300) }); recentErrors.length = Math.min(recentErrors.length, 20); }
 async function osrm(points, keepIdx) {
   const coords = points.map((x) => `${x.p[0].toFixed(6)},${x.p[1].toFixed(6)}`).join(";");
@@ -459,6 +466,11 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const minOff = Math.min(...scored.map((x) => x.off));
   const pick = scored.filter((x) => x.off <= minOff + 1000).sort((a, b) => a.cost - b.cost)[0]; // never a route with long illegal stretches
   let plain = pick.rt, entry = null;
+  // Sanity limits: nothing Rova adds on top of the engine's route may make it much longer
+  const base = { route: pick.rt, compliance: pick.c }, baseDist = pick.rt.distance;
+  const crow = stops.slice(1).reduce((d, p, i) => d + distM(stops[i], p), 0);
+  const maxDist = Math.max(baseDist * 1.25, baseDist + 5000);
+  if (baseDist > crow * 2.5 + 15000) pick.c.notes = [`Long way around (${Math.round(baseDist / 1609)} mi): your truck's height, weight or length rules out the direct roads. Check your truck settings.`, ...(pick.c.notes || [])];
   (out.attempts ||= []).push({ pass: "plain", engine: plain.engine || "basic", options: scored.map((x) => ({ mi: Math.round(x.rt.distance / 160.9) / 10, min: Math.round(x.rt.duration / 60), offM: x.off, picked: x === pick, via: [...new Set(stepsAt(x.rt).map((s) => s.name).filter(Boolean))].slice(0, 6).join(" > ") })), secs: (Date.now() - t0) / 1000 });
   // TomTom already follows truck restrictions nationwide: if NYC's own network check passes too, we're done
   {
@@ -475,7 +487,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
         return { e, rt: await engine(pts, [0, ...stops.slice(1).map((_, i) => i + 2)]) };
       } catch { return null; }
     }));
-    for (const t of tries) if (t && !crossingsUsed(t.rt.geometry.coordinates, stepsAt(t.rt)).some((c) => banKeys.has(c.key)) && (!best || t.rt.distance < best.distance)) { best = t.rt; entry = t.e; }
+    for (const t of tries) if (t && t.rt.distance <= Math.max(baseDist * 1.6, baseDist + 15000) && !crossingsUsed(t.rt.geometry.coordinates, stepsAt(t.rt)).some((c) => banKeys.has(c.key)) && (!best || t.rt.distance < best.distance)) { best = t.rt; entry = t.e; }
     if (best) { plain = best; out.best = { route: plain, compliance: addRules(check(plain.geometry.coordinates, stepsAt(plain)), plain, veh, stops) }; }
   }
   const pc = plain.geometry.coordinates;
@@ -512,7 +524,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       (out.attempts ||= []).push({ pass: step, points: pts.length, engine: rt.engine || "basic", pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-      if ((!best || offM(c) < offM(best.compliance)) && rt.distance <= plain.distance * 1.15) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
+      if ((!best || offM(c) < offM(best.compliance)) && rt.distance <= Math.min(plain.distance * 1.15, maxDist)) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
     } catch (e) { (out.attempts ||= []).push({ pass: step, points: pts.length, error: e.message }); }
     if (best && best.compliance.verdict === "ok") break;
   }
@@ -534,14 +546,16 @@ async function truckRoute(stops, veh = {}, out = {}) {
       try {
         const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
         out.attempts.push({ pass: "avoid-turns", points: pts.length, penalized: penal.size, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-        if (offM(c) < offM(best.compliance) && rt.distance <= plain.distance * 1.15) { best = { route: rt, compliance: c }; out.best = best; }
+        if (offM(c) < offM(best.compliance) && rt.distance <= Math.min(plain.distance * 1.15, maxDist)) { best = { route: rt, compliance: c }; out.best = best; }
       } catch (e) { out.attempts.push({ pass: "avoid-turns", error: e.message }); }
     }
   }
+  if (!best || best.route.distance > Math.max(maxDist, baseDist * 1.6, baseDist + 15000)) { out.attempts.push({ pass: "sanity", fellBackTo: "engine route" }); out.best = base; return base; }
   return best;
 }
 
 function routes(url, res, send, readBody, req) {
+  if (url.pathname === "/api/truck/recent") { send(res, 200, { runs: recentRuns }); return true; }
   if (url.pathname === "/api/truck/status") {
     send(res, 200, { status: state.status, error: state.error, asOf: state.asOf, builtAt: state.builtAt, stats: state.stats, tomtom: !!TOMTOM_KEY, recentErrors });
     return true;
@@ -588,6 +602,8 @@ function routes(url, res, send, readBody, req) {
     const out = {};
     const timer = new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), BUDGET + 3000));
     const job = truckRoute(pts, veh, out);
+    const t0 = Date.now();
+    job.then((r) => logRun(pts, veh, r, out, t0), (e) => logRun(pts, veh, null, out, t0, e));
     Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf } }))
       .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
     return true;
