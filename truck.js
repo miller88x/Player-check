@@ -465,6 +465,20 @@ async function truckRoute(stops, veh = {}, out = {}) {
   });
   const minOff = Math.min(...scored.map((x) => x.off));
   const pick = scored.filter((x) => x.off <= minOff + 1000).sort((a, b) => a.cost - b.cost)[0]; // never a route with long illegal stretches
+  // Heavy-truck sanity: TomTom sometimes sends an 80,000 lb / 5-axle truck 100+ miles around for one marked weight limit
+  // (a single bridge or a closure). If dropping weight/axles gives a far shorter route, use it and keep the long one as an option.
+  const crow0 = stops.slice(1).reduce((d, p, i) => d + distM(stops[i], p), 0);
+  if (TOMTOM_KEY && pick.rt.engine === "tomtom" && (veh.w || veh.axles) && pick.rt.distance > crow0 * 1.5 + 8000 && timeLeft() > 8000) {
+    const light = await tomtom(P, K, { ...veh, w: 0, axles: 0 }).catch(() => null);
+    if (light && light.distance * 1.35 < pick.rt.distance && pick.rt.distance - light.distance > 24000) {
+      const mi = (m) => Math.round(m / 1609);
+      out.heavyAlt = { route: pick.rt, compliance: { ...pick.c, notes: [`Weight-safe route (${mi(pick.rt.distance)} mi): avoids every road marked with a weight or axle limit for your truck.`, ...(pick.c.notes || [])] } };
+      const lc = addRules(check(light.geometry.coordinates, stepsAt(light)), light, veh, stops);
+      lc.notes = [`Direct route. The map marks a weight or axle limit somewhere on the direct roads (often one bridge or a closure), which would add ${mi(pick.rt.distance - light.distance)} mi. Watch for posted weight-limit signs, or tap the ${mi(pick.rt.distance)} mi weight-safe route.`, ...(lc.notes || [])];
+      out.attempts.push({ pass: "heavy-check", heavyMi: mi(pick.rt.distance), directMi: mi(light.distance) });
+      pick.rt = light; pick.c = lc;
+    }
+  }
   let plain = pick.rt, entry = null;
   // Sanity limits: nothing Rova adds on top of the engine's route may make it much longer
   const base = { route: pick.rt, compliance: pick.c }, baseDist = pick.rt.distance;
@@ -604,7 +618,8 @@ function routes(url, res, send, readBody, req) {
     const job = truckRoute(pts, veh, out);
     const t0 = Date.now();
     job.then((r) => logRun(pts, veh, r, out, t0), (e) => logRun(pts, veh, null, out, t0, e));
-    Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf } }))
+    Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route, ...(out.heavyAlt ? [out.heavyAlt.route] : [])], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf },
+      altCompliance: out.heavyAlt ? { ...out.heavyAlt.compliance, engine: "tomtom", asOf: state.asOf, weightSafe: true } : undefined }))
       .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
     return true;
   }

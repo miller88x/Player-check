@@ -1554,7 +1554,7 @@ function routeSheet(to) {
       : `<div class="tchips"><span class="muted" style="align-self:center;font-size:14px">Add a stop:</span>${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>`}
     ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
     <div class="rlist">${routeAlts.map((R, i) => { const extra = Math.round((R.duration - best) / 60);
-      return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
+      return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${R.weightSafe ? "⚖️ Weight-safe · " : ""}${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
       ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
     <div class="camline" id="rxWeather" style="color:var(--muted);font-weight:500"></div>
@@ -2350,7 +2350,9 @@ async function fetchTruckRoutes(from, to, via) {
     const j = await r.json();
     if (!r.ok || !j.routes?.[0]) throw new Error(j.error || "No truck route");
     const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
-    return [R];
+    const out = [R];
+    if (j.routes[1] && j.altCompliance) { const R2 = buildRoute(j.routes[1], from); R2.truck = j.altCompliance; R2.avoidFailed = false; R2.weightSafe = true; out.push(R2); }
+    return out;
   } catch (e) {
     // Never leave the driver without directions: give the normal route, clearly marked as not truck-checked
     window.reportError2?.("truck route: " + (e.message || e));
