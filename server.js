@@ -102,9 +102,16 @@ async function addLocations(tickets) {
   return withAddr.length;
 }
 
-function toDate(mmddyyyy) {
-  const [m, d, y] = String(mmddyyyy || "").split("/");
-  return y ? new Date(Number(y), Number(m) - 1, Number(d)) : null;
+// The city's data mixes "12/30/2023" and "2023-12-30T00:00:00.000"; impossible years (typos like 2096) count as unknown
+function toDate(v) {
+  const s = String(v || "").trim();
+  let y, m, d, x;
+  if ((x = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) [, m, d, y] = x;
+  else if ((x = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) [, y, m, d] = x;
+  else return null;
+  const dt = new Date(Date.UTC(+y, +m - 1, +d, 12));
+  if (isNaN(dt) || +y < 1990 || dt > new Date(Date.now() + 864e5)) return null;
+  return dt;
 }
 
 function classify(t) {

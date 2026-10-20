@@ -58,6 +58,12 @@ const TRANSFORMS = [
   (n) => n.replace(/^([NSEW]) (ST|AVE|RD|DR|BLVD|LOOP)$/, (m, d, t) => `${{ N: "NORTH", S: "SOUTH", E: "EAST", W: "WEST" }[d]} ${t}`),
   (n) => n.replace(/^ADAM CLAYTON POWELL( JR)? BLVD$/, "7 AVE"),
   (n) => n.replace(/\s+(SVC|SERVICE) RD\b.*$/, ""),
+  // Glued words in the city's camera list: "E80TH ST", "W181ST ST", "18THST", "10THAVE", "EAST83RD ST", "NEWYORK", "HORACEHARDING", "GUY RBREWER"
+  (n) => n.replace(/\b([NSEW])(\d)/g, "$1 $2"),
+  (n) => n.replace(/\b(EAST|WEST|NORTH|SOUTH)(\d)/g, "$1 $2"),
+  (n) => n.replace(/\b(\d+(?:ST|ND|RD|TH))(ST|AVE|RD|PL|DR|STREET|AVENUE)\b/g, (m, a, b) => `${a} ${b === "STREET" ? "ST" : b === "AVENUE" ? "AVE" : b}`),
+  (n) => n.replace(/NEWYORK/g, "NEW YORK").replace(/HORACEHARDING/g, "HORACE HARDING").replace(/\bGUY RBREWER\b/g, "GUY R BREWER").replace(/\bE(NEW YORK|GUN HILL|FORDHAM)\b/g, "E $1"),
+  (n) => n.replace(/^B (\d)/, "BEACH $1").replace(/\bB (\d+)/g, "BEACH $1"),
 ];
 function variants(n) {
   const out = new Set([n]);

@@ -418,6 +418,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   {
     const c0 = addRules(check(plain.geometry.coordinates, stepsAt(plain)), plain, veh, stops);
     out.best = { route: plain, compliance: c0 }; // always have an answer ready
+    (out.attempts ||= []).push({ pass: "plain", engine: plain.engine || "basic", pct: c0.pctOnNetwork, offM: c0.offRoute.reduce((a, o) => a + o.meters, 0), secs: (Date.now() - t0) / 1000 });
     if (plain.engine === "tomtom" && (c0.verdict === "ok" || c0.verdict === "outside")) return out.best;
   }
   if (ban.length && crossingsUsed(plain.geometry.coordinates, stepsAt(plain)).some((c) => banKeys.has(c.key))) {
@@ -437,9 +438,13 @@ async function truckRoute(stops, veh = {}, out = {}) {
   if (!firstIn) return { route: plain, compliance: addRules({ ...check(pc, stepsAt(plain)), verdict: "outside" }, plain, veh, stops) };
   // build the network path leg by leg, then thread the route through it
   const legs = [];
+  (out.attempts ||= []).push({ pass: "network", firstIn, lastIn });
   for (let k = 1; k < stops.length; k++) {
     const a = k === 1 && !boroAt(stops[0]) ? firstIn : stops[k - 1], b = k === stops.length - 1 && !boroAt(stops[k]) ? lastIn : stops[k];
-    legs.push({ a, b, path: netPath(a, b, okBoros, avoidRe) });
+    const path = netPath(a, b, okBoros, avoidRe);
+    legs.push({ a, b, path });
+    out.attempts.push({ pass: "netPath", leg: k, found: !!path, km: path ? Math.round(path.reduce((d, p, i) => (i ? d + distM(path[i - 1], p) : 0), 0) / 100) / 10 : 0,
+      streets: path ? [...new Set(path.map((p) => nearSeg(p, 5)?.seg.street).filter(Boolean))].slice(0, 25) : [] });
   }
   const make = (step) => {
     const pts = [{ p: stops[0] }], keep = [0];
@@ -461,8 +466,9 @@ async function truckRoute(stops, veh = {}, out = {}) {
     if (pts.length > maxPts) { if (step !== 600) break; ({ pts, keep } = make(1200)); if (pts.length > maxPts) break; }
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
+      (out.attempts ||= []).push({ pass: step, points: pts.length, engine: rt.engine || "basic", pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
       if (!best || offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
-    } catch {}
+    } catch (e) { (out.attempts ||= []).push({ pass: step, points: pts.length, error: e.message }); }
     if (best && best.compliance.verdict === "ok") break;
   }
   return best;
@@ -496,7 +502,8 @@ function routes(url, res, send, readBody, req) {
     veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
     const rid = Math.random().toString(36).slice(2, 10), t0 = Date.now();
     testRuns.set(rid, { status: "running" }); if (testRuns.size > 50) testRuns.delete(testRuns.keys().next().value);
-    truckRoute(pts, veh).then((r) => testRuns.set(rid, { status: "done", secs: (Date.now() - t0) / 1000, engine: r.route.engine || "basic", miles: Math.round(r.route.distance / 160.9) / 10, minutes: Math.round(r.route.duration / 60),
+    const out2 = {};
+    truckRoute(pts, veh, out2).then((r) => testRuns.set(rid, { status: "done", attempts: out2.attempts, secs: (Date.now() - t0) / 1000, engine: r.route.engine || "basic", miles: Math.round(r.route.distance / 160.9) / 10, minutes: Math.round(r.route.duration / 60),
       verdict: r.compliance.verdict, pct: r.compliance.pctOnNetwork, offRoute: r.compliance.offRoute, parkways: r.compliance.parkways, blocked: r.compliance.blocked,
       roads: [...new Set(stepsAt(r.route).map((x) => x.name).filter(Boolean))].slice(0, 40) }))
       .catch((e) => testRuns.set(rid, { status: "error", error: e.message }));
