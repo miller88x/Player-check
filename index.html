@@ -117,6 +117,7 @@ ul.rules li{background:var(--ui);border-radius:10px;padding:10px 12px;font-size:
 .checkPin{width:22px;height:22px;border-radius:50%;background:#1a73e8;border:4px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45)}
 body.navigating #parkedPill{display:none!important}
 .inAlert{position:fixed;left:12px;right:12px;top:calc(var(--safeT) + 136px);z-index:11;max-width:560px;margin:0 auto;border-radius:18px;background:#fff;color:#202124;box-shadow:0 8px 28px rgba(0,0,0,.35);display:flex;gap:12px;align-items:flex-start;padding:14px 14px 14px 16px;cursor:pointer;animation:drop .35s ease both}
+body.navigating .inAlert.navok{top:calc(var(--safeT) + 175px)}
 .inAlert .ico{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto}
 .inAlert b{display:block;font-size:16px}
 .inAlert .sub{font-size:14px;color:#5f6368;margin-top:2px}
@@ -337,7 +338,7 @@ body.navigating #limitSign:not([hidden]){display:flex}
 #lanes{display:flex;gap:4px;justify-content:center;background:#0a4744;border-radius:0 0 16px 16px;padding:14px 12px 8px;margin-top:-10px;align-self:stretch;margin-inline:18px}
 #lanes:empty{display:none}
 #lanes svg{background:#0d5e5a;border-radius:6px}
-body.navigating .inAlert,body.navigating .top,body.navigating > .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
+body.navigating .inAlert:not(.navok),body.navigating .top,body.navigating > .fab:not(#recenter),body.navigating #tixPill,body.navigating .layers{display:none!important}
 body.navigating #navTop,body.navigating #speedo,body.navigating #navSide{display:flex}
 body.navigating #navBottom{display:grid}
 body.navigating .sheet{z-index:20}
@@ -756,10 +757,11 @@ document.querySelectorAll("[data-layer]").forEach((b) => (b.onclick = () => {
 let savedEtaAsked = false;
 let me = null, meMarker = null, heading = null, speedMps = 0, watchId = null, lastFix = null;
 const waiters = [];
+let lastReal = null; // last real GPS fix (a test drive moves the car, this doesn't)
 function startWatch() {
   if (watchId !== null || !navigator.geolocation) return;
   watchId = navigator.geolocation.watchPosition(
-    (p) => { if (!nav.sim) onFix({ lng: p.coords.longitude, lat: p.coords.latitude, heading: p.coords.heading, speed: p.coords.speed }); },
+    (p) => { lastReal = { lng: p.coords.longitude, lat: p.coords.latitude, heading: p.coords.heading, speed: p.coords.speed }; if (!nav.sim) onFix(lastReal); },
     (err) => { if (err.code === 1) { watchId = null; } },
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
 }
@@ -930,6 +932,8 @@ function pointAtFast(R, d) {
 function getMe(timeout = 15000) {
   if (me) return Promise.resolve(me);
   startWatch();
+  // The watch only fires when the phone moves, so also ask once for the current spot
+  try { navigator.geolocation?.getCurrentPosition((p) => { if (!me && !nav.sim) onFix({ lng: p.coords.longitude, lat: p.coords.latitude, heading: p.coords.heading, speed: p.coords.speed }); }, () => {}, { enableHighAccuracy: true, maximumAge: 30000, timeout: timeout }); } catch {}
   return new Promise((res, rej) => { waiters.push(res); setTimeout(() => rej(new Error("no-fix")), timeout); });
 }
 $("#locBtn").onclick = async () => {
@@ -1105,7 +1109,7 @@ function ticketsSheet() {
     ${alert}
     <div class="seg">${[["all","All"],["open","Open"],["closed","Paid"],["expired","Expired"]].map(([k,l]) => `<button type="button" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join("")}</div>
     <ul class="tix">${vis.map((t) => `<li data-id="${esc(t.summons)}"><span class="vio">${esc(title(t.violation))}</span><span class="amt">${t.due > 0 ? money(t.due) : t.fine !== null ? money(t.fine) : "—"}</span>
-      <span class="meta">${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</span><span class="chipS ${t.status}">${LABEL[t.status]}</span>${payByLine(t)}${t.due > 0 ? `<span class="links" style="grid-column:1/-1"><a href="#" data-dispute="${esc(t.summons)}">Dispute this ticket</a></span>` : ""}</li>`).join("") || '<li class="muted">No tickets here.</li>'}</ul>
+      <span class="meta">${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</span><span class="chipS ${t.status}">${LABEL[t.status]}</span>${payByLine(t)}${t.due > 0 ? `<span class="links" style="grid-column:1/-1">${payBy(t) ? "" : `<a href="${CITYPAY}" target="_blank" rel="noopener">Pay now</a>`}<a href="#" data-dispute="${esc(t.summons)}">Dispute this ticket</a></span>` : ""}</li>`).join("") || '<li class="muted">No tickets here.</li>'}</ul>
     ${alertsBox()}
     <button class="btn" type="button" id="chg">Change plate</button>
     ${acctRow()}
@@ -1603,6 +1607,7 @@ function startNav(sim) {
   } else { startWatch(); if (me) navTick(me); }
 }
 function pointAt(R, d) {
+  if (!R.coords || R.coords.length < 2) return R.coords?.[0] || [0, 0];
   let i = 0; while (i < R.cum.length - 2 && R.cum[i + 1] < d) i++;
   const seg = R.cum[i + 1] - R.cum[i] || 1, t = Math.min(1, (d - R.cum[i]) / seg);
   return [R.coords[i][0] + (R.coords[i + 1][0] - R.coords[i][0]) * t, R.coords[i][1] + (R.coords[i + 1][1] - R.coords[i][1]) * t];
@@ -1634,7 +1639,7 @@ function endNav() {
   map.getSource("done")?.setData({ type: "FeatureCollection", features: [] });
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0 }, zoom: 14, duration: 600 });
   paintVehicle();
-  if (wasSim) { me = null; meMarker?.remove(); meMarker = null; lastFix = null; heading = null; }
+  if (wasSim) { me = null; meMarker?.remove(); meMarker = null; lastFix = null; heading = null; if (lastReal) onFix({ ...lastReal, speed: 0 }); }
 }
 $("#navEnd").onclick = endNav;
 map.on("dragstart", () => { if (nav.active) { nav.follow = false; $("#recenter").classList.add("on"); } });
@@ -2020,17 +2025,26 @@ function heard(text) {
   if (/park/.test(t) && /(can i|where|destination|there)/.test(t) && nav.dest?.at) { speak("Checking parking at your destination"); return destParking(nav.dest, true); }
   for (const [re, cat] of VOICE_STOPS) if (re.test(t) && /stop|find|add|need|get|nearest|on the way/.test(t) && nav.dest) { speak(`Looking for ${CATS[cat][2].toLowerCase()} on your route`); return stopSearch(cat, nav.dest); }
   for (const [re, type] of VOICE_REPORTS) if (re.test(t)) return sendReport(type);
+  popMsg(`Heard: "${text.slice(0, 40)}"`, "Try: report police, add a gas stop, share my drive");
   speak("Sorry, I didn't get that. Try: report police, add a gas stop, share my drive, or when will I arrive.");
+}
+// Short on-screen message (shows even when the voice is muted)
+function popMsg(title, sub, emoji = "🎤", color = "#1a73e8", ms = 3500) {
+  const box = $("#inAlert"); if (!box) return;
+  box.classList.add("navok");
+  box.innerHTML = `<div class="ico" style="background:${color};font-size:20px">${emoji}</div><div><b>${esc(title)}</b>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>`;
+  box.hidden = false; box.onclick = () => (box.hidden = true); clearTimeout(popMsg.t); popMsg.t = setTimeout(() => (box.hidden = true), ms);
 }
 function listen() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return speak("Voice commands aren't available on this phone yet");
+  if (!SR) { popMsg("Voice commands aren't available here", "Use the buttons on the right instead."); return speak("Voice commands aren't available on this phone yet"); }
   try {
     stopVoice();
     const rec = new SR(); rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
     $("#navMic").classList.add("on");
     rec.onresult = (e) => heard(e.results[0][0].transcript || "");
-    rec.onerror = (e) => { if (e.error === "not-allowed") speak("Allow the microphone for Rova to use voice commands"); };
+    popMsg("Listening…", "Say: report police, add a gas stop, share my drive");
+    rec.onerror = (e) => { if (e.error === "not-allowed" || e.error === "service-not-allowed") { popMsg("Microphone is off", "Allow the microphone for Rova in your phone settings."); speak("Allow the microphone for Rova to use voice commands"); } };
     rec.onend = () => $("#navMic").classList.remove("on");
     rec.start();
   } catch { $("#navMic").classList.remove("on"); }
@@ -2150,6 +2164,7 @@ function renewalAlerts() {
 }
 function showRenewalAlert() {
   const a = renewalAlerts()[0], box = $("#inAlert"); if (!a || !box || !box.hidden) return;
+  box.classList.remove("navok");
   box.innerHTML = `<div class="ico" style="background:#f29900;font-size:20px">${a.e}</div><div style="min-width:0"><b>${esc(a.title)}</b><div class="sub">${esc(a.sub)}</div></div><button class="xx" type="button" aria-label="Dismiss">✕</button>`;
   box.hidden = false;
   const done = () => { const s = store.get("renewSeen", {}); s[a.key] = 1; store.set("renewSeen", s); box.hidden = true; };
@@ -2452,7 +2467,7 @@ function buildAlerts(d) {
 function checkInAppAlerts() {
   if (!data) return;
   pending = buildAlerts(data);
-  const box = $("#inAlert");
+  const box = $("#inAlert"); box.classList.remove("navok");
   if (!pending.length) { box.hidden = true; return; }
   const a = pending[0];
   box.innerHTML = `<div class="ico" style="background:${a.color};color:#fff;font-weight:700">${esc(a.icon)}</div>
@@ -2498,11 +2513,11 @@ document.addEventListener("click", (e) => {
 });
 async function disputeSheet(t) {
   const camera = isCamera(t.violation);
-  const days = t.ageDays ?? 0, left = 30 - days;
+  const days = t.ageDays ?? (t.issued ? Math.floor((Date.now() - new Date(t.issued + "T12:00:00")) / 864e5) : null), left = days == null ? 0 : 30 - days;
   openSheet("Dispute ticket", `
     <div><div class="vio">${esc(title(t.violation))} · ${money(t.due ?? t.fine)}</div>
       <div class="meta">#${esc(t.summons)} · ${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</div></div>
-    ${left > 0 ? `<div class="alert warn"><b>${left} day${left === 1 ? "" : "s"} left</b>Dispute within 30 days of the issue date to avoid late penalties.</div>`
+    ${days == null ? `<div class="alert warn"><b>Dispute soon</b>Dispute within 30 days of the issue date to avoid late penalties.</div>` : left > 0 ? `<div class="alert warn"><b>${left} day${left === 1 ? "" : "s"} left</b>Dispute within 30 days of the issue date to avoid late penalties.</div>`
               : `<div class="alert stop"><b>Past 30 days</b>You can still dispute, but late penalties may already apply.${t.judgment ? " If it's in judgment, you'll need the city's Request for Hearing After Judgment form." : ""}</div>`}
     <div class="muted">Why should this ticket be dismissed?</div>
     <div class="reasons" id="rList"><span class="muted">Loading reasons…</span></div>
@@ -2589,9 +2604,8 @@ async function sendReport(type) {
     if (j.report?.id != null) store.set("myReps", [String(j.report.id), ...store.get("myReps", [])].slice(0, 50)); // never warn you about your own report
     closeSheet(); loadReports();
     if (nav.active) speak(`Thanks. ${RTYPES[type].label} reported.`);
-    const box = $("#inAlert"); const t = RTYPES[type];
-    box.innerHTML = `<div class="ico" style="background:${t.c};font-size:20px">${t.e}</div><div><b>${esc(t.label)} reported</b><div class="sub">Thanks for warning other drivers.</div></div>`;
-    box.hidden = false; box.onclick = () => (box.hidden = true); setTimeout(() => (box.hidden = true), 2500);
+    const t = RTYPES[type];
+    popMsg(`${t.label} reported`, "Thanks for warning other drivers.", t.e, t.c, 2500);
   } catch (e) { openSheet("Couldn't send report", `<p class="muted">${esc(e.message || "Try again.")}</p>`); }
 }
 $("#reportBtn").onclick = reportSheet;
@@ -2681,7 +2695,7 @@ function tickParked() {
   pill.classList.toggle("soon", mins <= warnAt);
   if (mins <= warnAt && !car.warned) {
     car.warned = true; store.set("parked", car);
-    const box = $("#inAlert");
+    const box = $("#inAlert"); box.classList.remove("navok");
     box.innerHTML = `<div class="ico" style="background:#d93025;color:#fff;font-weight:800">P</div><div style="min-width:0"><b>${mins <= 0 ? "Move your car now" : `Move your car in ${mins} min`}</b><div class="sub">${esc(car.where || "")} · parking rules start soon</div></div><button class="xx" type="button" aria-label="Dismiss">✕</button>`;
     box.hidden = false; box.querySelector(".xx").onclick = (e) => { e.stopPropagation(); box.hidden = true; };
     box.onclick = () => { box.hidden = true; parkedSheet(); };

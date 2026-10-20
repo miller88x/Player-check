@@ -19,7 +19,9 @@ function page(id) {
 <body><div id="map"></div><div class="card"><div class="eta" id="eta">Loading…</div><div class="sub" id="sub"></div><div class="brand">Shared from Rova · updates live</div></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
-const map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty", center: [-73.95, 40.7], zoom: 12 });
+if (!window.maplibregl) window.maplibregl = null;
+let map = null;
+try { map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty", center: [-73.95, 40.7], zoom: 12 }); } catch {}
 const el = document.createElement("div"); el.className = "car"; let mk = null, first = true;
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 async function tick() {
@@ -33,14 +35,14 @@ async function tick() {
       document.getElementById("eta").textContent = "Arriving " + at;
       document.getElementById("sub").innerHTML = name + " is driving to " + esc(t.dest) + " · " + Math.max(1, Math.round(t.eta / 60)) + " min · " + (t.left / 1609).toFixed(1) + " mi left";
     }
-    if (t.lat != null) {
+    if (t.lat != null && map) {
       if (!mk) mk = new maplibregl.Marker({ element: el }).setLngLat([t.lng, t.lat]).addTo(map); else mk.setLngLat([t.lng, t.lat]);
       if (first) { map.jumpTo({ center: [t.lng, t.lat], zoom: 14 }); first = false; } else map.easeTo({ center: [t.lng, t.lat], duration: 900 });
     }
     if (!t.ended) setTimeout(tick, 8000);
   } catch { setTimeout(tick, 15000); }
 }
-map.on("load", tick);
+tick(); // show the ETA right away, even before the map finishes loading
 </script></body></html>`;
 }
 
