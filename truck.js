@@ -477,7 +477,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
       out.heavyAlt = { route: pick.rt, compliance: { ...pick.c, notes: [`Weight-safe route (${mi(pick.rt.distance)} mi): avoids every road marked with a weight or axle limit for your truck.`, ...(pick.c.notes || [])] } };
       const lc = addRules(check(light.geometry.coordinates, stepsAt(light)), light, veh, stops);
       lc.notes = [`Direct route. The map marks a weight or axle limit somewhere on the direct roads (often one bridge or a closure), which would add ${mi(pick.rt.distance - light.distance)} mi. Watch for posted weight-limit signs, or tap the ${mi(pick.rt.distance)} mi weight-safe route.`, ...(lc.notes || [])];
-      out.attempts.push({ pass: "heavy-check", heavyMi: mi(pick.rt.distance), directMi: mi(light.distance) });
+      (out.attempts ||= []).push({ pass: "heavy-check", heavyMi: mi(pick.rt.distance), directMi: mi(light.distance) });
       pick.rt = light; pick.c = lc;
     }
   }
