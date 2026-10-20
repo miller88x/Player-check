@@ -190,7 +190,7 @@ function heapPop(h) {
   if (h.length) { h[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < h.length && h[l][0] < h[m][0]) m = l; if (r < h.length && h[r][0] < h[m][0]) m = r; if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } }
   return top;
 }
-function netPath(from, to, okBoros, avoidRe) {
+function netPath(from, to, okBoros, avoidRe, penal) {
   const src = nearNodes(from, 1500), dst = nearNodes(to, 1500);
   if (!src.length || !dst.length) return null;
   const goal = new Map(dst.map((x) => [x.i, x.d]));
@@ -205,7 +205,7 @@ function netPath(from, to, okBoros, avoidRe) {
       const s = state.segs[id];
       if (avoidRe && avoidRe.test(s.street)) continue; // tunnel/bridge this vehicle may not use
       // City rule: crossing a borough with no stop in it -> Through routes only
-      let w = s.len * (s.type === "Through" ? 1 : s.type === "Local" ? 1.15 : 1.6) * (s.fast ? 0.6 : 1);
+      let w = s.len * (s.type === "Through" ? 1 : s.type === "Local" ? 1.15 : 1.6) * (s.fast ? 0.6 : 1) * (penal?.has(id) ? 8 : 1);
       if (s.type !== "Through" && s.boro && !okBoros.has(s.boro)) w *= 6;
       const nd = d + w;
       if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, { u, id }); heapPush(h, [nd, v]); }
@@ -467,7 +467,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const firstIn = pc.find((p) => boroAt(p)), lastIn = [...pc].reverse().find((p) => boroAt(p));
   if (!firstIn) return { route: plain, compliance: addRules({ ...check(pc, stepsAt(plain)), verdict: "outside" }, plain, veh, stops) };
   // build the network path leg by leg, then thread the route through it
-  const legs = [];
+  let legs = [];
   (out.attempts ||= []).push({ pass: "network", firstIn, lastIn });
   for (let k = 1; k < stops.length; k++) {
     const a = k === 1 && !boroAt(stops[0]) ? firstIn : stops[k - 1], b = k === stops.length - 1 && !boroAt(stops[k]) ? lastIn : stops[k];
@@ -476,10 +476,10 @@ async function truckRoute(stops, veh = {}, out = {}) {
     out.attempts.push({ pass: "netPath", leg: k, found: !!path, km: path ? Math.round(path.reduce((d, p, i) => (i ? d + distM(path[i - 1], p) : 0), 0) / 100) / 10 : 0,
       streets: path ? [...new Set(path.map((p) => nearSeg(p, 5)?.seg.street).filter(Boolean))].slice(0, 25) : [] });
   }
-  const make = (step) => {
+  const make = (step, L = legs) => {
     const pts = [{ p: stops[0] }], keep = [0];
     if (entry && !boroAt(stops[0])) pts.push({ p: entry.p }); // stay on the legal bridge we picked
-    legs.forEach(({ a, b, path }, j) => {
+    L.forEach(({ a, b, path }, j) => {
       if (a !== stops[j]) pts.push({ p: a });
       if (path) for (const v of viaPoints(path, step).pts) pts.push(v);
       if (b !== stops[j + 1]) pts.push({ p: b });
@@ -500,6 +500,28 @@ async function truckRoute(stops, veh = {}, out = {}) {
       if (!best || offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
     } catch (e) { (out.attempts ||= []).push({ pass: step, points: pts.length, error: e.message }); }
     if (best && best.compliance.verdict === "ok") break;
+  }
+  // Still leaving the truck network? Usually a turn that's banned for trucks: avoid those spots and re-plan once.
+  if (best && best.compliance.offRoute.length && timeLeft() > 7000) {
+    const rc = best.route.geometry.coordinates, cum = [0];
+    for (let i = 1; i < rc.length; i++) cum.push(cum[i - 1] + distM(rc[i - 1], rc[i]));
+    const at = (d) => { let i = 0; while (i < cum.length - 2 && cum[i + 1] < d) i++; return rc[i]; };
+    const penal = new Set();
+    for (const o of best.compliance.offRoute) for (const d of [o.at - 60, o.at, o.at + o.meters / 2]) {
+      const p = at(Math.max(0, d)), cx = Math.floor(p[0] / CELL), cy = Math.floor(p[1] / CELL);
+      for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (const id of state.grid.get(`${cx + x}|${cy + y}`) || []) {
+        if (state.segs[id].c.some((q) => distM(q, p) < 150)) penal.add(id);
+      }
+    }
+    const legs2 = legs.map(({ a, b }) => ({ a, b, path: netPath(a, b, okBoros, avoidRe, penal) }));
+    const { pts, keep } = make(300, legs2);
+    if (pts.length <= maxPts) {
+      try {
+        const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
+        out.attempts.push({ pass: "avoid-turns", points: pts.length, penalized: penal.size, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
+        if (offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
+      } catch (e) { out.attempts.push({ pass: "avoid-turns", error: e.message }); }
+    }
   }
   return best;
 }
