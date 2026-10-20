@@ -2326,6 +2326,7 @@ function truckSheet(then) {
       <label class="lb" style="flex:1;min-width:90px">Weight (lb)<input class="inp" id="tW" type="number" step="500" min="3000" max="200000" value="${t.w}"></label>
       <label class="lb" style="flex:1;min-width:90px">Length (ft)<input class="inp" id="tL" type="number" step="1" min="10" max="120" value="${t.l}"></label>
     </div>
+    <div class="alert stop" id="tHwarn" ${t.h > 13.5 ? "" : "hidden"}><b>Taller than 13'6"</b>The legal height in NY, NJ and most states is 13'6", and many NYC bridges are lower. Above that you need an oversize permit, and routes will go far around. Double-check your height.</div>
     <label style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="tHz" ${t.hazmat ? "checked" : ""}> Carrying hazardous materials</label>
     ${t.hazmat ? `<label class="lb">Hazmat class<select class="inp" id="tHc">${Object.entries(HZ_CLASSES).map(([k, v]) => `<option value="${k}" ${+t.hzc === +k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <div class="note">Hazmat routes follow US hazmat restrictions nationwide. In NYC they also avoid the Holland, Lincoln, Queens-Midtown and Hugh L. Carey tunnels${+t.hzc === 1 ? " and the Verrazzano-Narrows Bridge" : ""}, and use the GWB upper level. Carry your permits and shipping papers.</div>` : ""}
@@ -2337,6 +2338,7 @@ function truckSheet(then) {
   document.querySelectorAll("[data-tp]").forEach((b) => (b.onclick = () => { const p = TRUCK_PRESETS[b.dataset.tp]; store.set("truck", { ...truck(), kind: b.dataset.tp, h: p.h, w: p.w, l: p.l, ax: p.ax }); truckSheet(then); }));
   $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked, explosives: $("#tHz").checked && truck().explosives }); truckSheet(then); };
   $("#tHc")?.addEventListener("change", () => { store.set("truck", { ...truck(), hzc: +$("#tHc").value, explosives: +$("#tHc").value === 1 }); truckSheet(then); });
+  $("#tH").oninput = () => ($("#tHwarn").hidden = !(+$("#tH").value > 13.5));
   $("#tSave").onclick = () => {
     store.set("truck", { ...truck(), saved: true, h: +$("#tH").value || 13.5, w: +$("#tW").value || 26000, l: +$("#tL").value || 26, ax: +$("#tA").value || 2, axSet: true });
     if (then) { truckTrip = true; paintTruckLayer(); then(); } else closeSheet();
@@ -2371,6 +2373,7 @@ function truckCard(R) {
     : `<div class="alert warn"><b>Outside NYC: truck limits not checked</b>Rova checks NYC's official truck routes; nationwide truck restrictions turn on with the truck routing upgrade. Follow posted truck signs.</div>`;
   else if (c.verdict === "ok") head = `<div class="alert go"><b>✅ Stays on NYC truck routes</b>${c.pctOnNetwork}% on the official network${c.endsOffNetwork ? ` · ${mi(c.endsOffNetwork)} at the start/end to reach your stop (allowed: most direct route)` : ""}.</div>`;
   else head = `<div class="alert stop"><b>⚠️ ${c.blocked?.length ? "Not legal for your truck" : "Not fully on truck routes"}</b>${(c.blocked || []).map((b) => `⛔ ${esc(b)}<br>`).join("")}${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
+  if (t.h > 13.5) head = `<div class="alert stop"><b>⚠️ Your truck is set to ${ftIn(t.h)} tall</b>That's over the 13'6" legal limit, so the route avoids every lower bridge and can go far out of the way. If that's a typo, tap Edit below and fix the height.</div>` + head;
   return `<div class="truckbox">${head}
     ${c.hazmat?.on ? `<div class="alert ${c.blocked?.length ? "stop" : "go"}"><b>☣️ Hazmat ${c.blocked?.length ? "check failed" : "check passed"}${c.hazmat.explosives ? " (explosives)" : ""}</b>${c.hazmat.avoided?.length ? `Avoids: ${c.hazmat.avoided.map(esc).join(", ")}.<br>` : ""}${(c.hazmat.notes || []).map(esc).join("<br>")}</div>` : ""}
     ${c.notes?.length ? `<div class="note">${c.notes.map(esc).join("<br>")}</div>` : ""}
