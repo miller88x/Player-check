@@ -2356,7 +2356,7 @@ function truckCard(R) {
     ${c.notes?.length ? `<div class="note">${c.notes.map(esc).join("<br>")}</div>` : ""}
     <div class="muted" style="font-size:13px">🚚 ${esc(TRUCK_PRESETS[t.kind]?.name || "Truck")} · ${ftIn(t.h)} · ${t.w.toLocaleString()} lb · ${t.l} ft · ${t.ax || 2} axles${t.hazmat ? ` · ☣️ class ${t.hzc || 3}` : ""} · <a href="#" id="tEdit">Edit</a></div>
     ${c.engine === "tomtom" ? '<div class="note">🌎 Truck-safe routing nationwide: height, weight, length, axle and hazmat restrictions applied, with live traffic.</div>' : ""}
-    <div class="note">Checked against NYC DOT's Truck Route Network${asOf ? ` (city data updated ${asOf})` : ""}. NYC changed truck routes in fall 2026; posted signs always win.</div></div>`;
+    <div class="note">Checked against NYC's official truck routes${asOf ? ` (city data updated ${asOf})` : ""}${c.asOf && c.asOf >= "2026-10-04" ? ", including the fall 2026 truck route changes" : ". NYC changed truck routes in fall 2026"}. Posted signs always win.</div></div>`;
 }
 
 // Truck route network on the map (Through = orange, Local = green, Limited Local = purple)

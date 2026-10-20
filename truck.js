@@ -30,45 +30,75 @@ async function getJSON(url, ms = 90000) {
 function lines(g) { return !g ? [] : g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : []; }
 function polys(g) { return !g ? [] : g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : []; }
 
+// Truck route data, newest first:
+//  1. DCP Street Centerline (inkn-q76z): road-bed level, has truck_route_type (3 Through, 2 Local, 1 Limited Local)
+//     and trafdir (FT/TF one-way along/against the drawn line, TW two-way, NV no vehicles). Updated after the fall 2026 redesign.
+//  2. DOT Truck Routes (jjja-shxy): backup if the centerline can't be loaded (no one-way directions).
+async function pageAll(base, max = 500000) {
+  const all = [];
+  for (let off = 0; off < max; off += 40000) {
+    const j = await getJSON(`${base}&$order=:id&$limit=40000&$offset=${off}`);
+    all.push(...(j.features || [])); if ((j.features || []).length < 40000) break;
+  }
+  return all;
+}
+const BORO_CODE = { 1: "Manhattan", 2: "Bronx", 3: "Brooklyn", 4: "Queens", 5: "Staten Island" };
+const TRUCK_TYPE = { 3: "Through", 2: "Local", 1: "Limited Local" };
 async function build() {
   if (state.status === "loading") return;
   state.status = "loading"; state.error = null;
   try {
-    const [meta, net, boro] = await Promise.all([
-      getJSON("https://data.cityofnewyork.us/api/views/jjja-shxy.json", 30000).catch(() => null),
-      (async () => { // page through so no segment is cut off by an API row limit
-        const all = [];
-        for (let off = 0; off < 500000; off += 40000) {
-          const j = await getJSON(`https://data.cityofnewyork.us/resource/jjja-shxy.geojson?$select=the_geom,street,routetype,boroname,ltdlocal,restrictio&$order=:id&$limit=40000&$offset=${off}`);
-          all.push(...(j.features || [])); if ((j.features || []).length < 40000) break;
-        }
-        return { features: all };
-      })(),
-      getJSON("https://data.cityofnewyork.us/resource/gthc-hcne.geojson?$limit=10"),
-    ]);
+    const boro = await getJSON("https://data.cityofnewyork.us/resource/gthc-hcne.geojson?$limit=10");
+    let source = "centerline", meta = null, feats = [];
+    try {
+      [meta, feats] = await Promise.all([
+        getJSON("https://data.cityofnewyork.us/api/views/inkn-q76z.json", 30000).catch(() => null),
+        pageAll("https://data.cityofnewyork.us/resource/inkn-q76z.geojson?$select=the_geom,full_street_name,truck_route_type,trafdir,boroughcode,from_level_code,to_level_code&$where=truck_route_type IS NOT NULL"),
+      ]);
+      if (feats.length < 5000) throw new Error(`centerline gave ${feats.length} truck segments`);
+    } catch (e) {
+      logErr("truck data: centerline failed, using DOT truck routes: " + e.message);
+      source = "dot";
+      [meta, feats] = await Promise.all([
+        getJSON("https://data.cityofnewyork.us/api/views/jjja-shxy.json", 30000).catch(() => null),
+        pageAll("https://data.cityofnewyork.us/resource/jjja-shxy.geojson?$select=the_geom,street,routetype,boroname,ltdlocal,restrictio"),
+      ]);
+    }
     const segs = [], nodes = [], nodeKey = new Map(), adj = [], grid = new Map(), ngrid = new Map();
-    const node = (p) => {
-      const k = `${Math.round(p[0] / 2e-5)}|${Math.round(p[1] / 2e-5)}`;
+    const node = (p, lvl) => {
+      const k = `${Math.round(p[0] / 2e-5)}|${Math.round(p[1] / 2e-5)}|${lvl || ""}`; // level keeps overpasses from joining streets below
       let i = nodeKey.get(k);
       if (i == null) { i = nodes.length; nodes.push(p); nodeKey.set(k, i); adj.push([]); const c = ck(p[0], p[1]); (ngrid.get(c) || ngrid.set(c, []).get(c)).push(i); }
       return i;
     };
-    for (const f of net.features || []) {
+    let oneWay = 0;
+    for (const f of feats) {
       const pr = f.properties || {};
-      const type = /through/i.test(pr.routetype || "") ? "Through" : /limited/i.test(pr.routetype || "") ? "Limited Local" : "Local";
-      for (const c of lines(f.geometry)) {
+      let type, street, boroName, dir = "TW", la = "", lb = "", ltd = "", restr = "";
+      if (source === "centerline") {
+        type = TRUCK_TYPE[+pr.truck_route_type]; if (!type) continue;
+        street = String(pr.full_street_name || "").trim(); boroName = BORO_CODE[+pr.boroughcode] || "";
+        dir = String(pr.trafdir || "TW").toUpperCase(); if (dir === "NV") continue;
+        la = pr.from_level_code || ""; lb = pr.to_level_code || "";
+      } else {
+        type = /through/i.test(pr.routetype || "") ? "Through" : /limited/i.test(pr.routetype || "") ? "Limited Local" : "Local";
+        street = String(pr.street || "").trim(); boroName = pr.boroname || ""; ltd = pr.ltdlocal || ""; restr = pr.restrictio || "";
+      }
+      const parts = lines(f.geometry);
+      for (const c of parts) {
         if (!c || c.length < 2) continue;
         let len = 0; for (let i = 1; i < c.length; i++) len += distM(c[i - 1], c[i]);
         const id = segs.length;
-        const street = String(pr.street || "").trim();
-        const fast = /EXPRESSWAY|EXPWY|EXPY|HIGHWAY|HWY|INTERSTATE|TURNPIKE|BRIDGE|TUNNEL|THRUWAY/i.test(street);
-        const s = { id, c, len, street, type, boro: pr.boroname || "", ltd: pr.ltdlocal || "", restr: pr.restrictio || "", fast };
-        s.a = node(c[0]); s.b = node(c[c.length - 1]);
-        adj[s.a].push(id); adj[s.b].push(id);
-        segs.push(s);
-        // index every vertex (and midpoints of long pieces) into the grid
+        const fast = /EXPRESSWAY|EXPWY|EXPY|HIGHWAY|HWY|INTERSTATE|TURNPIKE|BRIDGE|\bBR\b|TUNNEL|THRUWAY|\bPKWY\b|EXIT|\bET\b|RAMP|\bEN\b/i.test(street);
+        const sg = { id, c, len, street, type, boro: boroName, ltd, restr, fast, dir };
+        sg.a = node(c[0], parts.length === 1 ? la : ""); sg.b = node(c[c.length - 1], parts.length === 1 ? lb : "");
+        // one-way streets only get the edge in their legal direction
+        if (dir !== "TF") adj[sg.a].push({ id, v: sg.b });
+        if (dir !== "FT") adj[sg.b].push({ id, v: sg.a });
+        if (dir === "FT" || dir === "TF") oneWay++;
+        segs.push(sg);
         for (let i = 0; i < c.length; i++) {
-          const add = (p) => { const k = ck(p[0], p[1]); const a = grid.get(k) || grid.set(k, []).get(k); if (a[a.length - 1] !== id) a.push(id); };
+          const add = (p) => { const k = ck(p[0], p[1]); const arr = grid.get(k) || grid.set(k, []).get(k); if (arr[arr.length - 1] !== id) arr.push(id); };
           add(c[i]);
           if (i) { const d = distM(c[i - 1], c[i]); for (let t = 100; t < d; t += 100) add([c[i - 1][0] + (c[i][0] - c[i - 1][0]) * t / d, c[i - 1][1] + (c[i][1] - c[i - 1][1]) * t / d]); }
         }
@@ -81,10 +111,10 @@ async function build() {
       boros.push({ name: f.properties?.boroname || "", poly, box: [minX, minY, maxX, maxY] });
     }
     if (segs.length < 1000) throw new Error(`only ${segs.length} truck segments loaded`);
-    Object.assign(state, { segs, nodes, adj, grid, ngrid, boros, status: "ready", builtAt: new Date().toISOString(),
+    Object.assign(state, { segs, nodes, adj, grid, ngrid, boros, status: "ready", builtAt: new Date().toISOString(), source,
       asOf: meta?.rowsUpdatedAt ? new Date(meta.rowsUpdatedAt * 1000).toISOString().slice(0, 10) : null,
-      stats: { segments: segs.length, nodes: nodes.length, miles: Math.round(segs.reduce((s, x) => s + x.len, 0) / 1609), boroughs: boros.length,
-        byType: segs.reduce((o, s) => ((o[s.type] = (o[s.type] || 0) + 1), o), {}) } });
+      stats: { source, segments: segs.length, oneWay, nodes: nodes.length, miles: Math.round(segs.reduce((x, y) => x + y.len, 0) / 1609), boroughs: boros.length,
+        byType: segs.reduce((o, x) => ((o[x.type] = (o[x.type] || 0) + 1), o), {}) } });
     console.log("truck network ready:", state.stats);
   } catch (e) { state.status = "error"; state.error = e.message; console.error("truck network:", e.message); setTimeout(build, 10 * 60 * 1000).unref(); }
 }
@@ -171,8 +201,8 @@ function netPath(from, to, okBoros, avoidRe) {
     const [d, u] = heapPop(h);
     if (d > (dist.get(u) ?? Infinity) || d >= endCost) continue;
     if (goal.has(u) && d + goal.get(u) * 2 < endCost) { endCost = d + goal.get(u) * 2; end = u; }
-    for (const id of state.adj[u]) {
-      const s = state.segs[id], v = s.a === u ? s.b : s.a;
+    for (const { id, v } of state.adj[u]) {
+      const s = state.segs[id];
       if (avoidRe && avoidRe.test(s.street)) continue; // tunnel/bridge this vehicle may not use
       // City rule: crossing a borough with no stop in it -> Through routes only
       let w = s.len * (s.type === "Through" ? 1 : s.type === "Local" ? 1.15 : 1.6) * (s.fast ? 0.6 : 1);
