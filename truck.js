@@ -452,10 +452,12 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const offOf = (c) => c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
   const scored = cands.map((rt) => {
     const c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
-    return { rt, c, off: offOf(c), cost: rt.duration + rt.distance / 22 }; // each extra mile ~ 73 s: don't drive 5 extra miles to save 2 minutes
+    const off = offOf(c);
+    // each extra mile ~ 73 s (don't drive 5 extra miles to save 2 minutes); each meter off the truck network ~ 1.5 s
+    return { rt, c, off, cost: rt.duration + rt.distance / 22 + off * 1.5 };
   });
   const minOff = Math.min(...scored.map((x) => x.off));
-  const pick = scored.filter((x) => x.off <= minOff + 300).sort((a, b) => a.cost - b.cost)[0];
+  const pick = scored.filter((x) => x.off <= minOff + 1000).sort((a, b) => a.cost - b.cost)[0]; // never a route with long illegal stretches
   let plain = pick.rt, entry = null;
   (out.attempts ||= []).push({ pass: "plain", engine: plain.engine || "basic", options: scored.map((x) => ({ mi: Math.round(x.rt.distance / 160.9) / 10, min: Math.round(x.rt.duration / 60), offM: x.off, picked: x === pick, via: [...new Set(stepsAt(x.rt).map((s) => s.name).filter(Boolean))].slice(0, 6).join(" > ") })), secs: (Date.now() - t0) / 1000 });
   // TomTom already follows truck restrictions nationwide: if NYC's own network check passes too, we're done
