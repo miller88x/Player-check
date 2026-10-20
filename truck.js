@@ -356,7 +356,7 @@ const TT_MAN = {
   MOTORWAY_EXIT_LEFT: ["off ramp", "slight left"], MOTORWAY_EXIT_RIGHT: ["off ramp", "slight right"], TAKE_FERRY: ["continue", "straight"],
   ROUNDABOUT_CROSS: ["roundabout", "straight"], ROUNDABOUT_RIGHT: ["roundabout", "right"], ROUNDABOUT_LEFT: ["roundabout", "left"], ROUNDABOUT_BACK: ["roundabout", "uturn"],
 };
-async function tomtom(points, keepIdx, veh = {}) {
+async function tomtom(points, keepIdx, veh = {}, alts = 0) {
   const loc = points.map((x) => `${x.p[1].toFixed(6)},${x.p[0].toFixed(6)}`).join(":");
   const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: "truck", vehicleCommercial: "true", traffic: "true", routeType: "fastest",
     instructionsType: "text", language: "en-US", routeRepresentation: "polyline" });
@@ -365,11 +365,12 @@ async function tomtom(points, keepIdx, veh = {}) {
   if (veh.l) q.set("vehicleLength", (veh.l * 0.3048).toFixed(2));
   q.set("vehicleWidth", "2.59"); // 8'6" standard width
   if (veh.axles) q.set("vehicleNumberOfAxles", String(veh.axles));
+  if (alts) q.set("maxAlternatives", String(alts));
   const url = `https://api.tomtom.com/routing/1/calculateRoute/${loc}/json?${q}${veh.hzc ? `&vehicleLoadType=USHazmatClass${veh.hzc}` : ""}`;
   const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.routes?.length) throw new Error(j.error?.description || j.detailedError?.message || `TomTom ${r.status}`);
-  return fromTomTom(j.routes[0], points, keepIdx);
+  return alts ? j.routes.map((rt) => fromTomTom(rt, points, keepIdx)) : fromTomTom(j.routes[0], points, keepIdx);
 }
 // TomTom answer -> the same shape the app already understands (legs split only at real stops)
 function fromTomTom(rt, points, keepIdx) {
@@ -443,12 +444,24 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const ban = banned(veh), banKeys = new Set(ban.map((c) => c.key));
   const avoidRe = ban.length ? new RegExp(ban.map((c) => c.re.source).join("|"), "i") : null;
   // plain route first: where does the trip enter and leave NYC?
-  let plain = await engine(stops.map((p) => ({ p })), stops.map((_, i) => i)), entry = null;
+  // Ask for alternatives too: the "fastest" truck route can backtrack miles to save a minute; drivers want the sensible one.
+  const P = stops.map((p) => ({ p })), K = stops.map((_, i) => i);
+  let cands;
+  if (TOMTOM_KEY) cands = await tomtom(P, K, veh, 2).catch((e) => { logErr("TomTom: " + e.message); return null; });
+  if (!cands) cands = [await osrm(P, K)];
+  const offOf = (c) => c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
+  const scored = cands.map((rt) => {
+    const c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
+    return { rt, c, off: offOf(c), cost: rt.duration + rt.distance / 22 }; // each extra mile ~ 73 s: don't drive 5 extra miles to save 2 minutes
+  });
+  const minOff = Math.min(...scored.map((x) => x.off));
+  const pick = scored.filter((x) => x.off <= minOff + 300).sort((a, b) => a.cost - b.cost)[0];
+  let plain = pick.rt, entry = null;
+  (out.attempts ||= []).push({ pass: "plain", engine: plain.engine || "basic", options: scored.map((x) => ({ mi: Math.round(x.rt.distance / 160.9) / 10, min: Math.round(x.rt.duration / 60), offM: x.off, picked: x === pick, via: [...new Set(stepsAt(x.rt).map((s) => s.name).filter(Boolean))].slice(0, 6).join(" > ") })), secs: (Date.now() - t0) / 1000 });
   // TomTom already follows truck restrictions nationwide: if NYC's own network check passes too, we're done
   {
-    const c0 = addRules(check(plain.geometry.coordinates, stepsAt(plain)), plain, veh, stops);
+    const c0 = pick.c;
     out.best = { route: plain, compliance: c0 }; // always have an answer ready
-    (out.attempts ||= []).push({ pass: "plain", engine: plain.engine || "basic", pct: c0.pctOnNetwork, offM: c0.offRoute.reduce((a, o) => a + o.meters, 0), secs: (Date.now() - t0) / 1000 });
     if (plain.engine === "tomtom" && (c0.verdict === "ok" || c0.verdict === "outside")) return out.best;
   }
   if (ban.length && crossingsUsed(plain.geometry.coordinates, stepsAt(plain)).some((c) => banKeys.has(c.key))) {
@@ -497,7 +510,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       (out.attempts ||= []).push({ pass: step, points: pts.length, engine: rt.engine || "basic", pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-      if (!best || offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
+      if ((!best || offM(c) < offM(best.compliance)) && rt.distance <= plain.distance * 1.35) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
     } catch (e) { (out.attempts ||= []).push({ pass: step, points: pts.length, error: e.message }); }
     if (best && best.compliance.verdict === "ok") break;
   }
@@ -519,7 +532,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
       try {
         const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
         out.attempts.push({ pass: "avoid-turns", points: pts.length, penalized: penal.size, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-        if (offM(c) < offM(best.compliance)) { best = { route: rt, compliance: c }; out.best = best; }
+        if (offM(c) < offM(best.compliance) && rt.distance <= plain.distance * 1.35) { best = { route: rt, compliance: c }; out.best = best; }
       } catch (e) { out.attempts.push({ pass: "avoid-turns", error: e.message }); }
     }
   }

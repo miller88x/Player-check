@@ -319,8 +319,11 @@ label.lb{font-size:13px;color:var(--muted);display:flex;flex-direction:column;ga
 #navRoad{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safeB) + 128px);z-index:14;background:#fff;color:#1a3fd8;font:600 18px var(--body);padding:8px 16px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.35);white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis;display:none}
 body.navigating #navRoad:not(:empty){display:block}
 body.navigating #recenter.on ~ #navRoad{display:none}
-#navSide{position:fixed;right:14px;bottom:calc(var(--safeB) + 132px);z-index:14;display:none;flex-direction:column;gap:14px}
-#navSide .fab{position:static;width:58px;height:58px;background:#1f1f1f}
+#navSide{position:fixed;right:12px;bottom:calc(var(--safeB) + 128px);z-index:13;display:none;flex-direction:column;gap:10px}
+#navSide .fab{position:static;width:50px;height:50px}
+@media (max-height:760px){#navSide{gap:8px}#navSide .fab{width:44px;height:44px}#navSide .fab svg{width:22px;height:22px}}
+#navTop{z-index:15}
+#navSide .fab{background:#1f1f1f}
 #speedo{position:fixed;left:14px;bottom:calc(var(--safeB) + 198px);z-index:14;width:62px;height:62px;border-radius:50%;background:#fff;color:#111;display:none;flex-direction:column;align-items:center;justify-content:center;font:700 22px/1 var(--body);box-shadow:0 2px 8px rgba(0,0,0,.4)}
 #speedo small{font-size:10px;font-weight:600}
 #speedo.over{background:#d93025;color:#fff}
