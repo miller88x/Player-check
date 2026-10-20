@@ -1,6 +1,7 @@
 // Ticket app — Step 2: plate ticket lookup + ticket locations for the map
 // Zero dependencies. Needs Node 18+ (built-in fetch). Deploys to Render as a Web Service.
 const http = require("http");
+const STARTED = new Date().toISOString();
 const fs = require("fs");
 const path = require("path");
 const cameras = require("./cameras");
@@ -289,6 +290,9 @@ http
         if (err) return send(res, 404, "Not found", "text/plain");
         res.writeHead(200, { "Content-Type": url.pathname.endsWith(".jpg") ? "image/jpeg" : "image/png", "Cache-Control": "public, max-age=604800" }); res.end(b);
       });
+    }
+    if (url.pathname === "/api/version") {
+      return send(res, 200, { commit: (process.env.RENDER_GIT_COMMIT || "local").slice(0, 7), started: STARTED });
     }
     if (url.pathname === "/sw.js") {
       return fs.readFile(path.join(__dirname, "sw.js"), (err, b) => (err ? send(res, 404, "Not found", "text/plain") : send(res, 200, b, "application/javascript; charset=utf-8", "no-cache")));
