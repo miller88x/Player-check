@@ -365,12 +365,14 @@ const TT_MAN = {
 };
 async function tomtom(points, keepIdx, veh = {}, alts = 0) {
   const loc = points.map((x) => `${x.p[1].toFixed(6)},${x.p[0].toFixed(6)}`).join(":");
-  const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: "truck", vehicleCommercial: "true", traffic: "true", routeType: "fastest",
+  const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: veh.car ? "car" : "truck", traffic: "true", routeType: "fastest",
     instructionsType: "text", language: "en-US", routeRepresentation: "polyline" });
+  if (!veh.car) q.set("vehicleCommercial", "true");
+  if (veh.car) veh = {}; // plain car route: used only to spot crazy truck detours
   if (veh.h) q.set("vehicleHeight", (veh.h * 0.3048).toFixed(2));
   if (veh.w) q.set("vehicleWeight", String(Math.round(veh.w * 0.4536)));
   if (veh.l) q.set("vehicleLength", (veh.l * 0.3048).toFixed(2));
-  q.set("vehicleWidth", "2.59"); // 8'6" standard width
+  if (!veh.car && Object.keys(veh).length) q.set("vehicleWidth", "2.59"); // 8'6" standard width
   if (veh.axles) q.set("vehicleNumberOfAxles", String(veh.axles));
   if (alts) q.set("maxAlternatives", String(alts));
   const url = `https://api.tomtom.com/routing/1/calculateRoute/${loc}/json?${q}${veh.hzc ? `&vehicleLoadType=USHazmatClass${veh.hzc}` : ""}`;
@@ -454,7 +456,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   // Ask for alternatives too: the "fastest" truck route can backtrack miles to save a minute; drivers want the sensible one.
   const P = stops.map((p) => ({ p })), K = stops.map((_, i) => i);
   // For heavy trucks also ask (at the same time) for the route without weight/axle limits, to catch huge detours
-  const lightP = TOMTOM_KEY && (veh.w || veh.axles) ? tomtom(P, K, { ...veh, w: 0, axles: 0 }).catch(() => null) : null;
+  const lightP = TOMTOM_KEY ? tomtom(P, K, { car: true }).catch((e) => { logErr("TomTom car check: " + e.message); return null; }) : null;
   let cands;
   if (TOMTOM_KEY) cands = await tomtom(P, K, veh, 2).catch((e) => { logErr("TomTom: " + e.message); return null; });
   if (!cands) cands = [await osrm(P, K)];
@@ -472,11 +474,13 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const crow0 = stops.slice(1).reduce((d, p, i) => d + distM(stops[i], p), 0);
   if (lightP && pick.rt.engine === "tomtom" && pick.rt.distance > crow0 * 1.5 + 8000) {
     const light = await lightP;
-    if (light && light.distance * 1.35 < pick.rt.distance && pick.rt.distance - light.distance > 24000) {
+    const lc0 = light && addRules(check(light.geometry.coordinates, stepsAt(light)), light, veh, stops);
+    const noParkway = light && !stepsAt(light).some((x) => /PARKWAY|PKWY|\bPKY\b|SKYWAY/i.test(`${x.name || ""} ${x.ref || ""}`));
+    if (light && noParkway && !lc0.blocked?.length && offOf(lc0) <= pick.off + 1000 && light.distance * 1.35 < pick.rt.distance && pick.rt.distance - light.distance > 24000) {
       const mi = (m) => Math.round(m / 1609);
-      out.heavyAlt = { route: pick.rt, compliance: { ...pick.c, notes: [`Weight-safe route (${mi(pick.rt.distance)} mi): avoids every road marked with a weight or axle limit for your truck.`, ...(pick.c.notes || [])] } };
-      const lc = addRules(check(light.geometry.coordinates, stepsAt(light)), light, veh, stops);
-      lc.notes = [`Direct route. The map marks a weight or axle limit somewhere on the direct roads (often one bridge or a closure), which would add ${mi(pick.rt.distance - light.distance)} mi. Watch for posted weight-limit signs, or tap the ${mi(pick.rt.distance)} mi weight-safe route.`, ...(lc.notes || [])];
+      out.heavyAlt = { route: pick.rt, compliance: { ...pick.c, notes: [`Restriction-safe route (${mi(pick.rt.distance)} mi): avoids every road marked with a truck limit or closure for your truck.`, ...(pick.c.notes || [])] } };
+      const lc = lc0;
+      lc.notes = [`Direct route. The truck map marks a limit or closure somewhere on the direct roads that would add ${mi(pick.rt.distance - light.distance)} mi. Watch for posted truck signs and detours, or tap the ${mi(pick.rt.distance)} mi restriction-safe route.`, ...(lc.notes || [])];
       (out.attempts ||= []).push({ pass: "heavy-check", heavyMi: mi(pick.rt.distance), directMi: mi(light.distance) });
       pick.rt = light; pick.c = lc;
     }
@@ -595,7 +599,8 @@ function routes(url, res, send, readBody, req) {
     if (id) { send(res, 200, testRuns.get(id) || { status: "unknown id" }); return true; }
     const pts = (url.searchParams.get("pts") || [url.searchParams.get("from"), url.searchParams.get("to")].filter(Boolean).join(";")).split(/[;~]/).map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
     if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
-    const veh = { h: +url.searchParams.get("h") || 13.5, w: +url.searchParams.get("w") || 80000, l: +url.searchParams.get("l") || 70, axles: +url.searchParams.get("ax") || 5, hzc: +url.searchParams.get("hzc") || 0 };
+    const num = (k, d) => (url.searchParams.has(k) ? +url.searchParams.get(k) || 0 : d);
+    const veh = { h: num("h", 13.5), w: num("w", 80000), l: num("l", 70), axles: num("ax", 5), hzc: num("hzc", 0) };
     veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
     const rid = Math.random().toString(36).slice(2, 10), t0 = Date.now();
     testRuns.set(rid, { status: "running" }); if (testRuns.size > 50) testRuns.delete(testRuns.keys().next().value);
