@@ -371,7 +371,9 @@ async function tomtom(points, keepIdx, veh = {}, alts = 0) {
   if (veh.car) veh = {}; // plain car route: used only to spot crazy truck detours
   if (veh.h) q.set("vehicleHeight", (veh.h * 0.3048).toFixed(2));
   if (veh.w) q.set("vehicleWeight", String(Math.round(veh.w * 0.4536)));
-  if (veh.l) q.set("vehicleLength", (veh.l * 0.3048).toFixed(2));
+  // US rules limit the TRAILER (53 ft), not tractor + trailer. TomTom treats a 70 ft rig as over-length and sends it
+  // 60+ miles around (e.g. Brooklyn -> Philadelphia 169 mi instead of ~105), so send at most 53 ft.
+  if (veh.l) q.set("vehicleLength", (Math.min(veh.l, 53) * 0.3048).toFixed(2));
   if (!veh.car && Object.keys(veh).length) q.set("vehicleWidth", "2.59"); // 8'6" standard width
   if (veh.axles) q.set("vehicleNumberOfAxles", String(veh.axles));
   if (alts) q.set("maxAlternatives", String(alts));
