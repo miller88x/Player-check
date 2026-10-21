@@ -379,7 +379,7 @@ function check(coords, steps) {
 // Free-flow truck speeds (m/s): highways ~45 mph, truck avenues ~22 mph, local ~18 mph, limited ~15 mph, plus delay per turn.
 // Live traffic is applied on top (traffic factor from TomTom for this trip right now, or a time-of-day estimate).
 const SPEED = { fast: 20, Through: 9.8, Local: 8, "Limited Local": 6.7 };
-const TURN_DELAY = { turn: 18, "on ramp": 6, "off ramp": 10, fork: 4, "new name": 3, continue: 0, depart: 0, arrive: 0 };
+const TURN_DELAY = { turn: 12, "on ramp": 4, "off ramp": 8, fork: 3, "new name": 2, continue: 0, depart: 0, arrive: 0 };
 // Typical NYC traffic by hour when live data isn't available (weekday rush is slowest)
 function todFactor(d = new Date()) {
   const ny = new Date(d.toLocaleString("en-US", { timeZone: "America/New_York" })), h = ny.getHours() + ny.getMinutes() / 60, wk = ny.getDay() % 6 !== 0;
@@ -432,7 +432,7 @@ function netSteps(path) {
       if (g.ramp) type = g.fast && !groups[i - 1].fast ? "on ramp" : groups[i - 1].fast && !g.fast ? "off ramp" : "fork";
       else if (type === "continue") type = "new name";
     }
-    const extra = (TURN_DELAY[type] ?? 0) + (modifier === "uturn" ? 25 : 0) + (!g.fast ? (g.len / 1000) * 35 : 0); // ~35 s per km of lights on city streets
+    const extra = (TURN_DELAY[type] ?? 0) + (modifier === "uturn" ? 25 : 0) + (!g.fast ? (g.len / 1000) * 12 : 0); // ~12 s per km of lights on city streets (traffic factor covers congestion)
     return { rova: true, distance: g.len, duration: g.dur + extra, name: g.label, maneuver: { type, modifier, location: g.pts[0], bearing_after: Math.round(brgStart(g.pts)) }, intersections: [{ location: g.pts[0] }] };
   });
 }
@@ -673,7 +673,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const ownP = allIn && stops.length === 2 ? ownRoute(stops, veh, null, okBoros, avoidRe, ttMs, (out.attempts ||= [])).catch((e) => { logErr("own route: " + e.message); return null; }) : null;
   // the engine's own route (with live traffic) runs alongside; its traffic factor also times Rova's NYC routes
   const plainP = TOMTOM_KEY ? tomtom(P, K, veh, long ? 0 : 1, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; }) : Promise.resolve(null);
-  const factorOf = (list) => { const r = list?.[0]; return r?.noTraffic ? Math.min(2.5, Math.max(1, r.duration / r.noTraffic)) : null; };
+  const factorOf = (list) => { const r = list?.[0]; return r?.noTraffic ? Math.min(1.8, Math.max(1, r.duration / r.noTraffic)) : null; };
   const trafficNow = async (wait) => { const list = await Promise.race([plainP, new Promise((ok) => setTimeout(() => ok(undefined), wait))]); return { f: factorOf(list) || todFactor(), live: !!factorOf(list) }; };
   // NYC-only trip and Rova's own truck-map route is fully legal and sensible? Use it right away.
   if (ownP) {
