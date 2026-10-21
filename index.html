@@ -2851,7 +2851,8 @@ function accountSheet(mode) {
 const PAID_TICKETS = ["silver", "gold", "fleet"];
 const myPlan = () => (account && PLAN_NAME[account.plan] ? account.plan : "free");
 const hasTicketPlan = () => PAID_TICKETS.includes(myPlan());
-const plateLimit = () => ({ free: 1, bronze: 1, silver: 5, gold: 5, fleet: 5 })[myPlan()];
+// Agreed limits: Silver 1 plate, Gold 3, Fleet one per car paid for (3-car minimum)
+const plateLimit = () => (myPlan() === "fleet" ? Math.max(3, account?.billing?.cars || 3) : { free: 1, bronze: 1, silver: 1, gold: 3 }[myPlan()]);
 const PLANS_UI = [
   { k: "silver", name: "Silver", price: "$8.99", what: "Ticket alerts with early penalty warnings, 2 AI disputes a month" },
   { k: "gold", name: "Gold", price: "$14.99", what: "Up to 3 plates, unlimited AI disputes, truck mode" },
