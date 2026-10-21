@@ -233,7 +233,7 @@ function heapPop(h) {
 }
 function netPath(from, to, okBoros, avoidRe, penal) {
   // NYC direct-access rule: get on/off the truck network at the point nearest the stop (not wherever is shortest overall)
-  const near = (p) => { const l = nearNodes(p, 1500, 12); return l.length ? l.filter((x) => x.d <= l[0].d + 150) : l; };
+  const near = (p) => { let l = nearNodes(p, 1500, 12); if (!l.length) l = nearNodes(p, 3500, 12); return l.length ? l.filter((x) => x.d <= l[0].d + 150) : l; };
   const src = near(from), dst = near(to);
   const OFFW = 8; // a meter driven off the truck network (to reach it) costs like 8 meters on it: get on at the nearest point
   if (!src.length || !dst.length) return null;
@@ -419,8 +419,9 @@ function sliceRoute(rt, fromD, toD) {
 }
 async function ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, attempts) {
   if (stops.length !== 2 || state.status !== "ready") return null;
-  const pc = plain.geometry.coordinates, cum = [0]; for (let i = 1; i < pc.length; i++) cum.push(cum[i - 1] + distM(pc[i - 1], pc[i]));
   const inA = boroAt(stops[0]), inB = boroAt(stops[1]);
+  if (!plain && !(inA && inB)) return null;
+  const pc = plain ? plain.geometry.coordinates : stops, cum = [0]; for (let i = 1; i < pc.length; i++) cum.push(cum[i - 1] + distM(pc[i - 1], pc[i]));
   const iIn = inA ? 0 : pc.findIndex((p) => boroAt(p)), iOut = inB ? pc.length - 1 : pc.length - 1 - [...pc].reverse().findIndex((p) => boroAt(p));
   if (iIn < 0 || iOut <= iIn) return null;
   const A = inA ? stops[0] : pc[iIn], B = inB ? stops[1] : pc[iOut];
@@ -634,11 +635,18 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const lightP = TOMTOM_KEY ? { then: (f) => tomtom(P, K, { car: true }, 0, Math.max(5000, timeLeft() - 4000)).catch((e) => { logErr("TomTom car check: " + e.message); return null; }).then(f) } : null; // only asked when needed
   // NYC trips: start the truck-network route right away, in parallel with the plain one (saves ~10 s)
   const allIn = state.status === "ready" && stops.every((p) => boroAt(p));
-  let early = null;
-  if (allIn && TOMTOM_KEY) {
-    const pts = [{ p: stops[0] }], keep = [0]; let ok = true;
-    for (let k = 1; k < stops.length && ok; k++) { const path = netPath(stops[k - 1], stops[k], okBoros, avoidRe); if (!path) ok = false; else for (const v of viaPoints(path, 600).pts) pts.push(v); pts.push({ p: stops[k] }); keep.push(pts.length - 1); }
-    if (ok && pts.length <= 140) early = engine(pts, keep).then((rt) => ({ rt, n: pts.length })).catch(() => null);
+  const early = null;
+  // NYC-only trips: Rova's own truck-map route starts right away, alongside the engine's
+  const ownP = allIn && stops.length === 2 ? ownRoute(stops, veh, null, okBoros, avoidRe, ttMs, (out.attempts ||= [])).catch((e) => { logErr("own route: " + e.message); return null; }) : null;
+  // NYC-only trip and Rova's own truck-map route is fully legal and sensible? Use it right away.
+  if (ownP) {
+    const mine = await ownP;
+    if (mine) {
+      const c = addRules(check(mine.geometry.coordinates, stepsAt(mine)), mine, veh, stops), crowM = distM(stops[0], stops[1]);
+      out.attempts.push({ pass: "own-first", mi: Math.round(mine.distance / 160.9) / 10, pct: c.pctOnNetwork, verdict: c.verdict, off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
+      if (c.verdict === "ok" && !c.parkways.length && !c.blocked?.length && mine.distance <= crowM * 3 + 10000) { out.best = { route: mine, compliance: c }; return out.best; }
+      out.ownCand = { route: mine, compliance: c };
+    }
   }
   let cands;
   if (TOMTOM_KEY) cands = await tomtom(P, K, veh, long ? 0 : 2, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; });
@@ -698,7 +706,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   if (!firstIn) return { route: plain, compliance: addRules({ ...check(pc, stepsAt(plain)), verdict: "outside" }, plain, veh, stops) };
   // Rova's own NYC route on the official truck map: use it whenever it's legal and the engine's isn't
   try {
-    const mine = await ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, (out.attempts ||= []));
+    const mine = ownP ? out.ownCand?.route : await ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, (out.attempts ||= []));
     if (mine) {
       const c = addRules(check(mine.geometry.coordinates, stepsAt(mine)), mine, veh, stops);
       const offOwn = c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 100000 + (c.blocked?.length || 0) * 50000;
