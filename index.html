@@ -253,6 +253,10 @@ ul.tix li{background:var(--ui);border-radius:12px;padding:12px 14px;display:grid
 .links{display:flex;gap:14px;font-size:14px;flex-wrap:wrap}
 a{color:var(--blue)}
 .note{color:var(--muted);font-size:12px}
+.upsell{background:linear-gradient(135deg,#1f2a3a,#202124);border:1px solid #33415c;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}.upsell b{font-size:17px}.upsell span{color:var(--muted);font-size:14px}
+.planpick{all:unset;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--ui);border:2px solid transparent;border-radius:14px;padding:12px 14px}
+.planpick.best{border-color:var(--blue)}.planpick span{display:flex;flex-direction:column;gap:2px;min-width:0}.planpick small{color:var(--muted);font-size:12px;font-weight:400}
+.planpick em{font-style:normal;font-weight:700;font-size:18px;white-space:nowrap}.planpick em small{font-size:12px}
 .acct{display:flex;align-items:center;gap:12px;width:100%;border:0;border-radius:14px;padding:12px 14px;background:var(--ui2);color:var(--ink);text-align:left;font:500 15px var(--body)}
 .acct .av{width:34px;height:34px;border-radius:50%;background:var(--blue);color:#062e6f;display:grid;place-items:center;font-weight:800;flex:0 0 auto}
 .acct small{display:block;color:var(--muted);font-size:13px}
@@ -488,7 +492,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
-const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen", "roverLook"];
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen", "roverLook", "upsold", "afterUpgrade"];
 let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -1078,7 +1082,7 @@ async function checkPlate(plate, st, fit = true) {
   const j = await r.json();
   if (!r.ok) throw new Error(j.error);
   data = j; store.set("plate", { p: plate, s: st });
-  const saved = store.get("plates", []).filter((x) => x.p !== plate); saved.unshift({ p: plate, s: st }); store.set("plates", saved.slice(0, 5));
+  const saved = store.get("plates", []).filter((x) => x.p !== plate); saved.unshift({ p: plate, s: st }); store.set("plates", saved.slice(0, plateLimit()));
   drawPins(fit); paintPill(); checkInAppAlerts();
 }
 function plateSheet() {
@@ -1091,7 +1095,7 @@ function plateSheet() {
     </form>
     ${saved.length ? `<div class="saved">${saved.map((x) => `<button type="button" data-p="${esc(x.p)}" data-s="${esc(x.s)}">${esc(x.p)}</button>`).join("")}</div>` : ""}
     ${acctRow()}
-    <p class="note">${account ? "Your plates are saved to your account, so they load on any phone you sign in on." : "Your plate is saved on this phone. Sign in to keep it on every phone."}</p>`, "plate");
+    <p class="note">${account ? "Your plates are saved to your account, so they load on any phone you sign in on." : "Your plate is saved on this phone. Sign in to keep it on every phone."}${hasTicketPlan() ? "" : " Free plan: 1 plate, checked daily."}</p>`, "plate");
   wireAcct();
   const go = async (p, s) => {
     $("#pGo").disabled = true; $("#pGo").textContent = "Checking…";
@@ -2463,11 +2467,11 @@ function buildAlerts(d) {
     const what = `${title(t.violation)} · ${shortDate(t.issued)}`;
     if (known && !(t.summons in known) && isOpen(t)) {
       const k = `${t.summons}:new`;
-      if (!seen[k]) out.push({ key: k, t, color: "#d93025", icon: "$", title: `New ticket · ${money(t.due ?? t.fine)}`, sub: what });
+      if (!seen[k]) out.push({ key: k, t, isNew: true, color: "#d93025", icon: "$", title: `New ticket · ${money(t.due ?? t.fine)}`, sub: what });
       continue;
     }
     if (!isOpen(t) || t.ageDays == null) continue;
-    for (const s of (isCamera(t.violation) ? CAM_STEPS : STEPS)) {
+    for (const s of (hasTicketPlan() ? (isCamera(t.violation) ? CAM_STEPS : STEPS) : [])) { // early penalty warnings are a Silver+ feature
       const k = `${t.summons}:${s.key}`;
       if (t.ageDays >= s.from && t.ageDays < s.to && !seen[k]) out.push({ key: k, t, color: s.key[0] === "j" ? "#d93025" : "#e37400", icon: "⏱", title: `${s.msg(s.to - t.ageDays)} · ${money(t.due)}`, sub: what });
     }
@@ -2483,6 +2487,7 @@ function checkInAppAlerts() {
   pending = buildAlerts(data);
   const box = $("#inAlert"); box.classList.remove("navok");
   if (!pending.length) { box.hidden = true; return; }
+  maybeUpsell(pending);
   const a = pending[0];
   box.innerHTML = `<div class="ico" style="background:${a.color};color:#fff;font-weight:700">${esc(a.icon)}</div>
     <div style="min-width:0"><b>${esc(a.title)}</b><div class="sub">${esc(a.sub)}</div>${pending.length > 1 ? `<div class="more">+${pending.length - 1} more alert${pending.length > 2 ? "s" : ""}</div>` : ""}</div>
@@ -2516,14 +2521,14 @@ let lastCheck = Date.now();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || nav.active) return;
   const p = store.get("plate", null);
-  if (p && Date.now() - lastCheck > 15 * 60 * 1000) { lastCheck = Date.now(); checkPlate(p.p, p.s, false).catch(() => {}); }
+  if (p && Date.now() - lastCheck > (hasTicketPlan() ? 15 * 60 * 1000 : 24 * 3600 * 1000)) { lastCheck = Date.now(); checkPlate(p.p, p.s, false).catch(() => {}); }
 });
 
 // ================= DISPUTE (Step 4) =================
 document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-dispute]"); if (!a) return;
   e.preventDefault(); e.stopPropagation();
-  const t = data?.tickets.find((x) => x.summons === a.dataset.dispute); if (t) { popup?.remove(); disputeSheet(t); }
+  const t = data?.tickets.find((x) => x.summons === a.dataset.dispute); if (t) { popup?.remove(); hasTicketPlan() ? disputeSheet(t) : upgradeCard(t, true); }
 });
 async function disputeSheet(t) {
   const camera = isCamera(t.violation);
@@ -2551,12 +2556,11 @@ async function disputeSheet(t) {
     const name = $("#dName").value.trim(); store.set("name", name);
     $("#dGo").disabled = true; $("#dGo").textContent = "Writing…";
     try {
-      const r = await fetch("/api/dispute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      const j = await api("/api/dispute", { method: "POST", body: JSON.stringify({
         summons: t.summons, violation: t.violation, issued: t.issued, time: t.time, address: t.location?.address ? title(t.location.address) : "",
         plate: data.plate, state: data.state, fine: t.fine, reason, details: $("#dDetails").value, name }) });
-      const j = await r.json(); if (!r.ok) throw new Error(j.error);
       letterSheet(t, j);
-    } catch (err) { $("#dGo").disabled = false; $("#dGo").textContent = "Write my dispute"; alert2(err.message || "Couldn't write the letter. Try again."); }
+    } catch (err) { if (err.status === 402) return upgradeCard(t, true); $("#dGo").disabled = false; $("#dGo").textContent = "Write my dispute"; alert2(err.message || "Couldn't write the letter. Try again."); }
   };
 }
 function alert2(msg) { const d = document.createElement("div"); d.className = "alert stop"; d.innerHTML = `<b>Something went wrong</b>${esc(msg)}`; $("#sheetBody").prepend(d); }
@@ -2756,7 +2760,7 @@ function mergeIn(sv) {
     const s = sv?.[k], l = store.get(k, null);
     if (s == null) continue;
     let v = s;
-    if (k === "plates") { const all = [...s, ...(l || [])]; v = all.filter((x, i) => all.findIndex((y) => y.p === x.p && y.s === x.s) === i).slice(0, 5); }
+    if (k === "plates") { const all = [...s, ...(l || [])]; v = all.filter((x, i) => all.findIndex((y) => y.p === x.p && y.s === x.s) === i).slice(0, plateLimit()); }
     else if ((k === "known" || k === "seenAlerts" || k === "alerts") && l && typeof l === "object") {
       v = { ...l }; for (const pk in s) v[pk] = s[pk] && typeof s[pk] === "object" && l[pk] && typeof l[pk] === "object" ? { ...l[pk], ...s[pk] } : s[pk];
     } else if (k === "parked" && l && (l.savedAt || 0) > (s.savedAt || 0)) v = l;
@@ -2826,7 +2830,7 @@ function accountSheet(mode) {
     try {
       const j = await api(`/api/auth/${signup ? "signup" : "login"}`, { method: "POST", body: JSON.stringify({ email: $("#aEm").value, password: $("#aPw").value }) });
       store.set("tok", j.token); account = j.user; paintMe();
-      mergeIn(account.data); pushSync();
+      mergeIn(account.data); pushSync(); setTimeout(resumeUpgrade, 1500);
       openSheet(signup ? "You're in" : "Welcome back", `<div class="alert go"><b>${signup ? "Account created" : "Signed in"}</b>${esc(account.email)} · everything on this phone is now saved to your account.</div><button class="btn primary" type="button" id="ok">Done</button>`, "account");
       $("#ok").onclick = () => closeSheet();
     } catch (err) {
@@ -2838,11 +2842,70 @@ function accountSheet(mode) {
   };
 }
 
+
+// ================= UPGRADE CARD (free -> Silver) =================
+// Free: 1 plate, checked daily, new-ticket alerts. Silver+: early penalty warnings and AI disputes.
+const PAID_TICKETS = ["silver", "gold", "fleet"];
+const myPlan = () => (account && PLAN_NAME[account.plan] ? account.plan : "free");
+const hasTicketPlan = () => PAID_TICKETS.includes(myPlan());
+const plateLimit = () => ({ free: 1, bronze: 1, silver: 5, gold: 5, fleet: 5 })[myPlan()];
+const PLANS_UI = [
+  { k: "silver", name: "Silver", price: "$8.99", what: "Ticket alerts with early penalty warnings, 2 AI disputes a month" },
+  { k: "gold", name: "Gold", price: "$14.99", what: "Up to 3 plates, unlimited AI disputes, truck mode" },
+];
+// Pops once per new ticket for free drivers
+function maybeUpsell(list) {
+  if (hasTicketPlan() || $("#sheet").classList.contains("show")) return;
+  const done = store.get("upsold", []), a = list.find((x) => x.isNew && x.t && !done.includes(x.t.summons));
+  if (!a) return;
+  store.set("upsold", [...done, a.t.summons].slice(-50));
+  upgradeCard(a.t);
+}
+function upgradeCard(t, fromDispute = false) {
+  const camera = isCamera(t.violation), issued = t.issued ? new Date(t.issued + "T12:00") : null;
+  const lateOn = issued ? new Date(issued.getTime() + 30 * 864e5) : null, left = lateOn ? Math.ceil((lateOn - Date.now()) / 864e5) : null;
+  openSheet(fromDispute ? "Fight this ticket" : "New ticket on your plate", `
+    <div><div class="vio">${esc(title(t.violation))} · ${money(t.due ?? t.fine)}</div>
+      <div class="meta">#${esc(t.summons)} · ${shortDate(t.issued)}${t.location ? " · " + esc(title(t.location.address)) : ""}</div></div>
+    ${left == null ? "" : left > 0
+      ? `<div class="alert warn"><b>Late fee starts ${lateOn.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</b>${left} day${left === 1 ? "" : "s"} left to pay or dispute before penalties kick in.</div>`
+      : `<div class="alert stop"><b>Late fees are adding up</b>${camera ? "Camera tickets go into judgment around day 75." : "Parking tickets go into judgment around day 100."} Act soon.</div>`}
+    <div class="upsell"><b>Fight this ticket with AI</b>
+      <span>Rova writes your dispute letter from the ticket and your details, lists the evidence to attach and walks you through submitting it.</span></div>
+    ${PLANS_UI.map((p) => `<button type="button" class="planpick${p.k === "silver" ? " best" : ""}" data-up="${p.k}"><span><b>${p.name}</b><small>${p.what}</small></span><em>${p.price}<small>/mo</small></em></button>`).join("")}
+    <button class="btn" type="button" id="upLater">Not now</button>
+    <p class="note">You can still pay the ticket or dispute it yourself on the city's site.</p>
+    <div class="links"><a href="https://a836-citypay.nyc.gov/citypay/Parking" target="_blank" rel="noopener">Pay on CityPay</a> <a href="https://www.nyc.gov/site/finance/vehicles/dispute-a-ticket.page" target="_blank" rel="noopener">NYC dispute page</a></div>`, "upgrade");
+  $("#upLater").onclick = () => closeSheet();
+  document.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.up, t)));
+}
+// Billing hook. App Store / Google Play billing plugs in here; until then it saves the driver's choice.
+function startUpgrade(plan, t) {
+  store.set("afterUpgrade", { plan, summons: t?.summons || null, plate: data?.plate || null, at: Date.now() });
+  if (!account) {
+    openSheet("Create your free account first", `<div class="alert warn"><b>One step first</b>Your ${PLAN_NAME[plan]} plan is tied to your account, so it works on any phone.</div><button class="btn primary" type="button" id="upAcct">Create account or sign in</button><button class="btn" type="button" id="upBack">Back</button>`, "upgrade");
+    $("#upAcct").onclick = () => accountSheet();
+    $("#upBack").onclick = () => (t ? upgradeCard(t) : closeSheet());
+    return;
+  }
+  openSheet(`${PLAN_NAME[plan]} is almost here`, `<div class="alert go"><b>You're on the list</b>Paid plans switch on with the App Store and Google Play launch. When your plan is active, Rova opens this ticket's dispute for you.</div><button class="btn primary" type="button" id="ok">Got it</button>`, "upgrade");
+  $("#ok").onclick = () => closeSheet();
+}
+// After the plan turns paid, jump straight into the dispute for the ticket that started it
+function resumeUpgrade() {
+  const w = store.get("afterUpgrade", null);
+  if (!w || !hasTicketPlan()) return;
+  store.set("afterUpgrade", null);
+  if (!w.summons) return;
+  const open = () => { const t = data?.tickets.find((x) => x.summons === w.summons); if (t) disputeSheet(t); };
+  data ? open() : setTimeout(open, 2500);
+}
+
 // ================= START =================
 paintSaved();
 const savedPlate = store.get("plate", null);
 if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
-if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
+if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); resumeUpgrade(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
 if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocation" }).then((p) => { if (p.state === "granted") startWatch(); }).catch(() => {});
 </script>
 </body>

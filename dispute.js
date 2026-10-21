@@ -2,6 +2,8 @@
 // Uses Claude when ANTHROPIC_API_KEY is set; otherwise builds a solid letter from a template.
 // The letter never invents facts: anything the driver must fill in is left in [brackets].
 
+const auth = require("./auth");
+const PAID = ["silver", "gold", "fleet"];
 const API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const MODEL = process.env.DISPUTE_MODEL || "claude-haiku-5-5";
 
@@ -132,6 +134,9 @@ function routes(url, res, sendJSON, readBody, req) {
   }
   if (url.pathname === "/api/dispute" && req.method === "POST") {
     readBody(req).then(async (b) => {
+      // AI disputes are a Silver, Gold and Fleet feature
+      const user = await auth.userFromReq(req).catch(() => null);
+      if (!user || !PAID.includes(user.plan)) return sendJSON(res, 402, { error: "Disputes are part of Silver and Gold.", upgrade: true });
       try { sendJSON(res, 200, await draft(b, req.headers["x-forwarded-for"] || req.socket.remoteAddress || "")); }
       catch (e) { sendJSON(res, 400, { error: e.message || "Couldn't write the letter." }); }
     }).catch(() => sendJSON(res, 400, { error: "Bad request" }));
