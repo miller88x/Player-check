@@ -64,6 +64,17 @@ async function build() {
         pageAll("https://data.cityofnewyork.us/resource/jjja-shxy.geojson?$select=the_geom,street,routetype,boroname,ltdlocal,restrictio"),
       ]);
     }
+    // Parkways (cars only): their real shape, so any truck route on one is caught even when the name is missing
+    const pkFeats = await pageAll("https://data.cityofnewyork.us/resource/inkn-q76z.geojson?$select=the_geom,full_street_name&$where=rw_type='2' AND (contains(full_street_name,'PKWY') OR contains(full_street_name,'PARKWAY') OR contains(full_street_name,'FDR') OR contains(full_street_name,'HARLEM RIVER DR'))").catch((e) => { logErr("parkway data: " + e.message); return []; });
+    const pk = [], pkGrid = new Map();
+    for (const f of pkFeats) for (const c of lines(f.geometry)) {
+      if (!c || c.length < 2) continue;
+      const id = pk.length; pk.push({ c, street: String(f.properties?.full_street_name || "").trim() });
+      for (let i = 0; i < c.length; i++) {
+        const add = (q) => { const k = ck(q[0], q[1]); const arr = pkGrid.get(k) || pkGrid.set(k, []).get(k); if (arr[arr.length - 1] !== id) arr.push(id); };
+        add(c[i]); if (i) { const d = distM(c[i - 1], c[i]); for (let t = 100; t < d; t += 100) add([c[i - 1][0] + (c[i][0] - c[i - 1][0]) * t / d, c[i - 1][1] + (c[i][1] - c[i - 1][1]) * t / d]); }
+      }
+    }
     const segs = [], nodes = [], nodeKey = new Map(), adj = [], grid = new Map(), ngrid = new Map();
     const at = new Map(); // point -> node ids at that point (one per level)
     const node = (p, lvl) => {
@@ -80,7 +91,7 @@ async function build() {
       if (source === "centerline") {
         street = String(pr.full_street_name || "").trim(); boroName = BORO_CODE[+pr.boroughcode] || "";
         const ramp = String(pr.rw_type) === "9" || RAMP.test(street);
-        type = TRUCK_TYPE[+pr.truck_route_type] || (String(pr.rw_type) === "9" && !/PKWY|PARKWAY|\bPKY\b/i.test(street) ? "Through" : null); if (!type) continue; // highway ramps connect truck highways (never parkway ramps)
+        type = TRUCK_TYPE[+pr.truck_route_type] || (String(pr.rw_type) === "9" && !PK_RAMP.test(street) ? "Through" : null); if (!type) continue; // highway ramps connect truck highways (never parkway ramps)
         dir = String(pr.trafdir || "TW").toUpperCase(); if (dir === "NV") continue;
         // The city stores ramps at a different level than the bridge/highway they join (e.g. Verrazzano ramps 17, bridge 21):
         // ramp ends join everything at that point
@@ -127,9 +138,9 @@ async function build() {
       boros.push({ name: f.properties?.boroname || "", poly, box: [minX, minY, maxX, maxY] });
     }
     if (segs.length < 1000) throw new Error(`only ${segs.length} truck segments loaded`);
-    Object.assign(state, { segs, nodes, adj, grid, ngrid, boros, status: "ready", builtAt: new Date().toISOString(), source,
+    Object.assign(state, { segs, nodes, adj, grid, ngrid, boros, pk, pkGrid, status: "ready", builtAt: new Date().toISOString(), source,
       asOf: meta?.rowsUpdatedAt ? new Date(meta.rowsUpdatedAt * 1000).toISOString().slice(0, 10) : null,
-      stats: { source, segments: segs.filter((x) => !x.link).length, rampLinks: links, oneWay, nodes: nodes.length, miles: Math.round(segs.reduce((x, y) => x + (y.link ? 0 : y.len), 0) / 1609), boroughs: boros.length,
+      stats: { source, segments: segs.filter((x) => !x.link).length, rampLinks: links, parkwaySegs: pk.length, oneWay, nodes: nodes.length, miles: Math.round(segs.reduce((x, y) => x + (y.link ? 0 : y.len), 0) / 1609), boroughs: boros.length,
         byType: segs.reduce((o, x) => (x.link ? o : ((o[x.type] = (o[x.type] || 0) + 1), o)), {}) } });
     console.log("truck network ready:", state.stats);
   } catch (e) { state.status = "error"; state.error = e.message; console.error("truck network:", e.message); setTimeout(build, 10 * 60 * 1000).unref(); }
@@ -191,6 +202,20 @@ function nearSeg(p, maxM) {
     }
   }
   return best;
+}
+function nearPk(p, maxM) {
+  if (!state.pkGrid) return null;
+  const cx = Math.floor(p[0] / CELL), cy = Math.floor(p[1] / CELL);
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const id of state.pkGrid.get(`${cx + dx}|${cy + dy}`) || []) {
+    const c = state.pk[id].c;
+    for (let i = 1; i < c.length; i++) {
+      const A = c[i - 1], B = c[i];
+      const ax = (B[0] - A[0]) * KX, ay = (B[1] - A[1]) * KY, px = (p[0] - A[0]) * KX, py = (p[1] - A[1]) * KY;
+      const L = ax * ax + ay * ay, t = L ? Math.max(0, Math.min(1, (px * ax + py * ay) / L)) : 0;
+      if (Math.hypot(px - t * ax, py - t * ay) <= maxM) return state.pk[id];
+    }
+  }
+  return null;
 }
 function nearNodes(p, maxM, n = 4) {
   const cx = Math.floor(p[0] / CELL), cy = Math.floor(p[1] / CELL), r = Math.ceil(maxM / 170), out = [];
@@ -287,6 +312,7 @@ function whyBanned(c, veh) {
 }
 
 // ---------- check a route against the official network ----------
+const PK_RAMP = /PKWY|PARKWAY|\bPKY\b|\bFDR\b|HARLEM R|HENRY HUDSON|HUTCHINSON|\bCIP\b|\bGCP\b|\bBRP\b|\bHRP\b|\bJRP\b/i;
 const PARKWAY = /\b(PARKWAY|PKWY|FDR DRIVE|HARLEM RIVER DRIVE|HENRY HUDSON|HUTCHINSON|BRONX RIVER|MOSHOLU|BELT|CROSS ISLAND|GRAND CENTRAL|JACKIE ROBINSON|KOREAN WAR|LAURELTON)\b/i;
 function check(coords, steps) {
   const ALLOW = 800; // leaving a truck route for the stop: nearest intersection, most direct route (~half a mile)
@@ -294,7 +320,7 @@ function check(coords, steps) {
   const total = cum[cum.length - 1] || 1;
   const nameAt = (d) => { let n = ""; for (const s of steps || []) { if (s.at <= d) n = s.name || s.ref || n; else break; } return n; };
   let nyc = 0, on = 0, i = 0, cur = null;
-  const off = [], used = new Map(), boros = new Set(), restr = new Set();
+  const off = [], used = new Map(), boros = new Set(), restr = new Set(), pkUse = new Map(), pkAt = [];
   for (let d = 0; d <= total; d += 20) {
     while (i < cum.length - 2 && cum[i + 1] < d) i++;
     const seg = cum[i + 1] - cum[i] || 1, t = Math.min(1, (d - cum[i]) / seg);
@@ -304,9 +330,12 @@ function check(coords, steps) {
     nyc++; boros.add(b);
     // City maps draw one center line; real expressways and bridges have separate roadways up to ~50 m apart.
     // So: close to any truck segment, or on a highway/bridge/tunnel truck segment with the same road name nearby.
-    let hit = nearSeg(p, 28);
-    if (!hit) { const nm = nameAt(d); if (nm) hit = nearSegNamed(p, 90, nm); }
-    if (!hit) { const h2 = nearSeg(p, 60); if (h2 && h2.seg.fast) hit = h2; }
+    // On a parkway (by its real shape), and not right on a truck road that shares the spot: banned for trucks
+    const pkHit = nearPk(p, 10);
+    if (pkHit && !nearSeg(p, 10)) { pkUse.set(pkHit.street, (pkUse.get(pkHit.street) || 0) + 20); pkAt.push(p); }
+    let hit = pkHit && !nearSeg(p, 10) ? null : nearSeg(p, 28);
+    if (!hit && !pkHit) { const nm = nameAt(d); if (nm) hit = nearSegNamed(p, 90, nm); }
+    if (!hit && !pkHit) { const h2 = nearSeg(p, 60); if (h2 && h2.seg.fast) hit = h2; }
     if (hit) { on++; if (cur && d - cur.to > 60) cur = null; used.set(hit.seg.type, (used.get(hit.seg.type) || 0) + 20); if (hit.seg.restr) restr.add(`${hit.seg.street}: ${hit.seg.restr}`); if (hit.seg.ltd) restr.add(`${hit.seg.street}: Limited Local (${hit.seg.ltd})`); continue; }
     const allowed = d < ALLOW || total - d < ALLOW;
     if (cur && cur.allowed === allowed && d - cur.to <= 60) { cur.to = Math.round(d + 20); continue; }
@@ -322,12 +351,14 @@ function check(coords, steps) {
     if (!loc || !boroAt(loc)) return false; // outside NYC the routing engine applies the truck bans itself
     return !nearSeg(loc, 60) || (s.distance > 0 && off.some((o) => !o.allowed && o.to - o.from >= 80 && o.to > s.at && o.from < s.at + s.distance));
   }).map((s) => s.name))];
+  const titleCase = (x) => x.toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase()).replace(/\bPkwy\b/, "Pkwy").replace(/\bFdr\b/, "FDR");
+  for (const [name, m] of pkUse) if (m >= 60) { const nm = titleCase(name); if (!parkways.some((x) => x.toUpperCase() === name)) parkways.push(nm); }
   const pct = nyc ? Math.round((on / nyc) * 1000) / 10 : null;
   return {
     inNYC: nyc > 0, pctOnNetwork: pct, boroughs: [...boros],
     offRoute: bad.map((o) => ({ street: nameAt((o.from + o.to) / 2) || o.street || "unnamed street", meters: o.to - o.from, borough: o.boro, at: o.from })),
     endsOffNetwork: off.filter((o) => o.allowed).reduce((s, o) => s + (o.to - o.from), 0),
-    parkways, notes: [...restr].slice(0, 8),
+    parkways, pkAt: pkAt.filter((_, k) => k % 10 === 0).slice(0, 10), notes: [...restr].slice(0, 8),
     verdict: !nyc ? "outside" : bad.length || parkways.length ? "warn" : "ok",
   };
 }
@@ -404,6 +435,7 @@ async function tomtom(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
   // Tunnels/bridges this truck may not use (too low, hazmat, explosives): TomTom's own data misses some (e.g. Queens-Midtown 12'1"),
   // so tell it to avoid them outright. Boxes cover only the water, never streets on shore.
   const rects = veh.car ? [] : banned(veh).filter((c) => c.water).map((c) => ({ southWestCorner: { latitude: c.water[1], longitude: c.water[0] }, northEastCorner: { latitude: c.water[3], longitude: c.water[2] } }));
+  for (const q of veh.avoidPts || []) if (rects.length < 10) rects.push({ southWestCorner: { latitude: q[1] - 0.0009, longitude: q[0] - 0.0012 }, northEastCorner: { latitude: q[1] + 0.0009, longitude: q[0] + 0.0012 } });
   const r = await fetch(url, rects.length ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ avoidAreas: { rectangles: rects } }), signal: AbortSignal.timeout(ms) } : { signal: AbortSignal.timeout(ms) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.routes?.length) throw new Error(j.error?.description || j.detailedError?.message || `TomTom ${r.status}`);
@@ -498,7 +530,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   let cands;
   if (TOMTOM_KEY) cands = await tomtom(P, K, veh, long ? 0 : 2, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; });
   if (!cands) cands = [await osrm(P, K)];
-  const offOf = (c) => c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
+  const offOf = (c) => c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 100000 + (c.blocked?.length || 0) * 50000;
   const scored = cands.map((rt) => {
     const c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
     const off = offOf(c);
@@ -572,16 +604,18 @@ async function truckRoute(stops, veh = {}, out = {}) {
     });
     return { pts, keep };
   };
-  const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
+  const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 100000 + (c.blocked?.length || 0) * 50000;
   let best = out.best;
   const maxPts = plain.engine === "tomtom" ? 140 : 95;
+  // A route may be longer only within limits, except that getting OFF a parkway is worth a longer drive
+  const lenOK = (rt, c) => rt.distance <= Math.min(plain.distance * 1.15, maxDist) || (best?.compliance.parkways.length > 0 && !c.parkways.length && rt.distance <= plain.distance * 2 + 8000);
   let skip600 = false;
   if (early) {
     const e = await early;
     if (e) {
       const c = addRules(check(e.rt.geometry.coordinates, stepsAt(e.rt)), e.rt, veh, stops);
       (out.attempts ||= []).push({ pass: "early-600", points: e.n, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-      if ((!best || offM(c) < offM(best.compliance)) && e.rt.distance <= Math.min(plain.distance * 1.15, maxDist)) { best = { route: e.rt, compliance: c }; out.best = best; }
+      if ((!best || offM(c) < offM(best.compliance)) && lenOK(e.rt, c)) { best = { route: e.rt, compliance: c }; out.best = best; }
       skip600 = true;
     }
   }
@@ -594,7 +628,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
     try {
       const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
       (out.attempts ||= []).push({ pass: step, points: pts.length, engine: rt.engine || "basic", pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-      if ((!best || offM(c) < offM(best.compliance)) && rt.distance <= Math.min(plain.distance * 1.15, maxDist)) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
+      if ((!best || offM(c) < offM(best.compliance)) && lenOK(rt, c)) { best = { route: rt, compliance: c }; out.best = best; } // never trade a few flagged blocks for a big detour
     } catch (e) { (out.attempts ||= []).push({ pass: step, points: pts.length, error: e.message }); }
     if (best && best.compliance.verdict === "ok") break;
   }
@@ -616,11 +650,20 @@ async function truckRoute(stops, veh = {}, out = {}) {
       try {
         const rt = await engine(pts, keep), c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
         out.attempts.push({ pass: "avoid-turns", points: pts.length, penalized: penal.size, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-        if (offM(c) < offM(best.compliance) && rt.distance <= Math.min(plain.distance * 1.15, maxDist)) { best = { route: rt, compliance: c }; out.best = best; }
+        if (offM(c) < offM(best.compliance) && lenOK(rt, c)) { best = { route: rt, compliance: c }; out.best = best; }
       } catch (e) { out.attempts.push({ pass: "avoid-turns", error: e.message }); }
     }
   }
-  if (!best || best.route.distance > Math.max(maxDist, baseDist * 1.6, baseDist + 15000)) { out.attempts.push({ pass: "sanity", fellBackTo: "engine route" }); out.best = base; return base; }
+  // Still on a parkway? Ask the engine again, blocking those exact stretches.
+  if (best && best.compliance.parkways.length && TOMTOM_KEY && timeLeft() > 5000) {
+    try {
+      const rt = await tomtom(P, K, { ...veh, avoidPts: best.compliance.pkAt }, 0, Math.max(5000, timeLeft()));
+      const c = addRules(check(rt.geometry.coordinates, stepsAt(rt)), rt, veh, stops);
+      out.attempts.push({ pass: "avoid-parkway", pct: c.pctOnNetwork, parkways: c.parkways, mi: Math.round(rt.distance / 160.9) / 10, secs: (Date.now() - t0) / 1000 });
+      if (!c.parkways.length && rt.distance <= plain.distance * 2 + 8000) { best = { route: rt, compliance: c }; out.best = best; }
+    } catch (e) { out.attempts.push({ pass: "avoid-parkway", error: e.message }); }
+  }
+  if (!best || (best.route.distance > Math.max(maxDist, baseDist * 1.6, baseDist + 15000) && !(base.compliance.parkways.length && !best.compliance.parkways.length))) { out.attempts.push({ pass: "sanity", fellBackTo: "engine route" }); out.best = base; return base; }
   return best;
 }
 

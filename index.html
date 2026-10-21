@@ -2334,7 +2334,7 @@ function truckSheet(then) {
     ${t.kind === "van" ? '<div class="note">Cargo vans aren\'t "trucks" under NYC rules (2 axles, 4 tires), so they may use any street, but commercial vehicles are still banned from parkways. Rova warns if a route uses one.</div>' : ""}
     ${t.w > 80000 || t.l > 65 ? '<div class="alert warn"><b>Check your permit</b>Over 80,000 lb or extra-long vehicles may need an NYC oversize / overweight permit.</div>' : ""}
     <button class="btn primary" type="button" id="tSave">${then ? "Save and route as a truck" : "Save my truck"}</button>
-    <p class="note">Truck mode keeps routes on NYC DOT's official Truck Route Network (Through routes when you're crossing a borough, Local routes for stops) and warns about low bridges and weight limits along the way.</p>`, "truck");
+    <p class="note">Truck mode keeps routes on NYC DOT's official Truck Route Network (Through routes when you're crossing a borough, Local routes for stops, leaving it only at the intersection nearest your stop) and never uses parkways (Belt, FDR, Grand Central, Henry Hudson, Jackie Robinson and others). NYC limits without a permit: 13'6" tall, 80,000 lb, single-unit trucks 35 ft, combinations 55 ft. Carry your bill of lading.</p>`, "truck");
   document.querySelectorAll("[data-tp]").forEach((b) => (b.onclick = () => { const p = TRUCK_PRESETS[b.dataset.tp]; store.set("truck", { ...truck(), kind: b.dataset.tp, h: p.h, w: p.w, l: p.l, ax: p.ax }); truckSheet(then); }));
   $("#tHz").onchange = () => { store.set("truck", { ...truck(), hazmat: $("#tHz").checked, explosives: $("#tHz").checked && truck().explosives }); truckSheet(then); };
   $("#tHc")?.addEventListener("change", () => { store.set("truck", { ...truck(), hzc: +$("#tHc").value, explosives: +$("#tHc").value === 1 }); truckSheet(then); });
@@ -2372,7 +2372,13 @@ function truckCard(R) {
   else if (c.verdict === "outside") head = c.engine === "tomtom" ? `<div class="alert go"><b>✅ Truck route</b>Built for your truck's height, weight, length${c.hazmat?.on ? " and hazmat class" : ""}.</div>`
     : `<div class="alert warn"><b>Outside NYC: truck limits not checked</b>Rova checks NYC's official truck routes; nationwide truck restrictions turn on with the truck routing upgrade. Follow posted truck signs.</div>`;
   else if (c.verdict === "ok") head = `<div class="alert go"><b>✅ Stays on NYC truck routes</b>${c.pctOnNetwork}% on the official network${c.endsOffNetwork ? ` · ${mi(c.endsOffNetwork)} at the start/end to reach your stop (allowed: most direct route)` : ""}.</div>`;
-  else head = `<div class="alert stop"><b>⚠️ ${c.blocked?.length ? "Not legal for your truck" : "Not fully on truck routes"}</b>${(c.blocked || []).map((b) => `⛔ ${esc(b)}<br>`).join("")}${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
+  else head = `<div class="alert stop"><b>${c.blocked?.length || c.parkways?.length ? "⛔ Not legal for your truck" : "⚠️ Not fully on truck routes"}</b>${(c.blocked || []).map((b) => `⛔ ${esc(b)}<br>`).join("")}${c.parkways.map((p) => `⛔ ${esc(p)}: no trucks or commercial vehicles<br>`).join("")}${c.offRoute.map((o) => `Leaves the truck network on ${esc(o.street)} for ${mi(o.meters)} (${esc(o.borough)})`).join("<br>")}</div>`;
+  if (c.inNYC) {
+    const single = t.kind !== "semi";
+    if (!single && t.l > 55) head = `<div class="alert warn"><b>53-ft trailers in NYC</b>Combinations over 55 ft (like a 53-ft trailer) aren't allowed for local NYC pickups or deliveries without an NYC DOT permit, and may only use designated routes to and from Long Island.</div>` + head;
+    if (single && t.l > 35) head = `<div class="alert warn"><b>Over 35 ft</b>NYC caps single-unit trucks at 35 ft without a permit.</div>` + head;
+    if (t.w > 80000) head = `<div class="alert warn"><b>Over 80,000 lb</b>Needs an NYC DOT overweight permit.</div>` + head;
+  }
   if (t.h > 13.5) head = `<div class="alert stop"><b>⚠️ Your truck is set to ${ftIn(t.h)} tall</b>That's over the 13'6" legal limit, so the route avoids every lower bridge and can go far out of the way. If that's a typo, tap Edit below and fix the height.</div>` + head;
   return `<div class="truckbox">${head}
     ${c.hazmat?.on ? `<div class="alert ${c.blocked?.length ? "stop" : "go"}"><b>☣️ Hazmat ${c.blocked?.length ? "check failed" : "check passed"}${c.hazmat.explosives ? " (explosives)" : ""}</b>${c.hazmat.avoided?.length ? `Avoids: ${c.hazmat.avoided.map(esc).join(", ")}.<br>` : ""}${(c.hazmat.notes || []).map(esc).join("<br>")}</div>` : ""}
