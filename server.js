@@ -17,6 +17,7 @@ const rovers = require("./rovers");
 const truck = require("./truck");
 const billing = require("./billing");
 const ads = require("./ads");
+const legal = require("./legal");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -285,6 +286,7 @@ http
       return send(res, 200, { status: c.status, builtAt: c.builtAt, count: c.cameras.length, stats: c.stats, sample: c.cameras.slice(0, 5) });
     }
 
+    if (legal.routes(url, res, send)) return;
     if (url.pathname === "/health") return send(res, 200, { ok: true });
 
     // Serve the app

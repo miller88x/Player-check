@@ -1018,7 +1018,9 @@ let sheetMode = null;
 const TAB_FOR = { plate: "plateBtn", tickets: "plateBtn", alerts: "plateBtn", dispute: "plateBtn", letter: "plateBtn", park: "parkBtn", parked: "parkBtn", report: "reportBtn", account: "youBtn" };
 function setTab(mode) { const id = TAB_FOR[mode] || "tabExplore"; document.querySelectorAll(".tab").forEach((t) => (t.id === id ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"))); }
 function openSheet(t, html, mode = null) {
-  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
+  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
+const LEGAL_LINKS = '<a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a>';
+const LEGAL_NOTE = `<p class="note">Routes are guidance only. Always follow posted signs and traffic laws. ${LEGAL_LINKS}</p>`;
 function closeSheet() {
   $("#sheet").classList.remove("show");
   if (sheetMode === "route" && !nav.active) clearRoute();
@@ -2808,7 +2810,8 @@ function accountSheet(mode) {
       ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button>'}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
-      <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>`, "account");
+      <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
+      <p class="note">${LEGAL_LINKS} · To delete your account, email getrovaapp@gmail.com</p>`, "account");
     wireAcct();
     if ($("#plansBtn")) $("#plansBtn").onclick = () => plansSheet();
     if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
@@ -2825,7 +2828,7 @@ function accountSheet(mode) {
       ${signup ? '<span class="note" style="margin-top:-4px">At least 8 characters.</span>' : ""}
       <button class="btn primary" type="submit" id="aBtn">${signup ? "Create free account" : "Sign in"}</button>
     </form>
-    <p class="note">${signup ? "Free forever. Your plates, tickets and parked car follow you to any phone." : "Forgot your password? Password reset by email is coming soon."}</p>
+    <p class="note">${signup ? `Free forever. Your plates, tickets and parked car follow you to any phone. By creating an account you agree to the ${LEGAL_LINKS}.` : "Forgot your password? Password reset by email is coming soon."}</p>
     ${vehRow()}
     <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
     <button class="btn" type="button" data-myrover>🎨 My Rover</button>`, "account");
@@ -2968,7 +2971,7 @@ function plansSheet() {
   openSheet("Rova plans", `
     <p class="note">Free stays free: navigation, cameras, parking colors and 1 plate checked daily.</p>
     ${PLANS_ALL.map((p) => `<button type="button" class="planpick${p.k === "silver" ? " best" : ""}" data-up="${p.k}"><span><b>${p.name}</b><small>${p.what}</small></span><em>${p.price}<small>${p.per || "/mo"}</small></em></button>`).join("")}
-    <p class="note">Cancel anytime from Manage plan.</p>
+    <p class="note">Plans renew monthly until you cancel. Cancel anytime from Manage plan. ${LEGAL_LINKS}</p>
     <button class="btn" type="button" id="upLater">Not now</button>`, "upgrade");
   $("#upLater").onclick = () => closeSheet();
   document.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.up, null)));
