@@ -40,7 +40,12 @@ async function newSession(userId) {
   await sb("pc_sessions", { method: "POST", body: JSON.stringify({ token_hash: sha(token), user_id: userId, expires_at: new Date(Date.now() + SESSION_DAYS * 864e5).toISOString() }), headers: { Prefer: "return=minimal" } });
   return token;
 }
-const pub = (u) => ({ email: u.email, plan: PLANS.includes(u.plan) ? u.plan : "free", data: u.data || {}, since: u.created_at });
+// _billing is server-owned (set by the Stripe webhook): the phone gets a short summary, never the raw ids
+const pub = (u) => {
+  const { _billing: b, ...data } = u.data || {};
+  return { email: u.email, plan: PLANS.includes(u.plan) ? u.plan : "free", data, since: u.created_at,
+    billing: b ? { status: b.status || null, ends: b.ends || null, cars: b.cars || null } : null };
+};
 
 // Who's calling? Used by other features later (plan limits).
 async function userFromReq(req) {
@@ -118,7 +123,9 @@ function routes(url, res, send, req) {
     Promise.all([userFromReq(req), readJSON(req, MAX_DATA)]).then(async ([u, b]) => {
       if (!u) return fail(401, "Signed out");
       if (!b.data || typeof b.data !== "object" || Array.isArray(b.data)) return fail(400, "Bad data");
-      await sb(`pc_users?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ data: b.data, updated_at: new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
+      const { _billing, ...mine } = b.data; // the phone can't write billing; keep what the webhook stored
+      const keep = u.data?._billing ? { ...mine, _billing: u.data._billing } : mine;
+      await sb(`pc_users?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ data: keep, updated_at: new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
       send(res, 200, { ok: true });
     }).catch((e) => fail(e.message === "too big" ? 413 : 400, e.message === "too big" ? "Too much data" : "Couldn't save."));
     return true;

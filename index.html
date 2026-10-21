@@ -2745,7 +2745,7 @@ const tok = () => store.get("tok", null);
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(tok() ? { Authorization: `Bearer ${tok()}` } : {}) } });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(j.error || "Something went wrong. Try again."); e.status = r.status; throw e; }
+  if (!r.ok) { const e = new Error(j.error || "Something went wrong. Try again."); e.status = r.status; e.body = j; throw e; }
   return j;
 }
 function queueSync() { clearTimeout(syncT); syncT = setTimeout(pushSync, 1500); }
@@ -2799,11 +2799,14 @@ function accountSheet(mode) {
       ${vehRow()}
       <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
       <button class="btn" type="button" data-myrover>🎨 My Rover</button>
-      <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
+      <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan${account.billing?.cars ? ` · ${account.billing.cars} cars` : ""}${account.billing?.ends ? ` · ends ${new Date(account.billing.ends * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
+      ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button>'}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>`, "account");
     wireAcct();
+    if ($("#plansBtn")) $("#plansBtn").onclick = () => plansSheet();
+    if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
     $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
     return;
   }
@@ -2879,7 +2882,7 @@ function upgradeCard(t, fromDispute = false) {
   $("#upLater").onclick = () => closeSheet();
   document.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.up, t)));
 }
-// Billing hook. App Store / Google Play billing plugs in here; until then it saves the driver's choice.
+// Billing: website checkout through Stripe. App Store / Google Play in-app purchase plugs in here for the store builds.
 function startUpgrade(plan, t) {
   store.set("afterUpgrade", { plan, summons: t?.summons || null, plate: data?.plate || null, at: Date.now() });
   if (!account) {
@@ -2888,8 +2891,49 @@ function startUpgrade(plan, t) {
     $("#upBack").onclick = () => (t ? upgradeCard(t) : closeSheet());
     return;
   }
-  openSheet(`${PLAN_NAME[plan]} is almost here`, `<div class="alert go"><b>You're on the list</b>Paid plans switch on with the App Store and Google Play launch. When your plan is active, Rova opens this ticket's dispute for you.</div><button class="btn primary" type="button" id="ok">Got it</button>`, "upgrade");
-  $("#ok").onclick = () => closeSheet();
+  openSheet(`Opening ${PLAN_NAME[plan]} checkout…`, `<div class="alert go"><b>Secure checkout by Stripe</b>Pay with card, Apple Pay or Google Pay. You'll come right back to Rova.</div>`, "upgrade");
+  api(`/api/billing/link?plan=${plan}`).then((j) => { location.href = j.url; }).catch((err) => {
+    if (err.status === 409 && err.body?.portal) return managePlan();
+    openSheet("Couldn't open checkout", `<div class="alert stop"><b>Try again</b>${esc(err.message)}</div><button class="btn primary" type="button" id="ok">OK</button>`, "upgrade");
+    $("#ok").onclick = () => closeSheet();
+  });
+}
+// All plans (from the account sheet). Fleet: per car, 3-car minimum, cars picked at checkout.
+const PLANS_ALL = [
+  { k: "bronze", name: "Bronze", price: "$4.99", what: "No ads, AI voices, AI parking-sign photo reading" },
+  ...PLANS_UI,
+  { k: "fleet", name: "Fleet", price: "$12", per: "/car/mo", what: "Gold for every car you run, 3-car minimum" },
+];
+function plansSheet() {
+  openSheet("Rova plans", `
+    <p class="note">Free stays free: navigation, cameras, parking colors and 1 plate checked daily.</p>
+    ${PLANS_ALL.map((p) => `<button type="button" class="planpick${p.k === "silver" ? " best" : ""}" data-up="${p.k}"><span><b>${p.name}</b><small>${p.what}</small></span><em>${p.price}<small>${p.per || "/mo"}</small></em></button>`).join("")}
+    <p class="note">Cancel anytime from Manage plan.</p>
+    <button class="btn" type="button" id="upLater">Not now</button>`, "upgrade");
+  $("#upLater").onclick = () => closeSheet();
+  document.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.up, null)));
+}
+// Stripe's customer page: switch plans, update card, cancel (sign-in there is by email code)
+function managePlan() {
+  api("/api/billing/portal").then((j) => { location.href = j.url; }).catch((err) => alert2(err.message));
+}
+// Back from Stripe checkout (?paid=silver): the webhook switches the plan within seconds, so wait for it
+function afterCheckout() {
+  const want = new URLSearchParams(location.search).get("paid");
+  if (!want) return;
+  history.replaceState(null, "", location.pathname);
+  if (!tok()) return;
+  openSheet("Activating your plan…", `<div class="alert go"><b>Payment received</b>Turning on ${esc(PLAN_NAME[want] || "your plan")}. This takes a few seconds.</div>`, "upgrade");
+  let n = 0;
+  const poll = () => api("/api/me").then((j) => {
+    account = j.user; paintMe();
+    if (account.plan !== "free") {
+      openSheet(`${PLAN_NAME[account.plan]} is on`, `<div class="alert go"><b>You're all set</b>Thanks for supporting Rova. Your plan works on every phone you sign in on.</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
+      $("#ok").onclick = () => { closeSheet(); resumeUpgrade(); };
+    } else if (++n < 15) setTimeout(poll, 2000);
+    else { openSheet("Almost there", `<div class="alert warn"><b>Still confirming your payment</b>Your plan will switch on by itself shortly. Pull down to refresh in a minute.</div><button class="btn primary" type="button" id="ok">OK</button>`, "upgrade"); $("#ok").onclick = () => closeSheet(); }
+  }).catch(() => (++n < 15 ? setTimeout(poll, 2000) : null));
+  poll();
 }
 // After the plan turns paid, jump straight into the dispute for the ticket that started it
 function resumeUpgrade() {
@@ -2905,6 +2949,7 @@ function resumeUpgrade() {
 paintSaved();
 const savedPlate = store.get("plate", null);
 if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
+afterCheckout();
 if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); resumeUpgrade(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
 if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocation" }).then((p) => { if (p.state === "granted") startWatch(); }).catch(() => {});
 </script>

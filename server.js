@@ -15,6 +15,7 @@ const tts = require("./tts");
 const trips = require("./trips");
 const rovers = require("./rovers");
 const truck = require("./truck");
+const billing = require("./billing");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -265,6 +266,7 @@ http
       if (req.method === "POST") return readBody(req).then((b) => { (global.appLog ||= []).unshift({ ...b, ip: undefined }); global.appLog.length = Math.min(global.appLog.length, 100); send(res, 200, { ok: true }); }).catch(() => send(res, 400, {}));
       return send(res, 200, { errors: global.appLog || [] });
     }
+    if (url.pathname.startsWith("/api/billing/") && billing.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/rovers") && rovers.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/truck/") && truck.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/trip") && trips.routes(url, res, send, readBody, req)) return;
