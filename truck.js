@@ -609,6 +609,52 @@ function routes(url, res, send, readBody, req) {
       .catch((e) => testRuns.set(id, { status: "error", error: e.message }));
     send(res, 200, { id }); return true;
   }
+  if (url.pathname === "/api/truck/suite") { // run a fixed set of trips; poll with ?id=
+    const id0 = url.searchParams.get("id");
+    if (id0) { send(res, 200, testRuns.get(id0) || { status: "unknown id" }); return true; }
+    const T = [
+      ["East NY -> Hunts Point (Bronx)", [-73.8966, 40.674], [-73.8803, 40.8095]],
+      ["Red Hook -> JFK cargo", [-74.0115, 40.6745], [-73.7907, 40.6593]],
+      ["Sunset Park -> Maspeth", [-74.0124, 40.6505], [-73.9128, 40.7253]],
+      ["Long Island City -> Midtown W 34 St", [-73.9442, 40.7447], [-73.9967, 40.7536]],
+      ["Harlem 125 St -> Lower Manhattan", [-73.9442, 40.8075], [-74.0094, 40.7099]],
+      ["Bronx Fordham -> Jamaica Queens", [-73.8985, 40.8614], [-73.8063, 40.7027]],
+      ["Staten Island Mall -> Flatbush", [-74.1677, 40.5826], [-73.9616, 40.6413]],
+      ["Bay Ridge -> Williamsburg", [-74.0283, 40.6262], [-73.9573, 40.7143]],
+      ["Flushing -> Canarsie", [-73.8303, 40.7590], [-73.9020, 40.6403]],
+      ["Port Newark -> Bushwick", [-74.1490, 40.6920], [-73.9214, 40.6944]],
+      ["Elizabeth NJ -> Staten Island", [-74.2107, 40.6640], [-74.1502, 40.6100]],
+      ["Brooklyn Navy Yard -> Hunts Point", [-73.9707, 40.7003], [-73.8803, 40.8095]],
+      ["Astoria -> Coney Island", [-73.9196, 40.7644], [-73.9785, 40.5755]],
+      ["Bronx Co-op City -> Brooklyn Downtown", [-73.8297, 40.8740], [-73.9897, 40.6928]],
+      ["Ridgewood -> Newark NJ", [-73.9050, 40.7004], [-74.1724, 40.7357]],
+      ["Brooklyn Flatlands -> Bayonne NJ", [-73.9300, 40.6170], [-74.1260, 40.6610]],
+      ["East NY -> Mineola LI", [-73.8966, 40.674], [-73.6407, 40.749]],
+      ["Queens Village -> Yonkers", [-73.7419, 40.7177], [-73.8988, 40.9312]],
+      ["Upper West Side -> Fort Lee NJ", [-73.9754, 40.7870], [-73.9701, 40.8509]],
+      ["East NY -> Philadelphia", [-73.8966, 40.674], [-75.1652, 39.9526]],
+    ];
+    const n = (k, d) => (url.searchParams.has(k) ? +url.searchParams.get(k) || 0 : d);
+    const veh = { h: n("h", 13.5), w: n("w", 80000), l: n("l", 70), axles: n("ax", 5), hzc: n("hzc", 0) }; veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
+    const rid = "s" + Math.random().toString(36).slice(2, 9), rows = [];
+    testRuns.set(rid, { status: "running", done: 0, of: T.length, rows });
+    (async () => {
+      let k = 0;
+      const worker = async () => { while (k < T.length) { const [name, a, b] = T[k++]; const t0 = Date.now(); const out = {};
+        try {
+          const r = await Promise.race([truckRoute([a, b], veh, out), new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), BUDGET + 3000))]);
+          if (!r) throw new Error("timeout");
+          const c = r.compliance, crow = distM(a, b), np = (out.attempts || []).find((x) => x.pass === "netPath");
+          rows.push({ name, mi: Math.round(r.route.distance / 160.9) / 10, crowMi: Math.round(crow / 160.9) / 10, ratio: Math.round((r.route.distance / crow) * 100) / 100, min: Math.round(r.route.duration / 60),
+            verdict: c.verdict, pct: c.pctOnNetwork, offM: c.offRoute.reduce((x, o) => x + o.meters, 0), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`).join(", "), parkways: c.parkways.join(", "), blocked: (c.blocked || []).join(", "),
+            netPath: np ? np.found : null, partial: !!r.partial, secs: (Date.now() - t0) / 1000 });
+        } catch (e) { rows.push({ name, error: e.message, secs: (Date.now() - t0) / 1000 }); }
+        testRuns.get(rid).done = rows.length; } };
+      await Promise.all([worker(), worker()]);
+      testRuns.set(rid, { status: "done", veh, rows });
+    })();
+    send(res, 200, { id: rid }); return true;
+  }
   if (url.pathname === "/api/truck/recent") { send(res, 200, { runs: recentRuns }); return true; }
   if (url.pathname === "/api/truck/status") {
     send(res, 200, { status: state.status, error: state.error, asOf: state.asOf, builtAt: state.builtAt, stats: state.stats, tomtom: !!TOMTOM_KEY, recentErrors });
