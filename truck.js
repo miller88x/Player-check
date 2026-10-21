@@ -296,8 +296,8 @@ function viaPoints(path, step) {
 const CROSSINGS = [
   { key: "qmt", name: "Queens-Midtown Tunnel", re: /QUEENS.?MIDTOWN/i, box: [-73.972, 40.741, -73.947, 40.751], water: [-73.966, 40.744, -73.961, 40.748], hazmat: true, maxH: 12 + 1 / 12 },
   { key: "carey", name: "Hugh L. Carey Tunnel", re: /HUGH L\.? CAREY|BROOKLYN.?BATTERY/i, box: [-74.019, 40.689, -73.999, 40.704], water: [-74.012, 40.693, -74.007, 40.698], hazmat: true, maxH: 12 + 1 / 12 },
-  { key: "holland", name: "Holland Tunnel", re: /HOLLAND TUNNEL/i, box: [-74.036, 40.722, -74.011, 40.732], water: [-74.022, 40.725, -74.017, 40.729], hazmat: true },
-  { key: "lincoln", name: "Lincoln Tunnel", re: /LINCOLN TUNNEL/i, box: [-74.026, 40.756, -73.999, 40.768], water: [-74.013, 40.760, -74.008, 40.764], hazmat: true },
+  { key: "holland", name: "Holland Tunnel", re: /HOLLAND TUNNEL/i, box: [-74.036, 40.722, -74.011, 40.732], water: [-74.022, 40.725, -74.017, 40.729], hazmat: true, maxH: 12.5 }, // Holland Tunnel clearance 12'6"
+  { key: "lincoln", name: "Lincoln Tunnel", re: /LINCOLN TUNNEL/i, box: [-74.026, 40.756, -73.999, 40.768], water: [-74.013, 40.760, -74.008, 40.764], hazmat: true, maxH: 13 }, // Lincoln Tunnel clearance 13'0"
   { key: "gwblower", name: "George Washington Bridge lower level", re: /GEORGE WASHINGTON.*LOWER|LOWER LEVEL/i, box: null, hazmat: true },
   { key: "verrazzano", name: "Verrazzano-Narrows Bridge", re: /VERRAZ+ANO/i, box: [-74.056, 40.598, -74.033, 40.616], water: [-74.048, 40.604, -74.042, 40.610], explosives: true },
 ];
