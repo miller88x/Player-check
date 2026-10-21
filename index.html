@@ -2811,10 +2811,12 @@ function accountSheet(mode) {
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
-      <p class="note">${LEGAL_LINKS} · To delete your account, email getrovaapp@gmail.com</p>`, "account");
+      <button class="btn" type="button" id="delBtn" style="color:#ff8a8d">Delete account</button>
+      <p class="note">${LEGAL_LINKS}</p>`, "account");
     wireAcct();
     if ($("#plansBtn")) $("#plansBtn").onclick = () => plansSheet();
     if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
+    $("#delBtn").onclick = deleteSheet;
     $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
     return;
   }
@@ -2905,6 +2907,35 @@ function advertiseSheet() {
       openSheet("Thanks!", `<div class="alert go"><b>Got it</b>We'll reach out within a day with pricing.</div><button class="btn primary" type="button" id="ok">Done</button>`, "advertise");
       $("#ok").onclick = () => closeSheet();
     } catch (err) { $("#adGo").disabled = false; alert2(err.message); }
+  };
+}
+
+// ================= DELETE ACCOUNT =================
+function deleteSheet() {
+  const paid = account.plan !== "free" && !account.billing?.ends;
+  openSheet("Delete account", `
+    <div class="alert stop"><b>This can't be undone</b>Your account, saved plates, places, parked car, settings and ticket alert emails are permanently deleted.</div>
+    ${paid ? `<div class="alert warn"><b>Cancel your ${PLAN_NAME[account.plan]} plan first</b>Deleting your account doesn't stop billing. Cancel in Manage plan, then come back here.</div><button class="btn" type="button" id="delManage">Manage plan</button>` : ""}
+    <form id="delF" style="display:flex;flex-direction:column;gap:12px">
+      <label class="lb">Enter your password to confirm<input class="inp" id="delPw" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary" type="submit" id="delGo" style="background:#d93025;border-color:#d93025">Delete my account</button>
+    </form>
+    <button class="btn" type="button" id="delBack">Keep my account</button>`, "account");
+  if ($("#delManage")) $("#delManage").onclick = managePlan;
+  $("#delBack").onclick = () => accountSheet();
+  $("#delF").onsubmit = async (e) => {
+    e.preventDefault(); $("#delGo").disabled = true; $("#delErr")?.remove();
+    try {
+      await api("/api/me", { method: "DELETE", body: JSON.stringify({ password: $("#delPw").value }) });
+      store.set("tok", null); account = null;
+      for (const k of SYNC) try { localStorage.removeItem(k); } catch {}
+      openSheet("Account deleted", `<div class="alert go"><b>Done</b>Your account and its data are deleted. You can keep using Rova without an account.</div><button class="btn primary" type="button" id="ok">OK</button>`, "account");
+      $("#ok").onclick = () => location.reload();
+    } catch (err) {
+      $("#delGo").disabled = false;
+      const d = document.createElement("div"); d.id = "delErr"; d.className = "alert stop"; d.innerHTML = `<b>Not deleted</b>${esc(err.message)}`;
+      $("#delF").prepend(d);
+    }
   };
 }
 

@@ -131,6 +131,27 @@ function routes(url, res, send, req) {
     return true;
   }
 
+  // Delete account (App Store rule: must be possible inside the app). Needs the password again.
+  // An active Stripe plan must be cancelled first, so nobody keeps getting billed for a deleted account.
+  if (p === "/api/me" && req.method === "DELETE") {
+    Promise.all([userFromReq(req), readJSON(req, 5000)]).then(async ([u, b]) => {
+      if (!u) return fail(401, "Signed out");
+      if (limited(ip, 5)) return fail(429, "Too many tries. Wait 15 minutes and try again.");
+      const [full] = await sb(`pc_users?id=eq.${u.id}&select=pass_hash`);
+      if (!full || !(await checkPw(String(b.password || ""), full.pass_hash))) return fail(401, "Wrong password.");
+      const bill = u.data?._billing;
+      if (bill?.sub && ["active", "trialing", "past_due"].includes(bill.status) && !bill.ends) {
+        return send(res, 409, { error: "Cancel your plan first so you don't get charged again, then delete your account.", cancelFirst: true });
+      }
+      await sb(`plate_alerts?email=eq.${encodeURIComponent(u.email)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }).catch((e) => console.error("delete alerts:", e.message));
+      await sb(`pc_sessions?user_id=eq.${u.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await sb(`pc_users?id=eq.${u.id}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      console.log("account deleted:", u.id);
+      send(res, 200, { ok: true });
+    }).catch((e) => { console.error("delete account:", e.message); fail(500, "Couldn't delete your account. Try again or email getrovaapp@gmail.com."); });
+    return true;
+  }
+
   fail(404, "Not found");
   return true;
 }
