@@ -289,7 +289,7 @@ function whyBanned(c, veh) {
 // ---------- check a route against the official network ----------
 const PARKWAY = /\b(PARKWAY|PKWY|FDR DRIVE|HARLEM RIVER DRIVE|HENRY HUDSON|HUTCHINSON|BRONX RIVER|MOSHOLU|BELT|CROSS ISLAND|GRAND CENTRAL|JACKIE ROBINSON|KOREAN WAR|LAURELTON)\b/i;
 function check(coords, steps) {
-  const ALLOW = 600; // leaving a truck route for the stop: nearest intersection, most direct route
+  const ALLOW = 800; // leaving a truck route for the stop: nearest intersection, most direct route (~half a mile)
   const cum = [0]; for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + distM(coords[i - 1], coords[i]));
   const total = cum[cum.length - 1] || 1;
   const nameAt = (d) => { let n = ""; for (const s of steps || []) { if (s.at <= d) n = s.name || s.ref || n; else break; } return n; };
