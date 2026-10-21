@@ -232,16 +232,19 @@ function heapPop(h) {
   return top;
 }
 function netPath(from, to, okBoros, avoidRe, penal) {
-  const src = nearNodes(from, 1500), dst = nearNodes(to, 1500);
+  // NYC direct-access rule: get on/off the truck network at the point nearest the stop (not wherever is shortest overall)
+  const near = (p) => { const l = nearNodes(p, 1500, 12); return l.length ? l.filter((x) => x.d <= l[0].d + 150) : l; };
+  const src = near(from), dst = near(to);
+  const OFFW = 8; // a meter driven off the truck network (to reach it) costs like 8 meters on it: get on at the nearest point
   if (!src.length || !dst.length) return null;
   const goal = new Map(dst.map((x) => [x.i, x.d]));
   const dist = new Map(), prev = new Map(), h = [];
-  for (const s of src) { dist.set(s.i, s.d * 2); heapPush(h, [s.d * 2, s.i]); }
+  for (const s of src) { dist.set(s.i, s.d * OFFW); heapPush(h, [s.d * OFFW, s.i]); }
   let end = null, endCost = Infinity;
   while (h.length) {
     const [d, u] = heapPop(h);
     if (d > (dist.get(u) ?? Infinity) || d >= endCost) continue;
-    if (goal.has(u) && d + goal.get(u) * 2 < endCost) { endCost = d + goal.get(u) * 2; end = u; }
+    if (goal.has(u) && d + goal.get(u) * OFFW < endCost) { endCost = d + goal.get(u) * OFFW; end = u; }
     for (const { id, v } of state.adj[u]) {
       const s = state.segs[id];
       if (avoidRe && avoidRe.test(s.street)) continue; // tunnel/bridge this vehicle may not use
@@ -258,7 +261,9 @@ function netPath(from, to, okBoros, avoidRe, penal) {
   while (prev.has(v)) { const { u, id } = prev.get(v); chain.push({ id, from: u, to: v }); v = u; }
   chain.reverse();
   for (const { id, from } of chain) { const s = state.segs[id]; const c = s.a === from ? s.c : [...s.c].reverse(); for (const p of c) if (!pts.length || distM(pts[pts.length - 1], p) > 1) pts.push(p); }
-  return pts.length > 1 ? pts : null;
+  if (pts.length < 2) return null;
+  pts.chain = chain;
+  return pts;
 }
 // Points along the network path every `step` meters plus just after each turn, with their direction of travel
 function viaPoints(path, step) {
@@ -363,6 +368,92 @@ function check(coords, steps) {
   };
 }
 
+
+// ---------- Rova's own NYC routing on the city truck network ----------
+// Inside NYC the route is built on the official truck route map itself (one-way aware, parkways never in it),
+// so every turn is on a legal truck street. TomTom only covers what's outside NYC and the short way to/from the network.
+const SPEED = { fast: 15.6, Through: 7.6, Local: 6.3, "Limited Local": 5.4 }; // m/s: ~35 / 17 / 14 / 12 mph, NYC truck pace
+const dispName = (n) => String(n || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase()).replace(/\b(Ave|St|Rd|Blvd|Pl|Expy|Expwy|Pkwy|Hwy|Brg|Br|Dr|Ln|Ct|Ter)\b/g, (m) => m)
+  .replace(/\bFdr\b/, "FDR").replace(/\bBqe\b/, "BQE").replace(/\bLie\b/, "LIE").replace(/\b(\d+)(St|Nd|Rd|Th)\b/g, (m, a, b) => a + b.toLowerCase());
+const RAMPNAME = /\b(EN|ET|EXIT|ENT|ENTRANCE|APPR|APPROACH|RAMP)\b/i;
+function turnMod(b0, b1) {
+  const t = ((b1 - b0 + 540) % 360) - 180, a = Math.abs(t);
+  if (a < 20) return ["continue", "straight"];
+  const side = t > 0 ? "right" : "left";
+  if (a < 60) return ["turn", "slight " + side];
+  if (a < 150) return ["turn", side];
+  return ["turn", "uturn"];
+}
+function netSteps(path) {
+  const groups = [];
+  for (const { id, from } of path.chain) {
+    const sg = state.segs[id], c = sg.a === from ? sg.c : [...sg.c].reverse();
+    const len = sg.len, dur = len / (sg.link ? 10 : sg.fast ? SPEED.fast : SPEED[sg.type] || 6.3);
+    const ramp = !sg.link && RAMPNAME.test(sg.street), name = sg.link ? null : normName(sg.street);
+    let g = groups[groups.length - 1];
+    if (!g || (name && !ramp && g.key !== name && !(g.ramp && !g.key))) { g = { key: ramp ? "" : name, ramp, label: ramp ? "" : dispName(sg.street), fast: sg.fast, pts: [], len: 0, dur: 0 }; groups.push(g); }
+    else if (g.ramp && name && !ramp && !g.key) { g.key = name; g.label = dispName(sg.street); g.fast = sg.fast; } // ramp takes the name of the road it leads to
+    for (const q of c) if (!g.pts.length || distM(g.pts[g.pts.length - 1], q) > 0.5) g.pts.push(q);
+    g.len += len; g.dur += dur;
+  }
+  const brgEnd = (pts) => (pts.length > 1 ? bearing(pts[Math.max(0, pts.length - 3)], pts[pts.length - 1]) : 0);
+  const brgStart = (pts) => (pts.length > 1 ? bearing(pts[0], pts[Math.min(pts.length - 1, 2)]) : 0);
+  return groups.map((g, i) => {
+    let type, modifier;
+    if (i === 0) { type = "continue"; modifier = "straight"; }
+    else {
+      [type, modifier] = turnMod(brgEnd(groups[i - 1].pts), brgStart(g.pts));
+      if (g.ramp) type = g.fast && !groups[i - 1].fast ? "on ramp" : groups[i - 1].fast && !g.fast ? "off ramp" : "fork";
+      else if (type === "continue") type = "new name";
+    }
+    return { distance: g.len, duration: g.dur, name: g.label, maneuver: { type, modifier, location: g.pts[0], bearing_after: Math.round(brgStart(g.pts)) }, intersections: [{ location: g.pts[0] }] };
+  });
+}
+// Cut an engine route into pieces by distance along it
+function sliceRoute(rt, fromD, toD) {
+  const c = rt.geometry.coordinates, cum = [0]; for (let i = 1; i < c.length; i++) cum.push(cum[i - 1] + distM(c[i - 1], c[i]));
+  const pts = c.filter((_, i) => cum[i] >= fromD - 0.1 && cum[i] <= toD + 0.1);
+  const steps = stepsAt(rt).filter((x) => x.maneuver.type !== "arrive" && x.maneuver.type !== "depart" || x.at >= fromD - 1 && x.at < toD)
+    .filter((x) => x.at + x.distance > fromD && x.at < toD).map((x) => { const a = Math.max(x.at, fromD), b = Math.min(x.at + x.distance, toD), f = x.distance ? (b - a) / x.distance : 0; return { ...x, at: undefined, distance: b - a, duration: x.duration * f }; });
+  return { pts, steps };
+}
+async function ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, attempts) {
+  if (stops.length !== 2 || state.status !== "ready") return null;
+  const pc = plain.geometry.coordinates, cum = [0]; for (let i = 1; i < pc.length; i++) cum.push(cum[i - 1] + distM(pc[i - 1], pc[i]));
+  const inA = boroAt(stops[0]), inB = boroAt(stops[1]);
+  const iIn = inA ? 0 : pc.findIndex((p) => boroAt(p)), iOut = inB ? pc.length - 1 : pc.length - 1 - [...pc].reverse().findIndex((p) => boroAt(p));
+  if (iIn < 0 || iOut <= iIn) return null;
+  const A = inA ? stops[0] : pc[iIn], B = inB ? stops[1] : pc[iOut];
+  const path = netPath(A, B, okBoros, avoidRe);
+  attempts.push({ pass: "own-netPath", found: !!path, km: path ? Math.round(path.chain.reduce((d, x) => d + state.segs[x.id].len, 0) / 100) / 10 : 0 });
+  if (!path) return null;
+  // the short way from the stop to the truck network and back: a small truck route each (or a straight hop if it's a few steps)
+  const hop = async (p, q) => {
+    if (distM(p, q) < 60) return { pts: [p, q], steps: [] };
+    try { const r = await tomtom([{ p }, { p: q }], [0, 1], veh, 0, Math.min(ttMs, 9000)); return { pts: r.geometry.coordinates, steps: r.legs.flatMap((l) => l.steps).filter((x) => x.maneuver.type !== "arrive" && x.maneuver.type !== "depart" || false) , first: r.legs[0]?.steps[0] }; }
+    catch { return { pts: [p, q], steps: [] }; }
+  };
+  const [h1, h2] = await Promise.all([hop(A, path[0]), hop(path[path.length - 1], B)]);
+  const before = inA ? null : sliceRoute(plain, 0, cum[iIn]), after = inB ? null : sliceRoute(plain, cum[iOut], cum[cum.length - 1]);
+  const mid = netSteps(path);
+  const coords = [], add = (arr) => { for (const q of arr || []) if (!coords.length || distM(coords[coords.length - 1], q) > 0.5) coords.push(q); };
+  add(before?.pts); add(h1.pts); add(path); add(h2.pts); add(after?.pts);
+  const stepList = [];
+  const depart = { distance: 0, duration: 0, name: "", maneuver: { type: "depart", location: coords[0], bearing_after: coords[1] ? Math.round(bearing(coords[0], coords[1])) : 0 }, intersections: [{ location: coords[0] }] };
+  stepList.push(depart);
+  if (before) stepList.push(...before.steps.filter((x) => x.maneuver.type !== "depart" && x.maneuver.type !== "arrive"));
+  if (h1.first) stepList.push({ ...h1.first, maneuver: { ...h1.first.maneuver, type: "continue" } });
+  stepList.push(...h1.steps, ...mid, ...h2.steps);
+  if (after) { const st = after.steps.filter((x) => x.maneuver.type !== "arrive"); stepList.push(...st.map((x, k) => (k === 0 ? { ...x, maneuver: { ...x.maneuver, type: x.maneuver.type === "depart" ? "continue" : x.maneuver.type } } : x))); }
+  // fold zero-length steps into neighbors and make the first real step the depart
+  const real = stepList.filter((x, k) => k === 0 || x.distance > 1);
+  if (real.length > 1) { real[0] = { ...real[1], maneuver: { ...real[1].maneuver, type: "depart" } }; real.splice(1, 1); }
+  const geomLen = coords.reduce((d, q, k) => (k ? d + distM(coords[k - 1], q) : 0), 0), stepLen = real.reduce((d, x) => d + x.distance, 0);
+  if (stepLen > 0) { const f = geomLen / stepLen; for (const x of real) x.distance *= f; } // keep turn distances matching the line on the map
+  real.push({ distance: 0, duration: 0, name: "", maneuver: { type: "arrive", location: coords[coords.length - 1] }, intersections: [{ location: coords[coords.length - 1] }] });
+  const duration = real.reduce((d, x) => d + (x.duration || 0), 0);
+  return { geometry: { type: "LineString", coordinates: coords }, distance: geomLen, duration, legs: [{ steps: real, distance: geomLen, duration, annotation: { maxspeed: [] } }], live: true, engine: "rova-nyc" };
+}
 // ---------- the truck route ----------
 const recentErrors = [], testRuns = new Map(), recentRuns = [];
 // Last real driver requests (rounded points, no identity) so problems can be traced
@@ -605,6 +696,17 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const pc = plain.geometry.coordinates;
   const firstIn = pc.find((p) => boroAt(p)), lastIn = [...pc].reverse().find((p) => boroAt(p));
   if (!firstIn) return { route: plain, compliance: addRules({ ...check(pc, stepsAt(plain)), verdict: "outside" }, plain, veh, stops) };
+  // Rova's own NYC route on the official truck map: use it whenever it's legal and the engine's isn't
+  try {
+    const mine = await ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, (out.attempts ||= []));
+    if (mine) {
+      const c = addRules(check(mine.geometry.coordinates, stepsAt(mine)), mine, veh, stops);
+      const offOwn = c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 100000 + (c.blocked?.length || 0) * 50000;
+      const offEng = pick.c.offRoute.reduce((a, o) => a + o.meters, 0) + pick.c.parkways.length * 100000 + (pick.c.blocked?.length || 0) * 50000;
+      out.attempts.push({ pass: "own", mi: Math.round(mine.distance / 160.9) / 10, min: Math.round(mine.duration / 60), pct: c.pctOnNetwork, offM: offOwn, off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
+      if (offOwn < offEng && mine.distance <= Math.max(plain.distance * 2.2, plain.distance + 16000)) { out.best = { route: mine, compliance: c }; return out.best; }
+    }
+  } catch (e) { logErr("own route: " + e.message); }
   // build the network path leg by leg, then thread the route through it
   let legs = [];
   (out.attempts ||= []).push({ pass: "network", firstIn, lastIn });
