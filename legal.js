@@ -150,7 +150,8 @@ const PRIVACY = page("Privacy Policy", `
 <ul>
 <li>Turn location off in your phone's settings at any time. Some features won't work without it.</li>
 <li>Remove plates, places and settings in the app.</li>
-<li>Ask to see, correct or delete your information, or delete your account, by emailing <a href="mailto:${CONTACT}">${CONTACT}</a>. We'll respond within 30 days.</li>
+<li>Delete your account anytime in the app (your account → <i>Delete account</i>). This permanently erases your account, saved plates, places, settings and ticket alert emails.</li>
+<li>Ask to see or correct your information, or for help deleting it, by emailing <a href="mailto:${CONTACT}">${CONTACT}</a>. We'll respond within 30 days.</li>
 <li>Upgrade to a paid plan to remove ads.</li>
 <li>Depending on your state (for example, California), you may have more rights, such as knowing what we collect and opting out of "sale" or "sharing." We don't sell personal information. To use any of these rights, email us.</li>
 </ul>
