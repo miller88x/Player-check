@@ -232,8 +232,12 @@ function heapPop(h) {
   return top;
 }
 function netPath(from, to, okBoros, avoidRe, penal) {
+  // nearest entry first (city rule); if that piece of network is a dead end (airports, yards), widen the choice
+  return netPathOnce(from, to, okBoros, avoidRe, penal, true) || netPathOnce(from, to, okBoros, avoidRe, penal, false);
+}
+function netPathOnce(from, to, okBoros, avoidRe, penal, strict) {
   // NYC direct-access rule: get on/off the truck network at the point nearest the stop (not wherever is shortest overall)
-  const near = (p) => { let l = nearNodes(p, 1500, 12); if (!l.length) l = nearNodes(p, 3500, 12); return l.length ? l.filter((x) => x.d <= l[0].d + 150) : l; };
+  const near = (p) => { let l = nearNodes(p, 1500, strict ? 12 : 30); if (!l.length) l = nearNodes(p, 3500, strict ? 12 : 30); return l.length && strict ? l.filter((x) => x.d <= l[0].d + 150) : l; };
   const src = near(from), dst = near(to);
   const OFFW = 8; // a meter driven off the truck network (to reach it) costs like 8 meters on it: get on at the nearest point
   if (!src.length || !dst.length) return null;
@@ -372,7 +376,29 @@ function check(coords, steps) {
 // ---------- Rova's own NYC routing on the city truck network ----------
 // Inside NYC the route is built on the official truck route map itself (one-way aware, parkways never in it),
 // so every turn is on a legal truck street. TomTom only covers what's outside NYC and the short way to/from the network.
-const SPEED = { fast: 15.6, Through: 7.6, Local: 6.3, "Limited Local": 5.4 }; // m/s: ~35 / 17 / 14 / 12 mph, NYC truck pace
+// Free-flow truck speeds (m/s): highways ~45 mph, truck avenues ~22 mph, local ~18 mph, limited ~15 mph, plus delay per turn.
+// Live traffic is applied on top (traffic factor from TomTom for this trip right now, or a time-of-day estimate).
+const SPEED = { fast: 20, Through: 9.8, Local: 8, "Limited Local": 6.7 };
+const TURN_DELAY = { turn: 18, "on ramp": 6, "off ramp": 10, fork: 4, "new name": 3, continue: 0, depart: 0, arrive: 0 };
+// Typical NYC traffic by hour when live data isn't available (weekday rush is slowest)
+function todFactor(d = new Date()) {
+  const ny = new Date(d.toLocaleString("en-US", { timeZone: "America/New_York" })), h = ny.getHours() + ny.getMinutes() / 60, wk = ny.getDay() % 6 !== 0;
+  if (!wk) return h >= 11 && h < 19 ? 1.25 : h >= 7 && h < 23 ? 1.12 : 1.0;
+  if ((h >= 7 && h < 10) || (h >= 15.5 && h < 19)) return 1.55;
+  if (h >= 10 && h < 15.5) return 1.3;
+  if (h >= 19 && h < 22) return 1.15;
+  return 1.0;
+}
+function applyTrafficNyc(rt, f) {
+  for (const L of rt.legs) { for (const x of L.steps) if (x.rova) x.duration *= f; L.duration = L.steps.reduce((d, x) => d + x.duration, 0); }
+  rt.duration = rt.legs.reduce((d, L) => d + L.duration, 0); rt.traffic = Math.round(f * 100) / 100; return rt;
+}
+function applyTraffic(rt, f) {
+  if (!rt || !(f > 0)) return rt;
+  for (const L of rt.legs) { for (const x of L.steps) x.duration *= f; L.duration = L.steps.reduce((d, x) => d + x.duration, 0); }
+  rt.duration = rt.legs.reduce((d, L) => d + L.duration, 0); rt.traffic = Math.round(f * 100) / 100;
+  return rt;
+}
 const dispName = (n) => String(n || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase()).replace(/\b(Ave|St|Rd|Blvd|Pl|Expy|Expwy|Pkwy|Hwy|Brg|Br|Dr|Ln|Ct|Ter)\b/g, (m) => m)
   .replace(/\bFdr\b/, "FDR").replace(/\bBqe\b/, "BQE").replace(/\bLie\b/, "LIE").replace(/\b(\d+)(St|Nd|Rd|Th)\b/g, (m, a, b) => a + b.toLowerCase());
 const RAMPNAME = /\b(EN|ET|EXIT|ENT|ENTRANCE|APPR|APPROACH|RAMP)\b/i;
@@ -406,7 +432,8 @@ function netSteps(path) {
       if (g.ramp) type = g.fast && !groups[i - 1].fast ? "on ramp" : groups[i - 1].fast && !g.fast ? "off ramp" : "fork";
       else if (type === "continue") type = "new name";
     }
-    return { distance: g.len, duration: g.dur, name: g.label, maneuver: { type, modifier, location: g.pts[0], bearing_after: Math.round(brgStart(g.pts)) }, intersections: [{ location: g.pts[0] }] };
+    const extra = (TURN_DELAY[type] ?? 0) + (modifier === "uturn" ? 25 : 0) + (!g.fast ? (g.len / 1000) * 35 : 0); // ~35 s per km of lights on city streets
+    return { rova: true, distance: g.len, duration: g.dur + extra, name: g.label, maneuver: { type, modifier, location: g.pts[0], bearing_after: Math.round(brgStart(g.pts)) }, intersections: [{ location: g.pts[0] }] };
   });
 }
 // Cut an engine route into pieces by distance along it
@@ -534,7 +561,7 @@ async function tomtom(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
 async function tomtomOnce(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
   const loc = points.map((x) => `${x.p[1].toFixed(6)},${x.p[0].toFixed(6)}`).join(":");
   const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: veh.car ? "car" : "truck", traffic: "true", routeType: "fastest",
-    instructionsType: "text", language: "en-US", routeRepresentation: "polyline" });
+    instructionsType: "text", language: "en-US", routeRepresentation: "polyline", computeTravelTimeFor: "all" });
   if (!veh.car) q.set("vehicleCommercial", "true");
   if (veh.car) veh = {}; // plain car route: used only to spot crazy truck detours
   if (veh.h) q.set("vehicleHeight", (veh.h * 0.3048).toFixed(2));
@@ -580,7 +607,7 @@ function fromTomTom(rt, points, keepIdx) {
       maneuver: { type, modifier, location: loc, exit: x.roundaboutExitNumber || undefined, bearing_after: 0 }, intersections: [{ location: loc }] });
   });
   for (const L of legs) { L.distance = L.steps.reduce((s, x) => s + x.distance, 0); L.duration = L.steps.reduce((s, x) => s + x.duration, 0); }
-  return { geometry: { coordinates: coords }, distance: total, duration: ttot, legs, live: true, trafficDelay: rt.summary.trafficDelayInSeconds || 0, engine: "tomtom" };
+  return { geometry: { coordinates: coords }, distance: total, duration: ttot, legs, live: true, trafficDelay: rt.summary.trafficDelayInSeconds || 0, noTraffic: rt.summary.noTrafficTravelTimeInSeconds || null, engine: "tomtom" };
 }
 // One leg per real stop (via points are silent even if the engine split legs at them)
 function normalize(rt, n, keepIdx) {
@@ -638,18 +665,23 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const early = null;
   // NYC-only trips: Rova's own truck-map route starts right away, alongside the engine's
   const ownP = allIn && stops.length === 2 ? ownRoute(stops, veh, null, okBoros, avoidRe, ttMs, (out.attempts ||= [])).catch((e) => { logErr("own route: " + e.message); return null; }) : null;
+  // the engine's own route (with live traffic) runs alongside; its traffic factor also times Rova's NYC routes
+  const plainP = TOMTOM_KEY ? tomtom(P, K, veh, long ? 0 : 2, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; }) : Promise.resolve(null);
+  const factorOf = (list) => { const r = list?.[0]; return r?.noTraffic ? Math.min(2.5, Math.max(1, r.duration / r.noTraffic)) : null; };
+  const trafficNow = async (wait) => { const list = await Promise.race([plainP, new Promise((ok) => setTimeout(() => ok(undefined), wait))]); return { f: factorOf(list) || todFactor(), live: !!factorOf(list) }; };
   // NYC-only trip and Rova's own truck-map route is fully legal and sensible? Use it right away.
   if (ownP) {
     const mine = await ownP;
+    if (mine) { const tf = await trafficNow(6000); applyTraffic(mine, tf.f); mine.liveTraffic = tf.live; }
     if (mine) {
       const c = addRules(check(mine.geometry.coordinates, stepsAt(mine)), mine, veh, stops), crowM = distM(stops[0], stops[1]);
       out.attempts.push({ pass: "own-first", mi: Math.round(mine.distance / 160.9) / 10, pct: c.pctOnNetwork, verdict: c.verdict, off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
-      if (c.verdict === "ok" && !c.parkways.length && !c.blocked?.length && mine.distance <= crowM * 3 + 10000) { out.best = { route: mine, compliance: c }; return out.best; }
+      const offOwn = c.offRoute.reduce((a, o) => a + o.meters, 0);
+      if ((c.verdict === "ok" || offOwn <= 500) && !c.parkways.length && !c.blocked?.length && mine.distance <= crowM * 3 + 10000) { out.best = { route: mine, compliance: c }; return out.best; }
       out.ownCand = { route: mine, compliance: c };
     }
   }
-  let cands;
-  if (TOMTOM_KEY) cands = await tomtom(P, K, veh, long ? 0 : 2, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; });
+  let cands = await plainP;
   if (!cands) cands = [await osrm(P, K)];
   const offOf = (c) => c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 100000 + (c.blocked?.length || 0) * 50000;
   const scored = cands.map((rt) => {
@@ -706,7 +738,8 @@ async function truckRoute(stops, veh = {}, out = {}) {
   if (!firstIn) return { route: plain, compliance: addRules({ ...check(pc, stepsAt(plain)), verdict: "outside" }, plain, veh, stops) };
   // Rova's own NYC route on the official truck map: use it whenever it's legal and the engine's isn't
   try {
-    const mine = ownP ? out.ownCand?.route : await ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, (out.attempts ||= []));
+    let mine = ownP ? out.ownCand?.route : await ownRoute(stops, veh, plain, okBoros, avoidRe, ttMs, (out.attempts ||= []));
+    if (mine && !ownP) { const f = factorOf([plain]) || todFactor(); mine = applyTrafficNyc(mine, f); }
     if (mine) {
       const c = addRules(check(mine.geometry.coordinates, stepsAt(mine)), mine, veh, stops);
       const offOwn = c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 100000 + (c.blocked?.length || 0) * 50000;
