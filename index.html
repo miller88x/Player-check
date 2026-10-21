@@ -253,6 +253,10 @@ ul.tix li{background:var(--ui);border-radius:12px;padding:12px 14px;display:grid
 .links{display:flex;gap:14px;font-size:14px;flex-wrap:wrap}
 a{color:var(--blue)}
 .note{color:var(--muted);font-size:12px}
+.adslot{display:flex;gap:12px;align-items:center;background:var(--ui);border:1px solid var(--ui2);border-radius:14px;padding:12px 14px;margin-top:4px;min-height:56px}
+.adslot .adtxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.adslot .adtxt small{color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.adslot .adtxt b{font-size:15px}.adslot .adtxt span{color:var(--muted);font-size:13px}.adslot button{all:unset;cursor:pointer;flex:none;background:var(--ui2);color:var(--blue);font-weight:700;font-size:14px;border-radius:18px;padding:8px 14px}
+.results .adslot{margin:8px 4px}
 .upsell{background:linear-gradient(135deg,#1f2a3a,#202124);border:1px solid #33415c;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}.upsell b{font-size:17px}.upsell span{color:var(--muted);font-size:14px}
 .planpick{all:unset;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--ui);border:2px solid transparent;border-radius:14px;padding:12px 14px}
 .planpick.best{border-color:var(--blue)}.planpick span{display:flex;flex-direction:column;gap:2px;min-width:0}.planpick small{color:var(--muted);font-size:12px;font-weight:400}
@@ -1014,7 +1018,7 @@ let sheetMode = null;
 const TAB_FOR = { plate: "plateBtn", tickets: "plateBtn", alerts: "plateBtn", dispute: "plateBtn", letter: "plateBtn", park: "parkBtn", parked: "parkBtn", report: "reportBtn", account: "youBtn" };
 function setTab(mode) { const id = TAB_FOR[mode] || "tabExplore"; document.querySelectorAll(".tab").forEach((t) => (t.id === id ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"))); }
 function openSheet(t, html, mode = null) {
-  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); }
+  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
 function closeSheet() {
   $("#sheet").classList.remove("show");
   if (sheetMode === "route" && !nav.active) clearRoute();
@@ -1184,6 +1188,7 @@ function renderResults(q, list, local, loading) {
   const rows = [...local.map((r, i) => rowHTML(r, i, "data-li", CLOCK_ICO)), ...remote.map((r, i) => rowHTML(r, i, "data-i", PIN_ICO))].join("");
   $("#results").innerHTML = (loading ? '<div class="sload"></div>' : "") + (rows || (loading ? "" : '<p class="muted" style="padding:16px 4px">No places found. Try a different name or address.</p>'));
   $("#results").hidden = false;
+  if (!loading && rows) placeAd($("#results"), "search");
   wireFill();
   document.querySelectorAll("#results [data-li]").forEach((b) => (b.onclick = () => { const r = local[+b.dataset.li]; showPlace(r.label ? { name: r.label, line: r.name, at: r.at } : r); }));
   document.querySelectorAll("#results [data-i]").forEach((b) => (b.onclick = () => showPlace(remote[+b.dataset.i])));
@@ -2845,6 +2850,60 @@ function accountSheet(mode) {
   };
 }
 
+
+// ================= ADS (free plan, stop screens only) =================
+// Never while navigating or moving, never for paid plans. Local deals come from the server (ads.json);
+// in the App Store / Google Play builds AdMob fills this same spot when no local deal matches.
+const AD_MODES = new Set(["tickets", "parked", "park", "route", "cat"]);
+const adsOn = () => myPlan() === "free" && !nav.active && !(speedMps > 3);
+let adCache = null, houseTurn = 0;
+async function getAd() {
+  if (adCache && Date.now() - adCache.at < 5 * 60 * 1000) return adCache.ad;
+  const q = me ? `?lat=${me.lat ?? me[1]}&lng=${me.lng ?? me[0]}` : "";
+  const j = await fetch(`/api/ads${q}`).then((r) => r.json()).catch(() => ({ ad: null }));
+  adCache = { ad: j.ad || null, at: Date.now() };
+  return adCache.ad;
+}
+async function placeAd(host, where) {
+  if (!adsOn() || !host) return;
+  const ad = await getAd();
+  if (!adsOn() || host.querySelector(".adslot") || (where !== "search" && !$("#sheet").classList.contains("show"))) return;
+  const el = document.createElement("div"); el.className = "adslot";
+  if (ad) {
+    el.innerHTML = `<div class="adtxt"><small>Sponsored${ad.dist != null ? ` · ${ad.dist} mi` : ""}</small><b>${esc(ad.name)}</b><span>${esc(ad.text)}</span></div><button type="button">${esc(ad.cta)}</button>`;
+    el.querySelector("button").onclick = () => {
+      if (ad.hasUrl) return window.open(`/api/ads/tap?id=${encodeURIComponent(ad.id)}`, "_blank", "noopener");
+      fetch("/api/ads/count", { method: "POST", body: JSON.stringify({ id: ad.id }) }).catch(() => {});
+      if (ad.phone) location.href = `tel:${ad.phone}`;
+      else if (ad.at) planRoute({ name: ad.name, line: ad.text, at: [ad.at.lng, ad.at.lat] });
+    };
+  } else if (houseTurn++ % 2 === 0) {
+    el.innerHTML = `<div class="adtxt"><small>Rova</small><b>Drive without ads</b><span>Bronze: no ads plus AI voices · $4.99/mo</span></div><button type="button">See plans</button>`;
+    el.querySelector("button").onclick = () => (account ? plansSheet() : accountSheet());
+  } else {
+    el.innerHTML = `<div class="adtxt"><small>Rova</small><b>Own a local business?</b><span>Reach drivers near your shop on Rova</span></div><button type="button">Advertise</button>`;
+    el.querySelector("button").onclick = advertiseSheet;
+  }
+  host.append(el);
+}
+function advertiseSheet() {
+  openSheet("Advertise on Rova", `
+    <p class="note">Mechanics, car washes, garages, tire shops: show up for drivers near you, only when they're stopped.</p>
+    <form id="adF" style="display:flex;flex-direction:column;gap:12px">
+      <label class="lb">Business name<input class="inp" id="adB" required maxlength="80"></label>
+      <label class="lb">Phone or email<input class="inp" id="adC" required maxlength="80" autocomplete="email"></label>
+      <label class="lb">Neighborhood<input class="inp" id="adA" maxlength="80" placeholder="e.g. Astoria, Queens"></label>
+      <button class="btn primary" type="submit" id="adGo">Send</button>
+    </form>`, "advertise");
+  $("#adF").onsubmit = async (e) => {
+    e.preventDefault(); $("#adGo").disabled = true;
+    try {
+      await api("/api/ads/lead", { method: "POST", body: JSON.stringify({ business: $("#adB").value, contact: $("#adC").value, area: $("#adA").value }) });
+      openSheet("Thanks!", `<div class="alert go"><b>Got it</b>We'll reach out within a day with pricing.</div><button class="btn primary" type="button" id="ok">Done</button>`, "advertise");
+      $("#ok").onclick = () => closeSheet();
+    } catch (err) { $("#adGo").disabled = false; alert2(err.message); }
+  };
+}
 
 // ================= UPGRADE CARD (free -> Silver) =================
 // Free: 1 plate, checked daily, new-ticket alerts. Silver+: early penalty warnings and AI disputes.
