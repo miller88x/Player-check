@@ -417,7 +417,29 @@ const TT_MAN = {
   MOTORWAY_EXIT_LEFT: ["off ramp", "slight left"], MOTORWAY_EXIT_RIGHT: ["off ramp", "slight right"], TAKE_FERRY: ["continue", "straight"],
   ROUNDABOUT_CROSS: ["roundabout", "straight"], ROUNDABOUT_RIGHT: ["roundabout", "right"], ROUNDABOUT_LEFT: ["roundabout", "left"], ROUNDABOUT_BACK: ["roundabout", "uturn"],
 };
+// TomTom allows only a few requests per second: queue them (max 4 at once, ~4 per second) and retry when told to slow down
+const ttGate = { busy: 0, last: [], q: [] };
+function ttSlot() {
+  return new Promise((go) => {
+    const tryGo = () => {
+      const now = Date.now(); ttGate.last = ttGate.last.filter((t) => now - t < 1000);
+      if (ttGate.busy < 4 && ttGate.last.length < 4) { ttGate.busy++; ttGate.last.push(now); go(() => { ttGate.busy--; const n = ttGate.q.shift(); if (n) setTimeout(n, 0); }); }
+      else { ttGate.q.push(tryGo); setTimeout(() => { const i = ttGate.q.indexOf(tryGo); if (i >= 0) { ttGate.q.splice(i, 1); tryGo(); } }, 260); }
+    };
+    tryGo();
+  });
+}
 async function tomtom(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
+  const until = Date.now() + ms;
+  for (let k = 0; ; k++) {
+    const done = await ttSlot();
+    try { return await tomtomOnce(points, keepIdx, veh, alts, Math.max(3000, until - Date.now())); }
+    catch (e) { if (!/rate limit|429|Too Many/i.test(e.message) || k >= 3 || until - Date.now() < 4000) throw e; }
+    finally { done(); }
+    await new Promise((ok) => setTimeout(ok, 700 * (k + 1)));
+  }
+}
+async function tomtomOnce(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
   const loc = points.map((x) => `${x.p[1].toFixed(6)},${x.p[0].toFixed(6)}`).join(":");
   const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: veh.car ? "car" : "truck", traffic: "true", routeType: "fastest",
     instructionsType: "text", language: "en-US", routeRepresentation: "polyline" });
@@ -518,7 +540,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   // Ask for alternatives too: the "fastest" truck route can backtrack miles to save a minute; drivers want the sensible one.
   const P = stops.map((p) => ({ p })), K = stops.map((_, i) => i);
   // For heavy trucks also ask (at the same time) for the route without weight/axle limits, to catch huge detours
-  const lightP = TOMTOM_KEY ? tomtom(P, K, { car: true }, 0, ttMs).catch((e) => { logErr("TomTom car check: " + e.message); return null; }) : null;
+  const lightP = TOMTOM_KEY ? { then: (f) => tomtom(P, K, { car: true }, 0, Math.max(5000, timeLeft() - 4000)).catch((e) => { logErr("TomTom car check: " + e.message); return null; }).then(f) } : null; // only asked when needed
   // NYC trips: start the truck-network route right away, in parallel with the plain one (saves ~10 s)
   const allIn = state.status === "ready" && stops.every((p) => boroAt(p));
   let early = null;
