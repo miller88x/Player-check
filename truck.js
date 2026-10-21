@@ -634,13 +634,28 @@ function routes(url, res, send, readBody, req) {
       ["Upper West Side -> Fort Lee NJ", [-73.9754, 40.7870], [-73.9701, 40.8509]],
       ["East NY -> Philadelphia", [-73.8966, 40.674], [-75.1652, 39.9526]],
     ];
+    const US = [
+      ["Brooklyn -> Boston", [-73.95, 40.68], [-71.0589, 42.3601]],
+      ["Bronx Hunts Point -> Baltimore", [-73.8803, 40.8095], [-76.6122, 39.2904]],
+      ["Newark NJ -> Pittsburgh", [-74.1724, 40.7357], [-79.9959, 40.4406]],
+      ["Philadelphia -> Washington DC", [-75.1652, 39.9526], [-77.0369, 38.9072]],
+      ["Chicago -> Indianapolis", [-87.6298, 41.8781], [-86.1581, 39.7684]],
+      ["Atlanta -> Charlotte", [-84.388, 33.749], [-80.8431, 35.2271]],
+      ["Dallas -> Houston", [-96.797, 32.7767], [-95.3698, 29.7604]],
+      ["Los Angeles port -> Phoenix", [-118.2648, 33.7361], [-112.074, 33.4484]],
+      ["Memphis -> Nashville", [-90.049, 35.1495], [-86.7816, 36.1627]],
+      ["Denver -> Salt Lake City", [-104.9903, 39.7392], [-111.891, 40.7608]],
+      ["Seattle -> Portland", [-122.3321, 47.6062], [-122.6765, 45.5152]],
+      ["Jacksonville -> Miami", [-81.6557, 30.3322], [-80.1918, 25.7617]],
+    ];
+    const list = url.searchParams.get("set") === "us" ? US : T;
     const n = (k, d) => (url.searchParams.has(k) ? +url.searchParams.get(k) || 0 : d);
     const veh = { h: n("h", 13.5), w: n("w", 80000), l: n("l", 70), axles: n("ax", 5), hzc: n("hzc", 0) }; veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
     const rid = "s" + Math.random().toString(36).slice(2, 9), rows = [];
-    testRuns.set(rid, { status: "running", done: 0, of: T.length, rows });
+    testRuns.set(rid, { status: "running", done: 0, of: list.length, rows });
     (async () => {
       let k = 0;
-      const worker = async () => { while (k < T.length) { const [name, a, b] = T[k++]; const t0 = Date.now(); const out = {};
+      const worker = async () => { while (k < list.length) { const [name, a, b] = list[k++]; const t0 = Date.now(); const out = {};
         try {
           const r = await Promise.race([truckRoute([a, b], veh, out), new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), BUDGET + 3000))]);
           if (!r) throw new Error("timeout");
