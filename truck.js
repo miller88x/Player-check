@@ -652,6 +652,12 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const t0 = Date.now(), timeLeft = () => budget - (Date.now() - t0), ttMs = long ? 34000 : 20000;
   const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh, 0, Math.max(6000, Math.min(ttMs, timeLeft()))).catch((e) => { logErr("TomTom: " + e.message); return osrm(pts, keep); }) : osrm;
   if (state.status !== "ready" && state.status !== "loading") build(); // nationwide routing works meanwhile; NYC check needs the city map
+  // A trip touching NYC must be checked against the city truck map: wait for it to finish loading (right after a restart)
+  const nearNYC = (p) => p[0] > -74.3 && p[0] < -73.68 && p[1] > 40.48 && p[1] < 40.93;
+  if (state.status !== "ready" && stops.some(nearNYC)) {
+    for (let w = 0; w < 30 && state.status !== "ready"; w++) await new Promise((ok) => setTimeout(ok, 500));
+    if (state.status !== "ready") out.unchecked = true;
+  }
   const okBoros = new Set(stops.map(boroAt).filter(Boolean));
   const ban = banned(veh), banKeys = new Set(ban.map((c) => c.key));
   const avoidRe = ban.length ? new RegExp(ban.map((c) => c.re.source).join("|"), "i") : null;
@@ -666,7 +672,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   // NYC-only trips: Rova's own truck-map route starts right away, alongside the engine's
   const ownP = allIn && stops.length === 2 ? ownRoute(stops, veh, null, okBoros, avoidRe, ttMs, (out.attempts ||= [])).catch((e) => { logErr("own route: " + e.message); return null; }) : null;
   // the engine's own route (with live traffic) runs alongside; its traffic factor also times Rova's NYC routes
-  const plainP = TOMTOM_KEY ? tomtom(P, K, veh, long ? 0 : 2, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; }) : Promise.resolve(null);
+  const plainP = TOMTOM_KEY ? tomtom(P, K, veh, long ? 0 : 1, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; }) : Promise.resolve(null);
   const factorOf = (list) => { const r = list?.[0]; return r?.noTraffic ? Math.min(2.5, Math.max(1, r.duration / r.noTraffic)) : null; };
   const trafficNow = async (wait) => { const list = await Promise.race([plainP, new Promise((ok) => setTimeout(() => ok(undefined), wait))]); return { f: factorOf(list) || todFactor(), live: !!factorOf(list) }; };
   // NYC-only trip and Rova's own truck-map route is fully legal and sensible? Use it right away.
@@ -828,6 +834,9 @@ async function truckRoute(stops, veh = {}, out = {}) {
       if (!c.parkways.length && rt.distance <= plain.distance * 2 + 8000) { best = { route: rt, compliance: c }; out.best = best; }
     } catch (e) { out.attempts.push({ pass: "avoid-parkway", error: e.message }); }
   }
+  const dirty = (x) => x && (x.compliance.parkways.length || x.compliance.blocked?.length);
+  if (dirty(best) && !dirty(base)) { out.attempts.push({ pass: "clean-fallback" }); best = base; out.best = base; }
+  if (dirty(best) && out.ownCand && !dirty(out.ownCand)) { best = out.ownCand; out.best = best; }
   if (!best || (best.route.distance > Math.max(maxDist, baseDist * 1.6, baseDist + 15000) && !(base.compliance.parkways.length && !best.compliance.parkways.length))) { out.attempts.push({ pass: "sanity", fellBackTo: "engine route" }); out.best = base; return base; }
   return best;
 }
@@ -953,7 +962,7 @@ function routes(url, res, send, readBody, req) {
     const job = truckRoute(pts, veh, out);
     const t0 = Date.now();
     job.then((r) => logRun(pts, veh, r, out, t0), (e) => logRun(pts, veh, null, out, t0, e));
-    Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route, ...(out.heavyAlt ? [out.heavyAlt.route] : [])], compliance: { ...r.compliance, engine: r.route.engine || "basic", asOf: state.asOf },
+    Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route, ...(out.heavyAlt ? [out.heavyAlt.route] : [])], compliance: { ...r.compliance, ...(out.unchecked ? { verdict: "unchecked", reason: "NYC truck map still loading, try again in a minute" } : {}), engine: r.route.engine || "basic", asOf: state.asOf },
       altCompliance: out.heavyAlt ? { ...out.heavyAlt.compliance, engine: "tomtom", asOf: state.asOf, weightSafe: true } : undefined }))
       .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
     return true;
