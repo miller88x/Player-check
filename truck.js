@@ -53,7 +53,7 @@ async function build() {
     try {
       [meta, feats] = await Promise.all([
         getJSON("https://data.cityofnewyork.us/api/views/inkn-q76z.json", 30000).catch(() => null),
-        pageAll("https://data.cityofnewyork.us/resource/inkn-q76z.geojson?$select=the_geom,full_street_name,truck_route_type,trafdir,boroughcode,from_level_code,to_level_code&$where=truck_route_type IS NOT NULL"),
+        pageAll("https://data.cityofnewyork.us/resource/inkn-q76z.geojson?$select=the_geom,full_street_name,truck_route_type,trafdir,boroughcode,from_level_code,to_level_code,rw_type&$where=truck_route_type IS NOT NULL OR rw_type='9'"),
       ]);
       if (feats.length < 5000) throw new Error(`centerline gave ${feats.length} truck segments`);
     } catch (e) {
@@ -65,21 +65,26 @@ async function build() {
       ]);
     }
     const segs = [], nodes = [], nodeKey = new Map(), adj = [], grid = new Map(), ngrid = new Map();
+    const at = new Map(); // point -> node ids at that point (one per level)
     const node = (p, lvl) => {
-      const k = `${Math.round(p[0] / 2e-5)}|${Math.round(p[1] / 2e-5)}|${lvl || ""}`; // level keeps overpasses from joining streets below
+      const pk = `${Math.round(p[0] / 2e-5)}|${Math.round(p[1] / 2e-5)}`, k = `${pk}|${lvl || ""}`; // level keeps overpasses from joining streets below
       let i = nodeKey.get(k);
-      if (i == null) { i = nodes.length; nodes.push(p); nodeKey.set(k, i); adj.push([]); const c = ck(p[0], p[1]); (ngrid.get(c) || ngrid.set(c, []).get(c)).push(i); }
+      if (i == null) { i = nodes.length; nodes.push(p); nodeKey.set(k, i); adj.push([]); const c = ck(p[0], p[1]); (ngrid.get(c) || ngrid.set(c, []).get(c)).push(i); (at.get(pk) || at.set(pk, []).get(pk)).push(i); }
       return i;
     };
+    const RAMP = /\b(EN|ET|EXIT|ENT|ENTRANCE|APPR|APPROACH|RAMP)\b/i;
     let oneWay = 0;
     for (const f of feats) {
       const pr = f.properties || {};
       let type, street, boroName, dir = "TW", la = "", lb = "", ltd = "", restr = "";
       if (source === "centerline") {
-        type = TRUCK_TYPE[+pr.truck_route_type]; if (!type) continue;
         street = String(pr.full_street_name || "").trim(); boroName = BORO_CODE[+pr.boroughcode] || "";
+        const ramp = String(pr.rw_type) === "9" || RAMP.test(street);
+        type = TRUCK_TYPE[+pr.truck_route_type] || (String(pr.rw_type) === "9" && !/PKWY|PARKWAY|\bPKY\b/i.test(street) ? "Through" : null); if (!type) continue; // highway ramps connect truck highways (never parkway ramps)
         dir = String(pr.trafdir || "TW").toUpperCase(); if (dir === "NV") continue;
-        la = pr.from_level_code || ""; lb = pr.to_level_code || "";
+        // The city stores ramps at a different level than the bridge/highway they join (e.g. Verrazzano ramps 17, bridge 21):
+        // ramp ends join everything at that point
+        la = ramp ? "R" : pr.from_level_code || ""; lb = ramp ? "R" : pr.to_level_code || "";
       } else {
         type = /through/i.test(pr.routetype || "") ? "Through" : /limited/i.test(pr.routetype || "") ? "Limited Local" : "Local";
         street = String(pr.street || "").trim(); boroName = pr.boroname || ""; ltd = pr.ltdlocal || ""; restr = pr.restrictio || "";
@@ -104,6 +109,17 @@ async function build() {
         }
       }
     }
+    // link ramp ends to every road ending at the same point (tiny two-way connector)
+    let links = 0;
+    for (const ids of at.values()) {
+      if (ids.length < 2) continue;
+      const r = ids.filter((i) => nodeKey.get(`${Math.round(nodes[i][0] / 2e-5)}|${Math.round(nodes[i][1] / 2e-5)}|R`) === i);
+      if (!r.length) continue;
+      for (const a of r) for (const b of ids) if (a !== b) {
+        const id = segs.length; segs.push({ id, c: [nodes[a], nodes[b]], len: 1, street: "", type: "Through", boro: "", ltd: "", restr: "", fast: true, dir: "TW", a, b, link: true });
+        adj[a].push({ id, v: b }); adj[b].push({ id, v: a }); links++;
+      }
+    }
     const boros = [];
     for (const f of boro.features || []) for (const poly of polys(f.geometry)) {
       let minX = 180, minY = 90, maxX = -180, maxY = -90;
@@ -113,8 +129,8 @@ async function build() {
     if (segs.length < 1000) throw new Error(`only ${segs.length} truck segments loaded`);
     Object.assign(state, { segs, nodes, adj, grid, ngrid, boros, status: "ready", builtAt: new Date().toISOString(), source,
       asOf: meta?.rowsUpdatedAt ? new Date(meta.rowsUpdatedAt * 1000).toISOString().slice(0, 10) : null,
-      stats: { source, segments: segs.length, oneWay, nodes: nodes.length, miles: Math.round(segs.reduce((x, y) => x + y.len, 0) / 1609), boroughs: boros.length,
-        byType: segs.reduce((o, x) => ((o[x.type] = (o[x.type] || 0) + 1), o), {}) } });
+      stats: { source, segments: segs.filter((x) => !x.link).length, rampLinks: links, oneWay, nodes: nodes.length, miles: Math.round(segs.reduce((x, y) => x + (y.link ? 0 : y.len), 0) / 1609), boroughs: boros.length,
+        byType: segs.reduce((o, x) => (x.link ? o : ((o[x.type] = (o[x.type] || 0) + 1), o)), {}) } });
     console.log("truck network ready:", state.stats);
   } catch (e) { state.status = "error"; state.error = e.message; console.error("truck network:", e.message); setTimeout(build, 10 * 60 * 1000).unref(); }
 }
