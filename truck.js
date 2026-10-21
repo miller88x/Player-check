@@ -260,12 +260,12 @@ function viaPoints(path, step) {
 // FDNY (FMCSA hazmat route registry): explosives prohibited on the Verrazzano-Narrows Bridge.
 // "box" is the underwater/over-water part, so it's only matched where the route is outside every borough's land.
 const CROSSINGS = [
-  { key: "qmt", name: "Queens-Midtown Tunnel", re: /QUEENS.?MIDTOWN/i, box: [-73.972, 40.741, -73.947, 40.751], hazmat: true, maxH: 12 + 1 / 12 },
-  { key: "carey", name: "Hugh L. Carey Tunnel", re: /HUGH L\.? CAREY|BROOKLYN.?BATTERY/i, box: [-74.019, 40.689, -73.999, 40.704], hazmat: true, maxH: 12 + 1 / 12 },
-  { key: "holland", name: "Holland Tunnel", re: /HOLLAND TUNNEL/i, box: [-74.036, 40.722, -74.011, 40.732], hazmat: true },
-  { key: "lincoln", name: "Lincoln Tunnel", re: /LINCOLN TUNNEL/i, box: [-74.026, 40.756, -73.999, 40.768], hazmat: true },
+  { key: "qmt", name: "Queens-Midtown Tunnel", re: /QUEENS.?MIDTOWN/i, box: [-73.972, 40.741, -73.947, 40.751], water: [-73.966, 40.744, -73.961, 40.748], hazmat: true, maxH: 12 + 1 / 12 },
+  { key: "carey", name: "Hugh L. Carey Tunnel", re: /HUGH L\.? CAREY|BROOKLYN.?BATTERY/i, box: [-74.019, 40.689, -73.999, 40.704], water: [-74.012, 40.693, -74.007, 40.698], hazmat: true, maxH: 12 + 1 / 12 },
+  { key: "holland", name: "Holland Tunnel", re: /HOLLAND TUNNEL/i, box: [-74.036, 40.722, -74.011, 40.732], water: [-74.022, 40.725, -74.017, 40.729], hazmat: true },
+  { key: "lincoln", name: "Lincoln Tunnel", re: /LINCOLN TUNNEL/i, box: [-74.026, 40.756, -73.999, 40.768], water: [-74.013, 40.760, -74.008, 40.764], hazmat: true },
   { key: "gwblower", name: "George Washington Bridge lower level", re: /GEORGE WASHINGTON.*LOWER|LOWER LEVEL/i, box: null, hazmat: true },
-  { key: "verrazzano", name: "Verrazzano-Narrows Bridge", re: /VERRAZ+ANO/i, box: [-74.056, 40.598, -74.033, 40.616], explosives: true },
+  { key: "verrazzano", name: "Verrazzano-Narrows Bridge", re: /VERRAZ+ANO/i, box: [-74.056, 40.598, -74.033, 40.616], water: [-74.048, 40.604, -74.042, 40.610], explosives: true },
 ];
 const inBox = (p, b) => b && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
 function crossingsUsed(coords, steps) {
@@ -386,7 +386,7 @@ const TT_MAN = {
   MOTORWAY_EXIT_LEFT: ["off ramp", "slight left"], MOTORWAY_EXIT_RIGHT: ["off ramp", "slight right"], TAKE_FERRY: ["continue", "straight"],
   ROUNDABOUT_CROSS: ["roundabout", "straight"], ROUNDABOUT_RIGHT: ["roundabout", "right"], ROUNDABOUT_LEFT: ["roundabout", "left"], ROUNDABOUT_BACK: ["roundabout", "uturn"],
 };
-async function tomtom(points, keepIdx, veh = {}, alts = 0) {
+async function tomtom(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
   const loc = points.map((x) => `${x.p[1].toFixed(6)},${x.p[0].toFixed(6)}`).join(":");
   const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: veh.car ? "car" : "truck", traffic: "true", routeType: "fastest",
     instructionsType: "text", language: "en-US", routeRepresentation: "polyline" });
@@ -401,7 +401,10 @@ async function tomtom(points, keepIdx, veh = {}, alts = 0) {
   if (veh.axles) q.set("vehicleNumberOfAxles", String(veh.axles));
   if (alts) q.set("maxAlternatives", String(alts));
   const url = `https://api.tomtom.com/routing/1/calculateRoute/${loc}/json?${q}${veh.hzc ? `&vehicleLoadType=USHazmatClass${veh.hzc}` : ""}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  // Tunnels/bridges this truck may not use (too low, hazmat, explosives): TomTom's own data misses some (e.g. Queens-Midtown 12'1"),
+  // so tell it to avoid them outright. Boxes cover only the water, never streets on shore.
+  const rects = veh.car ? [] : banned(veh).filter((c) => c.water).map((c) => ({ southWestCorner: { latitude: c.water[1], longitude: c.water[0] }, northEastCorner: { latitude: c.water[3], longitude: c.water[2] } }));
+  const r = await fetch(url, rects.length ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ avoidAreas: { rectangles: rects } }), signal: AbortSignal.timeout(ms) } : { signal: AbortSignal.timeout(ms) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.routes?.length) throw new Error(j.error?.description || j.detailedError?.message || `TomTom ${r.status}`);
   return alts ? j.routes.map((rt) => fromTomTom(rt, points, keepIdx)) : fromTomTom(j.routes[0], points, keepIdx);
@@ -470,9 +473,11 @@ function addRules(c, rt, veh, stops) {
 const ENTRY = [{ name: "George Washington Bridge (upper level)", p: [-73.9527, 40.8517] }, { name: "Goethals Bridge", p: [-74.1975, 40.6356] },
   { name: "Bayonne Bridge", p: [-74.1422, 40.6421] }, { name: "Outerbridge Crossing", p: [-74.2296, 40.5246] }, { name: "Throgs Neck Bridge", p: [-73.7942, 40.8007] }];
 const BUDGET = 22000; // answer within ~25 s with the best verified route so far
+const budgetFor = (stops) => (stops.slice(1).reduce((d, p, i) => d + distM(stops[i], p), 0) > 80000 ? 38000 : BUDGET); // long hauls get more time
 async function truckRoute(stops, veh = {}, out = {}) {
-  const t0 = Date.now(), timeLeft = () => BUDGET - (Date.now() - t0);
-  const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh).catch((e) => { logErr("TomTom: " + e.message); return osrm(pts, keep); }) : osrm;
+  const long = budgetFor(stops) > BUDGET, budget = budgetFor(stops);
+  const t0 = Date.now(), timeLeft = () => budget - (Date.now() - t0), ttMs = long ? 34000 : 20000;
+  const engine = TOMTOM_KEY ? (pts, keep) => tomtom(pts, keep, veh, 0, Math.max(6000, Math.min(ttMs, timeLeft()))).catch((e) => { logErr("TomTom: " + e.message); return osrm(pts, keep); }) : osrm;
   if (state.status !== "ready" && state.status !== "loading") build(); // nationwide routing works meanwhile; NYC check needs the city map
   const okBoros = new Set(stops.map(boroAt).filter(Boolean));
   const ban = banned(veh), banKeys = new Set(ban.map((c) => c.key));
@@ -481,9 +486,17 @@ async function truckRoute(stops, veh = {}, out = {}) {
   // Ask for alternatives too: the "fastest" truck route can backtrack miles to save a minute; drivers want the sensible one.
   const P = stops.map((p) => ({ p })), K = stops.map((_, i) => i);
   // For heavy trucks also ask (at the same time) for the route without weight/axle limits, to catch huge detours
-  const lightP = TOMTOM_KEY ? tomtom(P, K, { car: true }).catch((e) => { logErr("TomTom car check: " + e.message); return null; }) : null;
+  const lightP = TOMTOM_KEY ? tomtom(P, K, { car: true }, 0, ttMs).catch((e) => { logErr("TomTom car check: " + e.message); return null; }) : null;
+  // NYC trips: start the truck-network route right away, in parallel with the plain one (saves ~10 s)
+  const allIn = state.status === "ready" && stops.every((p) => boroAt(p));
+  let early = null;
+  if (allIn && TOMTOM_KEY) {
+    const pts = [{ p: stops[0] }], keep = [0]; let ok = true;
+    for (let k = 1; k < stops.length && ok; k++) { const path = netPath(stops[k - 1], stops[k], okBoros, avoidRe); if (!path) ok = false; else for (const v of viaPoints(path, 600).pts) pts.push(v); pts.push({ p: stops[k] }); keep.push(pts.length - 1); }
+    if (ok && pts.length <= 140) early = engine(pts, keep).then((rt) => ({ rt, n: pts.length })).catch(() => null);
+  }
   let cands;
-  if (TOMTOM_KEY) cands = await tomtom(P, K, veh, 2).catch((e) => { logErr("TomTom: " + e.message); return null; });
+  if (TOMTOM_KEY) cands = await tomtom(P, K, veh, long ? 0 : 2, ttMs).then((x) => (Array.isArray(x) ? x : [x])).catch((e) => { logErr("TomTom: " + e.message); return null; });
   if (!cands) cands = [await osrm(P, K)];
   const offOf = (c) => c.offRoute.reduce((a, o) => a + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
   const scored = cands.map((rt) => {
@@ -562,7 +575,19 @@ async function truckRoute(stops, veh = {}, out = {}) {
   const offM = (c) => c.offRoute.reduce((s, o) => s + o.meters, 0) + c.parkways.length * 5000 + (c.blocked?.length || 0) * 50000;
   let best = out.best;
   const maxPts = plain.engine === "tomtom" ? 140 : 95;
+  let skip600 = false;
+  if (early) {
+    const e = await early;
+    if (e) {
+      const c = addRules(check(e.rt.geometry.coordinates, stepsAt(e.rt)), e.rt, veh, stops);
+      (out.attempts ||= []).push({ pass: "early-600", points: e.n, pct: c.pctOnNetwork, offM: offM(c), off: c.offRoute.map((o) => `${o.street} ${o.meters}m`), secs: (Date.now() - t0) / 1000 });
+      if ((!best || offM(c) < offM(best.compliance)) && e.rt.distance <= Math.min(plain.distance * 1.15, maxDist)) { best = { route: e.rt, compliance: c }; out.best = best; }
+      skip600 = true;
+    }
+  }
   for (const step of [600, 300]) {
+    if (step === 600 && skip600) continue;
+    if (best && best.compliance.verdict === "ok") break;
     if (timeLeft() < (step === 600 ? 6000 : 9000)) break; // not enough time for another full pass
     let { pts, keep } = make(step);
     if (pts.length > maxPts) { if (step !== 600) break; ({ pts, keep } = make(1200)); if (pts.length > maxPts) break; }
@@ -657,7 +682,7 @@ function routes(url, res, send, readBody, req) {
       let k = 0;
       const worker = async () => { while (k < list.length) { const [name, a, b] = list[k++]; const t0 = Date.now(); const out = {};
         try {
-          const r = await Promise.race([truckRoute([a, b], veh, out), new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), BUDGET + 3000))]);
+          const r = await Promise.race([truckRoute([a, b], veh, out), new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), budgetFor([a, b]) + 3000))]);
           if (!r) throw new Error("timeout");
           const c = r.compliance, crow = distM(a, b), np = (out.attempts || []).find((x) => x.pass === "netPath");
           rows.push({ name, mi: Math.round(r.route.distance / 160.9) / 10, crowMi: Math.round(crow / 160.9) / 10, ratio: Math.round((r.route.distance / crow) * 100) / 100, min: Math.round(r.route.duration / 60),
@@ -716,7 +741,7 @@ function routes(url, res, send, readBody, req) {
       hzc: hzc || (hzOld === 2 ? 1 : hzOld === 1 ? 3 : 0) };
     veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
     const out = {};
-    const timer = new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), BUDGET + 3000));
+    const timer = new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), budgetFor(pts) + 3000));
     const job = truckRoute(pts, veh, out);
     const t0 = Date.now();
     job.then((r) => logRun(pts, veh, r, out, t0), (e) => logRun(pts, veh, null, out, t0, e));
