@@ -314,6 +314,13 @@ http
     }
 
     if (legal.routes(url, res, send)) return;
+    // Garage booking: SpotHero. Set SPOTHERO_LINK on Render to the FlexOffers partner link (with {lat} {lng}) once approved
+    if (url.pathname === "/api/garage") {
+      const lat = (+url.searchParams.get("lat")).toFixed(5), lng = (+url.searchParams.get("lng")).toFixed(5);
+      const tpl = process.env.SPOTHERO_LINK || "https://spothero.com/search?latitude={lat}&longitude={lng}";
+      console.log("garage click", lat, lng);
+      res.writeHead(302, { Location: tpl.replace("{lat}", lat).replace("{lng}", lng), "Cache-Control": "no-store" }); return res.end();
+    }
     // AdMob checks this file on the developer website listed in the app stores
     if (url.pathname === "/app-ads.txt") return send(res, 200, "google.com, pub-2690587342980831, DIRECT, f08c47fec0942fa0\n", "text/plain", "public, max-age=86400");
     if (url.pathname === "/health") return send(res, 200, { ok: true });

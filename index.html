@@ -1495,10 +1495,10 @@ $("#nearbyChip").onclick = () => {
   openSheet("Nearby", `<div class="catgrid">${Object.keys(CATS).map((k) => `<button type="button" data-cat="${k}"><i>${CAT_ICON[k]}</i>${CATS[k][2]}</button>`).join("")}</div>`, "cat");
   document.querySelectorAll("[data-cat]").forEach((b) => (b.onclick = () => catSearch(b.dataset.cat)));
 };
-async function catSearch(key) {
+async function catSearch(key, near) {
   const b = { textContent: CAT_ICON[key] };
   const [q, tag, label] = CATS[key];
-  const c = me || [map.getCenter().lng, map.getCenter().lat];
+  const c = near || me || [map.getCenter().lng, map.getCenter().lat];
   openSheet(label, '<p class="muted" style="margin:0">Finding the closest ones…</p>', "cat");
   try {
     const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&osm_tag=${tag}&lat=${c[1]}&lon=${c[0]}&limit=25&lang=en&bbox=${[c[0] - 0.18, c[1] - 0.14, c[0] + 0.18, c[1] + 0.14].map((v) => v.toFixed(4)).join(",")}`)).json();
@@ -1514,10 +1514,13 @@ async function catSearch(key) {
       catMarkers.push(new maplibregl.Marker({ element: el }).setLngLat(r.at).addTo(map)); bb.extend(r.at);
     });
     map.fitBounds(bb, { padding: { top: 170, bottom: Math.round(innerHeight * 0.5), left: 40, right: 40 }, maxZoom: 16, duration: 700 });
-    $("#sheetBody").innerHTML = `<ul class="tix">${list.map((r, i) => `<li data-ci="${i}" style="grid-template-columns:1fr auto"><span class="vio">${esc(r.name)}</span><span class="meta" style="text-align:right">${fmtDist(r.d)}</span><span class="meta" style="grid-column:1/-1">${esc(r.line)}</span></li>`).join("")}</ul>`;
+    $("#sheetBody").innerHTML = (key === "parking" ? garageBtn(c) : "") + `<ul class="tix">${list.map((r, i) => `<li data-ci="${i}" style="grid-template-columns:1fr auto"><span class="vio">${esc(r.name)}</span><span class="meta" style="text-align:right">${fmtDist(r.d)}</span><span class="meta" style="grid-column:1/-1">${esc(r.line)}</span></li>`).join("")}</ul>`;
     document.querySelectorAll("[data-ci]").forEach((li) => (li.onclick = () => { clearCats(); showPlace(list[+li.dataset.ci]); }));
-  } catch { $("#sheetBody").innerHTML = '<p class="muted" style="margin:0">Search is not reachable right now. Try again.</p>'; }
+  } catch { $("#sheetBody").innerHTML = (key === "parking" ? garageBtn(c) : "") + '<p class="muted" style="margin:0">Search is not reachable right now. Try again.</p>'; }
 }
+// ---- Garages: when the street says no, reserve a garage (SpotHero; Rova's partner link goes through the server) ----
+const garageBtn = (at) => `<a class="btn primary" style="text-decoration:none;display:flex;align-items:center;justify-content:center" href="/api/garage?lat=${at[1].toFixed(5)}&lng=${at[0].toFixed(5)}" target="_blank" rel="noopener">${parkBadge(18).replace("#1a73e8", "rgba(255,255,255,.28)")}Reserve a garage spot nearby</a>`;
+function garageSheet(at) { catSearch("parking", at); }
 
 function showPlace(r) {
   const ps = pendingSave; exitSearch(); pendingSave = ps;
@@ -2309,7 +2312,8 @@ function paintRouteExtras(to) {
   destParking(to).then((j) => {
     const el = $("#rxPark"); if (!el || !j) return;
     const dot = { green: "#1e8e3e", yellow: "#f29900", red: "#d93025" }[j.status] || "#9aa0a6";
-    el.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot}"></span> <b>Parking there:</b>&nbsp;${esc(j.headline)}`;
+    el.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot}"></span> <b>Parking there:</b>&nbsp;${esc(j.headline)}${j.status === "red" ? ` · <a href="#" id="rxGarage" style="color:var(--blue)">garages nearby</a>` : ""}`;
+    $("#rxGarage")?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); garageSheet(to.at); });
     el.style.cursor = "pointer"; el.onclick = () => parkCheck(to.at, true);
   });
 }
@@ -3146,9 +3150,11 @@ async function parkCheck(at, fromTap, curb) {
       ${j.rulesElse?.length && curb?.s !== "red" ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${payBlock(j)}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
+      ${j.status === "red" || j.status === "yellow" ? `<button class="btn" type="button" id="garagesNear">${parkBadge(18)}Garages nearby</button>` : ""}
       <button class="btn" type="button" data-signcam>${ico("camera")}Read the sign with your camera</button>
       <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Press and hold anywhere on the map to drop a pin there."}</p>`, "park");
     $("#parkHere")?.addEventListener("click", () => saveParked(j, at));
+    $("#garagesNear")?.addEventListener("click", () => garageSheet(at));
     document.querySelectorAll("[data-meter]").forEach((b) => (b.onclick = () => startMeter(j, at, +b.dataset.meter)));
   } catch (e) { openSheet("Can I park here?", `<div class="alert stop"><b>Couldn't check this spot</b>${esc(e.message || "Try again.")}</div>`, "park"); }
 }
