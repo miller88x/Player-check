@@ -3014,6 +3014,42 @@ function reportsAhead(pos, brg, R) {
 let checkMarker = null, signMarkers = [], parkedMarker = null, lastPark = null;
 const ICON_P = { green: "✓", yellow: "$", red: "✕", unknown: "?" };
 function clearCheck() { checkMarker?.remove(); checkMarker = null; signMarkers.forEach((m) => m.remove()); signMarkers = []; }
+// ---- Point the camera at a sign: AI reads it, Rova works out the answer for right now (Bronze and up) ----
+const camIn = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
+camIn.setAttribute("capture", "environment"); camIn.hidden = true; document.body.append(camIn);
+document.addEventListener("click", (e) => { if (e.target.closest("[data-signcam]")) signCam(); });
+function signCam() {
+  if (!account) return accountSheet();
+  if (myPlan() === "free") {
+    openSheet("Read signs with your camera", `<div class="upsell"><b>Point your camera at any parking sign</b><span>Rova reads every panel and tells you if you can park right now and until when. Part of Bronze and up.</span></div><button class="btn primary" type="button" id="seePlans">See plans</button><button class="btn" type="button" id="notNow">Not now</button>`, "upgrade");
+    $("#seePlans").onclick = plansSheet; $("#notNow").onclick = closeSheet; return;
+  }
+  camIn.value = ""; camIn.click();
+}
+camIn.onchange = async () => {
+  const f = camIn.files?.[0]; if (!f) return;
+  openSheet("Reading the sign…", '<p class="muted" style="margin:0">Reading every panel on the sign…</p>', "park");
+  try {
+    // Shrink to 1280 px so it uploads fast on LTE
+    const img = await createImageBitmap(f), k = Math.min(1, 1280 / Math.max(img.width, img.height));
+    const c = Object.assign(document.createElement("canvas"), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const j = await api("/api/park/photo", { method: "POST", body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.82) }) });
+    const moveTxt = j.moveBy ? new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
+    openSheet("Sign check", `
+      <div class="verdict huge ${j.status}"><div class="ic">${ICON_P[j.status] || "?"}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted">${esc(j.detail || "")}</div></div></div>
+      ${j.signs?.length ? `<div><b>What the sign says</b></div><ul class="rules">${j.signs.map((s) => `<li>${esc(s.text)}${s.arrow && s.arrow !== "none" ? ` <span class="muted">(arrow ${esc(s.arrow)})</span>` : ""}</li>`).join("")}</ul>` : ""}
+      ${j.arrowNote ? `<p class="note">${esc(j.arrowNote)}</p>` : ""}
+      ${j.status === "green" || j.status === "yellow" ? `<button class="btn primary" type="button" id="parkHereCam">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
+      <button class="btn" type="button" data-signcam>📷 Read another sign</button>
+      <p class="note">Read by AI from your photo. Double-check the sign, hydrants, driveways and bus stops.</p>`, "park");
+    $("#parkHereCam")?.addEventListener("click", async () => { let at; try { at = await getMe(6000); } catch { const m = map.getCenter(); at = [m.lng, m.lat]; } saveParked({ ...j, where: "Spot from sign photo" }, at); });
+  } catch (err) {
+    if (err.status === 402) return signCam();
+    openSheet("Couldn't read the sign", `<div class="alert stop"><b>Try again</b>${esc(err.message || "")}</div><button class="btn primary" type="button" data-signcam>📷 Take another photo</button>`, "park");
+  }
+};
+
 // Plain-words reason for each kind of red curb
 function curbReason(c) {
   if (c.hyd) return { h: "You can't park here: fire hydrant", d: "No parking within 15 feet of a hydrant, any time of day, even with no sign posted. The ticket is $115." };
@@ -3053,6 +3089,7 @@ async function parkCheck(at, fromTap, curb) {
       ${j.rulesElse?.length && curb?.s !== "red" ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${payBlock(j)}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
+      <button class="btn" type="button" data-signcam>📷 Read the sign with your camera</button>
       <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Press and hold anywhere on the map to drop a pin there."}</p>`, "park");
     $("#parkHere")?.addEventListener("click", () => saveParked(j, at));
     document.querySelectorAll("[data-meter]").forEach((b) => (b.onclick = () => startMeter(j, at, +b.dataset.meter)));

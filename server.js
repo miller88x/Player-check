@@ -20,6 +20,7 @@ const ads = require("./ads");
 const legal = require("./legal");
 const push = require("./push");
 const parkwatch = require("./parkwatch");
+const signphoto = require("./signphoto");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -299,6 +300,7 @@ http
     if (url.pathname.startsWith("/api/tts") && tts.routes(url, res, send, req)) return;
     if ((url.pathname.startsWith("/api/auth/") || url.pathname === "/api/me") && auth.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/reports") && reports.routes(url, res, send, readBody, req)) return;
+    if (url.pathname === "/api/park/photo" && signphoto.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/park") && park.routes(url, res, send)) return;
     if (url.pathname.startsWith("/api/dispute") && dispute.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/push/") && push.routes(url, res, send, req)) return;
