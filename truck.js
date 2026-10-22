@@ -536,6 +536,8 @@ const TT_MAN = {
   MOTORWAY_EXIT_LEFT: ["off ramp", "slight left"], MOTORWAY_EXIT_RIGHT: ["off ramp", "slight right"], TAKE_FERRY: ["continue", "straight"],
   ROUNDABOUT_CROSS: ["roundabout", "straight"], ROUNDABOUT_RIGHT: ["roundabout", "right"], ROUNDABOUT_LEFT: ["roundabout", "left"], ROUNDABOUT_BACK: ["roundabout", "uturn"],
 };
+// Free TomTom plan: 2,500 route requests a day. Car directions stop using it near the cap so truck routing keeps working.
+const ttDay = { d: "", n: 0, bump() { const d = new Date().toISOString().slice(0, 10); if (d !== this.d) { this.d = d; this.n = 0; } this.n++; }, left() { const d = new Date().toISOString().slice(0, 10); return d !== this.d ? 2500 : 2500 - this.n; } };
 // TomTom allows only a few requests per second: queue them (max 4 at once, ~4 per second) and retry when told to slow down
 const ttGate = { busy: 0, last: [], q: [] };
 function ttSlot() {
@@ -563,7 +565,11 @@ async function tomtomOnce(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
   const q = new URLSearchParams({ key: TOMTOM_KEY, travelMode: veh.car ? "car" : "truck", traffic: "true", routeType: "fastest",
     instructionsType: "text", language: "en-US", routeRepresentation: "polyline", computeTravelTimeFor: "all" });
   if (!veh.car) q.set("vehicleCommercial", "true");
-  if (veh.car) veh = {}; // plain car route: used only to spot crazy truck detours
+  // Car directions in the app: ask where the traffic is (and speed limits) along the route, and honor avoid tolls/highways
+  if (veh.car && veh.sections) for (const s of veh.sections) q.append("sectionType", s);
+  if (veh.car) for (const a of veh.avoid || []) q.append("avoid", a);
+  ttDay.bump();
+  if (veh.car) veh = {}; // car route: no truck limits
   if (veh.h) q.set("vehicleHeight", (veh.h * 0.3048).toFixed(2));
   if (veh.w) q.set("vehicleWeight", String(Math.round(veh.w * 0.4536)));
   // US rules limit the TRAILER (53 ft), not tractor + trailer. TomTom treats a 70 ft rig as over-length and sends it
@@ -584,8 +590,19 @@ async function tomtomOnce(points, keepIdx, veh = {}, alts = 0, ms = 20000) {
 }
 // TomTom answer -> the same shape the app already understands (legs split only at real stops)
 function fromTomTom(rt, points, keepIdx) {
-  const coords = [];
-  for (const lg of rt.legs || []) for (const p of lg.points || []) { const c = [p.longitude, p.latitude], l = coords[coords.length - 1]; if (!l || l[0] !== c[0] || l[1] !== c[1]) coords.push(c); }
+  const coords = [], at = []; // at[i] = where TomTom's point i landed in coords (repeats are dropped)
+  for (const lg of rt.legs || []) for (const p of lg.points || []) { const c = [p.longitude, p.latitude], l = coords[coords.length - 1]; if (!l || l[0] !== c[0] || l[1] !== c[1]) coords.push(c); at.push(coords.length - 1); }
+  // Traffic along the route: slow (orange), jam (red), closed (dark red), with the delay each one adds
+  const traffic = [], maxspeed = [];
+  for (const s of rt.sections || []) {
+    const a = at[s.startPointIndex], b = at[s.endPointIndex];
+    if (a == null || b == null || b <= a) continue;
+    if (s.sectionType === "TRAFFIC") {
+      const t = s.simpleCategory === "ROAD_CLOSURE" ? "closed" : s.magnitudeOfDelay === 3 || (s.simpleCategory === "JAM" && s.magnitudeOfDelay >= 2) ? "jam" : "slow";
+      if (s.simpleCategory === "ROAD_WORK" && !s.delayInSeconds) continue; // roadwork with no delay: nothing to show
+      traffic.push({ a, b, t, delay: s.delayInSeconds || 0, kmh: s.effectiveSpeedInKmh || null, work: s.simpleCategory === "ROAD_WORK" || undefined });
+    } else if (s.sectionType === "SPEED_LIMIT" && s.maxSpeedLimitInKmh) for (let i = a; i < b; i++) maxspeed[i] = { speed: s.maxSpeedLimitInKmh, unit: "km/h" };
+  }
   const ins = rt.guidance?.instructions || [], total = rt.summary.lengthInMeters, ttot = rt.summary.travelTimeInSeconds;
   const newLeg = () => ({ steps: [], distance: 0, duration: 0, annotation: { maxspeed: [] } });
   const legs = [newLeg()];
@@ -607,7 +624,8 @@ function fromTomTom(rt, points, keepIdx) {
       maneuver: { type, modifier, location: loc, exit: x.roundaboutExitNumber || undefined, bearing_after: 0 }, intersections: [{ location: loc }] });
   });
   for (const L of legs) { L.distance = L.steps.reduce((s, x) => s + x.distance, 0); L.duration = L.steps.reduce((s, x) => s + x.duration, 0); }
-  return { geometry: { coordinates: coords }, distance: total, duration: ttot, legs, live: true, trafficDelay: rt.summary.trafficDelayInSeconds || 0, noTraffic: rt.summary.noTrafficTravelTimeInSeconds || null, engine: "tomtom" };
+  if (maxspeed.length) { const ms = Array.from({ length: Math.max(0, coords.length - 1) }, (_, i) => maxspeed[i] || { unknown: true }); legs[0].annotation.maxspeed = ms; } // one list for the whole route
+  return { geometry: { coordinates: coords }, distance: total, duration: ttot, legs, live: true, traffic, trafficDelay: rt.summary.trafficDelayInSeconds || 0, noTraffic: rt.summary.noTrafficTravelTimeInSeconds || null, engine: "tomtom" };
 }
 // One leg per real stop (via points are silent even if the engine split legs at them)
 function normalize(rt, n, keepIdx) {
@@ -947,6 +965,19 @@ function routes(url, res, send, readBody, req) {
       roads: [...new Set(stepsAt(r.route).map((x) => x.name).filter(Boolean))].slice(0, 40) }))
       .catch((e) => testRuns.set(rid, { status: "error", error: e.message }));
     send(res, 200, { id: rid });
+    return true;
+  }
+  // Car directions with live traffic (the app falls back to the free engine if this fails or the daily quota is low)
+  if (url.pathname === "/api/truck/car") {
+    const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
+    if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
+    if (!TOMTOM_KEY || ttDay.left() < 300) { send(res, 503, { error: "live traffic unavailable" }); return true; }
+    const avoid = (url.searchParams.get("avoid") || "").split(",").map((x) => ({ tolls: "tollRoads", highways: "motorways" })[x]).filter(Boolean);
+    const P = pts.map((p) => ({ p })), K = pts.map((_, i) => i), alts = url.searchParams.get("alts") === "1" && pts.length === 2 ? 2 : 0;
+    const go = (sections) => tomtom(P, K, { car: true, sections, avoid }, alts, 9000);
+    go(["traffic", "speedLimit"]).catch((e) => (/sectionType|speedLimit|400/i.test(e.message) ? go(["traffic"]) : Promise.reject(e)))
+      .then((r) => send(res, 200, { code: "Ok", routes: Array.isArray(r) ? r : [r] }))
+      .catch((e) => { logErr("TomTom car: " + e.message); send(res, 502, { error: "live traffic unavailable" }); });
     return true;
   }
   if (url.pathname === "/api/truck/route") {

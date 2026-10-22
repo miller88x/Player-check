@@ -76,7 +76,8 @@ body.navigating #credit{bottom:calc(var(--safeB) + 96px)}
 #locBtn{bottom:calc(var(--safeB) + var(--tabH) + 92px);border-radius:18px;background:#303134}
 #dirBtn{bottom:calc(var(--safeB) + var(--tabH) + 18px);width:64px;height:64px;border-radius:20px;background:var(--teal)}
 #recenter{left:14px;right:auto;bottom:calc(var(--safeB) + 128px);width:auto;height:54px;border-radius:27px;padding:0 22px 0 18px;font:600 18px var(--body);color:#fff;background:#1f1f1f;display:none;z-index:15;gap:12px;grid-auto-flow:column;align-items:center}
-.layers{position:fixed;right:14px;top:calc(var(--safeT) + 204px);z-index:11;background:var(--ui);border-radius:18px;padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 16px rgba(0,0,0,.45);max-width:calc(100vw - 28px)}
+.layers{position:fixed;right:14px;top:calc(var(--safeT) + 204px);z-index:11;background:var(--ui);border-radius:18px;padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 16px rgba(0,0,0,.45);max-width:calc(100vw - 28px);max-height:calc(100vh - var(--safeT) - 204px - var(--safeB) - var(--tabH) - 16px);max-height:calc(100dvh - var(--safeT) - 204px - var(--safeB) - var(--tabH) - 16px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.layers > *{flex-shrink:0}
 .lhead{font:600 13px var(--body);color:var(--muted)}
 .lrow{display:flex;gap:10px}
 .lcol{display:flex;flex-direction:column;gap:6px}
@@ -648,8 +649,8 @@ function ensureRouteLayers() {
   if (!map.isStyleLoaded?.() && !map.getStyle()) return;
   if (!map.getSource("route")) map.addSource("route", { type: "geojson", data: routeGeo() });
   if (!map.getSource("done")) map.addSource("done", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#1b2db5", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
-  if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#4a63ff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
+  if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": CASING_COLOR, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
+  if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": ROUTE_COLOR, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
   if (!map.getLayer("done-line")) map.addLayer({ id: "done-line", type: "line", source: "done", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#9aa0a6", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 12] } });
   for (const id of ["route-casing", "route-line", "done-line"]) if (map.getLayoutProperty(id, "visibility") === "none") map.setLayoutProperty(id, "visibility", "visible");
 }
@@ -668,8 +669,8 @@ function addOverlaysInner() {
   if (!map.getSource("done")) map.addSource("done", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   if (!map.getSource("alts")) map.addSource("alts", { type: "geojson", data: altGeo() });
   if (!map.getLayer("alts-line")) map.addLayer({ id: "alts-line", type: "line", source: "alts", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#8e9bb0", "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4, 16, 10] } });
-  if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#1b2db5", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
-  if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#4a63ff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
+  if (!map.getLayer("route-casing")) map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": CASING_COLOR, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 16, 16] } });
+  if (!map.getLayer("route-line")) map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": ROUTE_COLOR, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 11] } });
   if (!map.getLayer("done-line")) map.addLayer({ id: "done-line", type: "line", source: "done", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#9aa0a6", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 4.5, 16, 12] } });
   for (const [k, t] of Object.entries(RTYPES)) if (!map.hasImage(`rep-${k}`)) map.addImage(`rep-${k}`, repIcon(t), { pixelRatio: 2 });
   if (!map.getSource("reports")) map.addSource("reports", { type: "geojson", data: repGeo() });
@@ -1574,7 +1575,11 @@ $("#dirBtn").onclick = () => { if (dest) planRoute(dest); else { $("#q").placeho
 
 // ================= ROUTING =================
 let route = null;
-const routeGeo = () => ({ type: "FeatureCollection", features: route ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route.coords } }] : [] });
+// The route line, then live-traffic slices on top of it (orange = slow, red = jam, dark red = closed)
+const routeGeo = () => ({ type: "FeatureCollection", features: route ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route.coords } },
+  ...(route.traffic || []).filter((s) => s.b > s.a).map((s) => ({ type: "Feature", properties: { t: s.t }, geometry: { type: "LineString", coordinates: route.coords.slice(s.a, s.b + 1) } }))] : [] });
+const ROUTE_COLOR = ["match", ["get", "t"], "slow", "#f29900", "jam", "#d93025", "closed", "#7a0d0d", "#4a63ff"];
+const CASING_COLOR = ["match", ["get", "t"], "slow", "#b06f00", "jam", "#8f1d16", "closed", "#3d0606", "#1b2db5"];
 let routeAlts = [];
 const altGeo = () => ({ type: "FeatureCollection", features: routeAlts.filter((r) => r !== route).map((r) => ({ type: "Feature", properties: { i: routeAlts.indexOf(r) }, geometry: { type: "LineString", coordinates: r.coords } })) });
 function clearRoute() { route = null; routeAlts = []; map.getSource("route")?.setData(routeGeo()); map.getSource("alts")?.setData(altGeo()); }
@@ -1631,6 +1636,7 @@ function buildRoute(r, from) {
   }));
   const R = { coords, cum, steps, duration: r.live ? steps.reduce((s, st) => ((st.t = st.duration), s + st.duration), 0) : realTimes(steps, from), distance: r.distance, total: cum[cum.length - 1] || 1, from, stopAt };
   R.maxspeed = r.legs.flatMap((l) => l.annotation?.maxspeed || []);
+  R.live = !!r.live && !truckOn(); R.traffic = r.traffic || []; R.trafficDelay = r.trafficDelay || 0;
   const main = steps.filter((x) => x.name).sort((a, b) => b.distance - a.distance)[0];
   R.via = main ? main.name : "";
   R.camsOnRoute = camsAlong(R);
@@ -1650,7 +1656,20 @@ async function fetchRoutes(from, to, alts = true, via = null) {
   return fetchCarRoutes(from, to, alts, via);
 }
 const ROUTE_MIRROR = (u) => u.replace("https://router.project-osrm.org/route/v1/driving/", "https://routing.openstreetmap.de/routed-car/route/v1/driving/");
+// Live traffic first (routes around jams, real arrival times); the free engine if that's unavailable
+async function liveCarRoutes(from, to, alts = true, via = null) {
+  try {
+    const a = avoid(), av = [a.tolls && "tolls", a.highways && "highways"].filter(Boolean).join(",");
+    const pts = [from, via, to].filter(Boolean).map((c) => `${(+c[0]).toFixed(6)},${(+c[1]).toFixed(6)}`).join(";");
+    const r = await fetch(`/api/truck/car?pts=${pts}&alts=${alts && !via ? 1 : 0}${av ? `&avoid=${av}` : ""}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
+    const j = r.ok ? await r.json() : null;
+    if (!j?.routes?.length) return null;
+    return j.routes.map((x) => buildRoute(x, from)).sort((x, y) => x.duration - y.duration);
+  } catch { return null; }
+}
 async function fetchCarRoutes(from, to, alts = true, via = null) {
+  const live = await liveCarRoutes(from, to, alts, via);
+  if (live) return live;
   try { return await fetchCarRoutesOn(from, to, alts, via, false); }
   catch (e) { if (/No route/.test(e.message)) throw e; return fetchCarRoutesOn(from, to, alts, via, true); } // main server busy: use the backup
 }
@@ -1736,6 +1755,12 @@ function paintBubbles() {
     routeBubbles.push(new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -6] }).setLngLat(at).addTo(map));
   });
 }
+function trafficLine(R) {
+  if (truckOn()) return "";
+  if (!R.live) return '<span style="color:var(--muted);font-weight:500">🚦 Live traffic is unavailable right now. Times are estimates.</span>';
+  const min = Math.round((R.trafficDelay || 0) / 60), jam = R.traffic.some((s) => s.t === "jam" || s.t === "closed");
+  return min >= 2 ? `<span style="color:${jam || min >= 8 ? "#d93025" : "#e8710a"}">🚦 ${jam ? "Heavy" : "Some"} traffic: +${min} min, included in the time</span>` : '<span style="color:#188038">🚦 Traffic is light on this route</span>';
+}
 function routeSheet(to) {
   nav.dest = to;
   const a = avoid(), sp = route.camsOnRoute.filter((c) => c.type === "speed").length, rl = route.camsOnRoute.length - sp;
@@ -1752,6 +1777,7 @@ function routeSheet(to) {
       return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${R.weightSafe ? "🛡️ Restriction-safe · " : ""}${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
       ${cams.length ? `${sp} speed camera${sp === 1 ? "" : "s"} · ${rl} red light camera${rl === 1 ? "" : "s"} on this route` : "Camera map is still loading"}</div>
+    <div class="camline" style="font-weight:600">${trafficLine(route)}</div>
     <div class="camline" id="rxWeather" style="color:var(--muted);font-weight:500"></div>
     <div class="camline" id="rxPark" style="color:var(--muted);font-weight:500"></div>
     <div class="row" style="align-items:center"><button class="startbtn" type="button" id="startNav"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Start</button><button class="btn" type="button" id="simNav">Test drive</button><button type="button" class="btn" id="voicePick" style="margin-left:auto;padding:8px 12px;font-size:13px">🔊 ${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</button></div>
@@ -1895,6 +1921,26 @@ function paintLanes(step, toNext) {
   $("#lanes").innerHTML = lanes.map((l) => { const inds = l.indications || ["none"]; const ind = l.valid && inds.includes(want) ? want : inds[0]; return laneSVG(ind, l.valid); }).join("");
   $("#lanes").setAttribute("aria-label", `Use the ${lanes.filter((l) => l.valid).length} highlighted lanes`);
 }
+async function refreshTraffic(R, pos) {
+  const via = nav.stop && R.stopAt != null && nav.along < R.stopAt - 30 ? nav.stop.at : null;
+  const nr = (await liveCarRoutes(pos, R.coords[R.coords.length - 1], false, via))?.[0];
+  if (!nr || route !== R || !nav.active) return;
+  const left = timeLeft(R, nav.along), saves = Math.round((left - nr.duration) / 60);
+  const same = Math.abs((R.total - nav.along) - nr.total) < 0.06 * nr.total;
+  if (saves >= 4 && !same) { // a different way around the traffic
+    route = nr; Object.assign(nav, { idx: 0, along: 0, spoken: {}, hzSpoken: {}, t0: Date.now(), a0: 0 }); loadHazards(nr); drawRoute();
+    speak(`Faster route found. It saves ${saves} minutes`); return;
+  }
+  // Same way: lay the fresh traffic onto the route ahead
+  const fresh = [];
+  for (const s of nr.traffic) {
+    const A = project(R, nr.coords[s.a], nav.idx), B = project(R, nr.coords[s.b], nav.idx);
+    if (A.off < 30 && B.off < 30 && B.idx > A.idx) fresh.push({ ...s, a: A.idx, b: B.idx + 1 });
+  }
+  R.traffic = fresh; R.trafficDelay = nr.trafficDelay; drawRoute();
+  const jam = fresh.find((s) => (s.t === "jam" || s.t === "closed") && R.cum[s.a] - nav.along > 300 && !nav.spoken["tj" + Math.round(R.cum[s.a] / 200)]);
+  if (jam) { nav.spoken["tj" + Math.round(R.cum[jam.a] / 200)] = 1; speak(`${jam.t === "closed" ? "Road closed" : "Heavy traffic"} ahead in ${sayDist(R.cum[jam.a] - nav.along)}${jam.delay >= 120 ? `, about ${Math.round(jam.delay / 60)} minutes slower` : ""}`); }
+}
 function navTick(pos) {
   try { if (!map.getLayer("route-line") || !map.getSource("route")) drawRoute(); navTickInner(pos); }
   catch (e) { window.reportError2?.("navTick: " + e.message, e.stack); }
@@ -1909,6 +1955,7 @@ function navTickInner(pos) {
     const via = nav.stop && R.stopAt != null && nav.along < R.stopAt - 30 ? nav.stop.at : null;
     fetchRoute(pos, R.coords[R.coords.length - 1], via).then((nr) => { route = nr; nav.idx = 0; nav.along = 0; nav.spoken = {}; nav.hzSpoken = {}; nav.t0 = Date.now(); nav.a0 = 0; loadHazards(nr); drawRoute(); }).catch(() => {});
   }
+  if (R.live && !nav.sim && Date.now() - (nav.trafAt || nav.start || 0) > 4 * 60000 && R.total - nav.along > 1500) { nav.trafAt = Date.now(); refreshTraffic(R, pos); }
   let k = R.steps.findIndex((s) => s.at > nav.along + 5); if (k < 0) k = R.steps.length - 1;
   const next = R.steps[k], after = R.steps[k + 1];
   const toNext = Math.max(0, next.at - nav.along);
