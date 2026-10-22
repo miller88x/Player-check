@@ -1,0 +1,46 @@
+# Rova's automatic checks. GitHub emails the repo owner when any of these fail.
+name: Rova checks
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/14 * * * *"   # health ping: keeps the free server awake and confirms it's up
+    - cron: "17 10 * * *"    # full self-test every morning (~6 AM New York)
+  workflow_dispatch:
+
+jobs:
+  tests:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install --no-audit --no-fund
+      - name: App code parses
+        run: node tests/syntax.test.js
+      - name: Parking rules (real city signs for reported blocks)
+        run: node tests/park.test.js
+
+  health:
+    if: github.event.schedule == '*/14 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rova is up
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o out.json -w "%{http_code}" --max-time 90 https://player-check.onrender.com/api/health) && [ "$code" = "200" ] && cat out.json && exit 0
+            echo "try $i: HTTP $code"; sleep 20
+          done
+          exit 1
+
+  selftest:
+    if: github.event.schedule == '17 10 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Full self-test (every feature, live city data)
+        run: |
+          curl -s --max-time 120 https://player-check.onrender.com/api/health > /dev/null || true
+          code=$(curl -s -o out.json -w "%{http_code}" --max-time 300 https://player-check.onrender.com/api/selftest)
+          node -e 'const r=JSON.parse(require("fs").readFileSync("out.json","utf8"));for(const c of r.checks||[])console.log((c.ok?"PASS ":"FAIL ")+c.name+(c.note?" — "+c.note:""));'
+          [ "$code" = "200" ]

@@ -25,6 +25,7 @@ const signphoto = require("./signphoto");
 const zlib = require("zlib");
 const crypto = require("crypto");
 const PORT = process.env.PORT || 3000;
+const selftest = require("./selftest");
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || ""; // optional: higher NYC Open Data rate limits
 const DATASET = "https://data.cityofnewyork.us/resource/nc67-uf89.json"; // Open Parking and Camera Violations
 
@@ -333,6 +334,7 @@ http
         res.writeHead(200, { "Content-Type": url.pathname.endsWith(".jpg") ? "image/jpeg" : "image/png", "Cache-Control": "public, max-age=604800" }); res.end(b);
       });
     }
+    if ((url.pathname === "/api/health" || url.pathname === "/api/selftest") && selftest.routes(url, res, send)) return;
     if (url.pathname === "/api/version") {
       return send(res, 200, { commit: (process.env.RENDER_GIT_COMMIT || "local").slice(0, 7), started: STARTED });
     }
@@ -345,5 +347,5 @@ http
     }
     sendPage(req, res);
   })
-  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); parkwatch.start(); if (process.env.PARK_AUDIT === "1") setTimeout(() => require("./parkaudit").run(), 20000); if (process.env.PARK_DIAG === "1") setTimeout(() => require("./diag").run(), 5000); });
+  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); parkwatch.start(); selftest.start(); if (process.env.PARK_AUDIT === "1") setTimeout(() => require("./parkaudit").run(), 20000); if (process.env.PARK_DIAG === "1") setTimeout(() => require("./diag").run(), 5000); });
 alerts.init(lookup);
