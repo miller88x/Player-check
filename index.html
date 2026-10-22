@@ -390,14 +390,14 @@ body.navigating #recenter.on{display:grid!important}
 @media (prefers-reduced-motion:reduce){#splash .sp-logo,#splash .sp-tag,#splash .sp-bar{animation:none}#splash .sp-bar i{animation:none;width:100%}}
 </style>
 <script>
-// Hide the splash once the map is ready (at least ~1.1 s so the logo registers, at most 3.5 s)
+// Hide the splash once the map is ready (at least 2.8 s so the logo and tagline can be read, at most 5 s)
 (function () {
   const t0 = Date.now(); let gone = false;
   window.hideSplash = function () {
     if (gone) return; gone = true;
-    setTimeout(() => { const el = document.getElementById("splash"); if (!el) return; el.classList.add("out"); setTimeout(() => el.remove(), 600); }, Math.max(0, 1100 - (Date.now() - t0)));
+    setTimeout(() => { const el = document.getElementById("splash"); if (!el) return; el.classList.add("out"); setTimeout(() => el.remove(), 600); }, Math.max(0, 2800 - (Date.now() - t0)));
   };
-  setTimeout(window.hideSplash, 3500);
+  setTimeout(window.hideSplash, 5000);
 })();
 </script>
 <div id="map" aria-label="Map"></div>
