@@ -224,16 +224,24 @@ function curbZones(face, px, py, axis) {
     if (!groups.has(r.raw)) groups.set(r.raw, { rule: r, signs: [] });
     groups.get(r.raw).signs.push({ p: pos(s.x, s.y), dir });
   }
+  // NYC sign arrows: a rule runs from its sign in the arrow's direction until (1) a sign of the same rule pointing back,
+  // or (2) the next pole where a DIFFERENT rule starts in the same direction (e.g. street cleaning picking up again
+  // after a driveway's "No parking anytime -->"), or (3) the end of the block. Without (2), short zones like
+  // driveways and bus stops wrongly ran to the corner.
+  const all = [...groups.entries()].flatMap(([raw, g]) => g.signs.map((s) => ({ ...s, raw })));
+  const startsAt = (raw, dir, from) => all.filter((o) => o.raw !== raw && o.dir === dir && (dir > 0 ? o.p > from + 5 : o.p < from - 5)
+    && !all.some((x) => x.raw === raw && x.dir === dir && Math.abs(x.p - o.p) <= 5)) // same rule restated on that pole: it continues
+    .map((o) => o.p);
   const out = [];
-  for (const { rule, signs } of groups.values()) {
+  for (const [raw, { rule, signs }] of groups.entries()) {
     const iv = signs.map((g) => {
       const back = (side) => signs.filter((o) => (side > 0 ? o.p > g.p + 5 && o.dir === -1 : o.p < g.p - 5 && o.dir === 1)).map((o) => o.p);
       const L = back(-1), R = back(1);
-      if (g.dir === 1) return [g.p, R.length ? Math.min(...R) : hi];
-      if (g.dir === -1) return [L.length ? Math.max(...L) : lo, g.p];
+      if (g.dir === 1) return [g.p, Math.min(hi, ...R, ...startsAt(raw, 1, g.p))];
+      if (g.dir === -1) return [Math.max(lo, ...L, ...startsAt(raw, -1, g.p)), g.p];
       return [L.length ? Math.max(...L) : lo, R.length ? Math.min(...R) : hi];
     });
-    const here = iv.some(([a, b]) => me >= a - 8 && me <= b + 8);
+    const here = iv.some(([a, b]) => me >= a - 3 && me <= b + 3);
     const edge = Math.min(...iv.map(([a, b]) => (me >= a && me <= b ? 0 : Math.min(Math.abs(me - a), Math.abs(me - b)))));
     out.push({ rule, here, edge, iv });
   }
