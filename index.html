@@ -115,7 +115,7 @@ ol.ev{margin:0;padding-left:20px;color:var(--ink);font-size:14px;display:flex;fl
 .verdict.huge .muted{color:#fff!important;opacity:.92!important;font-size:16px;line-height:1.35;margin-top:4px}
 /* Curb color key on the map */
 #curbKey{position:fixed;left:14px;bottom:calc(var(--safeB) + var(--tabH) + 86px);z-index:9;display:none;gap:10px;align-items:center;background:rgba(32,33,36,.92);color:#e8eaed;border-radius:16px;padding:6px 12px;font:600 12px var(--body);box-shadow:0 2px 8px rgba(0,0,0,.35)}
-#curbKey.on{display:flex}#curbKey b{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:5px;vertical-align:middle}
+#curbKey{flex-wrap:wrap;row-gap:4px;max-width:calc(100vw - 110px)}#curbKey.on{display:flex}#curbKey b{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:5px;vertical-align:middle}
 body.navigating #curbKey,body.searching #curbKey{display:none!important}
 ul.rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 ul.rules li{background:var(--ui);border-radius:10px;padding:10px 12px;font-size:14px}
@@ -502,7 +502,7 @@ body.navigating #recenter.on{display:grid!important}
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#00363f"/></svg></button>
 <button class="fab" id="recenter" type="button"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
-<div id="curbKey" aria-label="Curb colors"><span><b style="background:#1e8e3e"></b>Park</span><span><b style="background:#f29900"></b>Meter / limit</span><span><b style="background:#d93025"></b>No parking</span></div>
+<div id="curbKey" aria-label="Curb colors"><span><b style="background:#1e8e3e"></b>Park</span><span><b style="background:#f29900"></b>Meter / limit</span><span><b style="background:#d93025"></b>No parking</span><span><b style="background:repeating-linear-gradient(90deg,#9aa0a6 0 5px,transparent 5px 8px)"></b>No signs</span></div>
 <div class="inAlert" id="inAlert" role="alert" hidden></div>
 <div id="dirTop"><div class="pts"><div><span class="dot"></span>Your location</div><div id="dirTo"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true" style="flex:0 0 auto"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#ea4335"/></svg><span></span></div></div><button class="x" id="dirX" type="button" aria-label="Close directions">✕</button></div>
 
@@ -2670,10 +2670,15 @@ function paintCurbs(force) {
     if (!map.getSource("curbs")) map.addSource("curbs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     if (!map.getLayer("curb-line")) {
       map.addLayer({ id: "curb-line", type: "line", source: "curbs", minzoom: 16, layout: { "line-cap": "butt", "line-sort-key": ["coalesce", ["get", "z"], 0] },
+        filter: ["!=", ["get", "s"], "none"],
         paint: { "line-color": ["match", ["get", "s"], "red", "#d93025", "yellow", "#f29900", "#1e8e3e"],
           "line-width": ["interpolate", ["exponential", 2], ["zoom"], ...Object.entries(CURB_W).flatMap(([z, w]) => [+z, w])],
           "line-offset": curbOffsetExpr(), "line-opacity": ["case", ["has", "hyd"], 1, 0.92] } },
         map.getLayer("route-casing") ? "route-casing" : undefined);
+      // Block sides with no parking signs on record: gray dashes (never green; tap explains)
+      map.addLayer({ id: "curb-none", type: "line", source: "curbs", minzoom: 16, filter: ["==", ["get", "s"], "none"], layout: { "line-cap": "butt" },
+        paint: { "line-color": "#9aa0a6", "line-dasharray": [2, 1.5], "line-width": ["interpolate", ["exponential", 2], ["zoom"], ...Object.entries(CURB_W).flatMap(([z, w]) => [+z, w])], "line-offset": curbOffsetExpr(), "line-opacity": 0.85 } }, "curb-line");
+      map.on("click", "curb-none", (e) => { if (nav.active || map.queryRenderedFeatures(e.point, { layers: ["curb-line"] }).length) return; /* a colored curb under the finger wins */ const fs = (e.features || []).map((f) => f.properties); parkCheck([e.lngLat.lng, e.lngLat.lat], true, fs[0] || null); });
       map.on("click", "curb-line", (e) => {
         if (nav.active) return;
         // The stretch you tapped decides the answer (hydrant and bus stop win over the block's signs)
@@ -2685,6 +2690,7 @@ function paintCurbs(force) {
     }
     const c = map.getCenter(), show = layerOn.curbs !== false && !nav.active && map.getZoom() >= 16 && inNYC(c.lng, c.lat);
     map.setLayoutProperty("curb-line", "visibility", show ? "visible" : "none");
+    if (map.getLayer("curb-none")) map.setLayoutProperty("curb-none", "visibility", show ? "visible" : "none");
     $("#curbKey").classList.toggle("on", show);
     if (!show) return;
     clearTimeout(curbT);
@@ -2759,7 +2765,7 @@ function snapCurbs(fc) {
   try {
     const named = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation_name" });
     const all = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }).concat(named);
-    if (!named.length) return { type: "FeatureCollection", features: [] };
+    // (no early exit when street labels aren't loaded: city-placed curbs don't need them)
     const lat0 = map.getCenter().lat, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110540;
     const toM = ([lng, lat]) => [lng * kx, lat * ky], toLL = ([x, y]) => [+(x / kx).toFixed(7), +(y / ky).toFixed(7)];
     const SKIP = /rail|path|track|ferry|aerialway|pier|transit|busway|footway|cycleway|steps|bridleway/;
@@ -2793,13 +2799,43 @@ function snapCurbs(fc) {
       return bestPref || best; };
     const SIDE = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] };
     const out = [], hyds = [], busPts = [];
+    // Road class of the drawn street under a point (for the curb's distance from the center), parallel or crossing
+    const roadAt = (p, dir, parallel, maxD) => { let best = null;
+      for (const s of csegs) { const r = proj(p, s); if (r.d > maxD || (best && r.d >= best.d)) continue;
+        const sl = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]), cos = Math.abs(((s.b[0] - s.a[0]) * dir[0] + (s.b[1] - s.a[1]) * dir[1]) / sl);
+        if (parallel ? cos > 0.85 : cos < 0.6) best = { d: r.d, cls: s.cls, s }; }
+      return best; };
+    const trim = (pts, d, fromEnd) => { // shorten a line by d meters at one end
+      const P = fromEnd ? pts.slice().reverse() : pts.slice();
+      while (P.length > 1 && d > 0) { const L = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]); if (L <= d) { d -= L; P.shift(); } else { P[0] = [P[0][0] + ((P[1][0] - P[0][0]) * d) / L, P[0][1] + ((P[1][1] - P[0][1]) * d) / L]; d = 0; } }
+      return fromEnd ? P.reverse() : P; };
     for (const f of fc.features) {
       if (f.properties.hyd) { hyds.push(f.geometry.coordinates); continue; }
       if (f.properties.busPt) { busPts.push(f.geometry.coordinates); continue; }
       if (f.geometry.type !== "LineString") continue;
-      const P = f.properties, list = byName.get(normSt(P.st));
-      if (!list) continue; // street not in the map data here: better no line than a wrong one
-      const [A, B] = f.geometry.coordinates.map(toM), na = nearestOn(A, list), nb = nearestOn(B, list);
+      const P = f.properties;
+      // Placed by the server on the city's own street map (curb already on the right): just fit the drawn road
+      if (P.cc) {
+        let pts = f.geometry.coordinates.map(toM);
+        const n = pts.length, mid = [(pts[0][0] + pts[n - 1][0]) / 2, (pts[0][1] + pts[n - 1][1]) / 2];
+        const dl = Math.hypot(pts[n - 1][0] - pts[0][0], pts[n - 1][1] - pts[0][1]) || 1, dir = [(pts[n - 1][0] - pts[0][0]) / dl, (pts[n - 1][1] - pts[0][1]) / dl];
+        const road = roadAt(mid, dir, true, 20), cls = road ? road.cls : P.cls || "minor";
+        if (P.first) { const c = roadAt(pts[0], dir, false, 25); pts = trim(pts, halfM(c ? c.cls : "minor"), false); }
+        if (P.last) { const c = roadAt(pts[pts.length - 1], dir, false, 25); pts = trim(pts, halfM(c ? c.cls : "minor"), true); }
+        let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        if (len < 2) continue;
+        out.push({ type: "Feature", properties: { s: P.s, why: P.why, k: P.k || "", st: P.st, fr: P.fr, to: P.to, cls, z: P.s === "none" ? 0 : 1 }, geometry: { type: "LineString", coordinates: pts.map(toLL) } });
+        continue;
+      }
+      let list = byName.get(normSt(P.st));
+      const [A, B] = f.geometry.coordinates.map(toM);
+      // Street label missing on the map here: use the nearest drawn road running the same way instead of skipping the block
+      if (!list || !(nearestOn(A, list)?.d <= 35)) { const ab = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, near = roadAt([(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], [(B[0] - A[0]) / ab, (B[1] - A[1]) / ab], true, 35); if (near) list = [near.s]; }
+      if (!list) { // no road drawn nearby at all: show the stretch where the signs stand rather than nothing
+        out.push({ type: "Feature", properties: { s: P.s, why: P.why, k: P.k || "", cls: "minor", z: 1, raw: 1 }, geometry: { type: "LineString", coordinates: [A, B].map(toLL) } });
+        continue;
+      }
+      const na = nearestOn(A, list), nb = nearestOn(B, list);
       if (!na || !nb || na.d > 35 || nb.d > 35) continue;
       let a = na.q, b = nb.q, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       // Street direction from the segment itself (short one-pole stretches have no reliable chord)
@@ -3178,13 +3214,16 @@ async function parkCheck(at, fromTap, curb) {
   map.easeTo({ center: at, zoom: Math.max(map.getZoom(), 17), offset: [0, -120], duration: 600 });
   openSheet("Can I park here?", '<p class="muted" style="margin:0">Reading the parking signs on this block…</p>', "park");
   try {
-    const r = await fetch(`/api/park?lat=${at[1]}&lng=${at[0]}`); const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    let j;
+    try { const r = await fetch(`/api/park?lat=${at[1]}&lng=${at[0]}`); j = await r.json(); if (!r.ok) throw new Error(j.error); }
+    catch (e) { if (!curb?.s) throw e; j = { status: "", headline: "", detail: "", rules: [], rulesElse: [], signs: [], where: [curb.st, curb.fr && curb.to ? `${curb.fr} to ${curb.to}` : ""].filter(Boolean).join(" · ") }; } // the tapped curb already knows its answer
     lastPark = { ...j, at };
     j.signs.forEach((sg) => { const d = document.createElement("div"); d.className = "signDot"; d.title = sg.text; signMarkers.push(new maplibregl.Marker({ element: d }).setLngLat([sg.lng, sg.lat]).addTo(map)); });
     // Tapped a colored curb: answer for that exact stretch, so the words always match the color you tapped
     if (curb && curb.s) {
       if (curb.s === "red") { const r = curbReason(curb); j.status = "red"; j.headline = r.h; j.detail = r.d; j.moveBy = null; }
       else if (curb.s === "yellow" && j.status !== "yellow") { j.status = "yellow"; j.headline = curb.why || "Metered parking now"; j.detail = "Pay at the muni-meter or with the ParkNYC app."; }
+      else if (curb.s === "none") { j.status = "yellow"; j.headline = "No parking signs on record here"; j.detail = "The city has no parking signs listed for this side of the block. With no sign, parking is allowed, but never within 15 ft of a hydrant, in front of a driveway, at a crosswalk or at a bus stop. Check for posted signs."; j.moveBy = null; j.rules = []; j.rulesElse = []; }
       else if (curb.s === "green" && j.status !== "green") { j.status = "green"; j.headline = /^Park until/.test(curb.why || "") ? curb.why.replace(/^Park until/, "You can park until") : "You can park here"; j.detail = "This stretch of curb has no rule in force right now."; }
     }
     const moveTxt = j.moveBy ? new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;

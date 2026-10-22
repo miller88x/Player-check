@@ -349,7 +349,12 @@ async function tileRows(tx, ty) {
       $where: `record_type='Current' AND sign_x_coord between ${x0} and ${x1} AND sign_y_coord between ${y0} and ${y1}`,
       $limit: "20000",
     });
-    const res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(20000) });
+    let res;
+    for (let k = 0; ; k++) { // the city's servers drop a request now and then: try again before giving up
+      try { res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(20000) }); if (res.ok || (res.status < 500 && res.status !== 429) || k >= 2) break; }
+      catch (e) { if (k >= 2) throw e; }
+      await new Promise((ok) => setTimeout(ok, 700 * (k + 1)));
+    }
     if (!res.ok) throw new Error(`signs ${res.status}`);
     const rows = (await res.json()).map((r) => ({ ...r, x: +r.sign_x_coord, y: +r.sign_y_coord })).filter((r) => r.x && r.y);
     tileCache.set(key, { at: Date.now(), rows });
@@ -410,15 +415,31 @@ async function curbs(w, s, e, n, at = new Date()) {
   // Street names are spelled several ways in the city's data (ST / STREET, AVE / AVENUE): one key per real block face
   const AB = { AVENUE: "AVE", AV: "AVE", STREET: "ST", BOULEVARD: "BLVD", ROAD: "RD", PLACE: "PL", PARKWAY: "PKWY", DRIVE: "DR", LANE: "LN", COURT: "CT", TERRACE: "TER", EAST: "E", WEST: "W", NORTH: "N", SOUTH: "S" };
   const nm = (v) => String(v || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean).map((w) => AB[w] || w).join(" ").replace(/(\d+)(ST|ND|RD|TH)\b/g, "$1");
+  const settled = await Promise.allSettled(jobs);
+  if (!settled.some((g) => g.status === "fulfilled")) throw settled[0].reason;
+  const tiles = settled.filter((g) => g.status === "fulfilled").map((g) => g.value);
+  const now = nyNow(at), feats = [];
+  const pad = 600, minX = Math.min(x0, x1) - pad, maxX = Math.max(x0, x1) + pad, minY = Math.min(y0, y1) - pad, maxY = Math.max(y0, y1) + pad;
+  // 1. On the city's street centerline (every block, corner to corner). Signs it can't place fall back to step 2.
+  let rest = null, stats = null;
+  try {
+    const seen0 = new Set(), all = [];
+    for (const rows of tiles) for (const r of rows) { const k = `${r.on_street}|${r.side_of_street}|${r.x}|${r.y}|${r.sign_description}|${r.arrow_direction}`; if (!seen0.has(k)) { seen0.add(k); all.push(r); } }
+    const vx0 = Math.min(x0, x1) - 60, vx1 = Math.max(x0, x1) + 60, vy0 = Math.min(y0, y1) - 60, vy1 = Math.max(y0, y1) + 60;
+    const placed = await require("./curbmap").place(all.filter((r) => r.x > minX && r.x < maxX && r.y > minY && r.y < maxY), [vx0, vy0, vx1, vy1], now);
+    feats.push(...placed.feats); rest = new Set(placed.left); stats = placed.stats;
+  } catch (e) { console.error("curbmap:", e.message); }
+  // 2. Backup: lines drawn from the sign positions themselves
   const seen = new Set(), faces = new Map(), byStreet = new Map();
-  for (const rows of await Promise.all(jobs)) for (const r of rows) {
+  for (const rows of tiles) for (const r of rows) {
     const k = `${r.on_street}|${r.side_of_street}|${r.from_street}|${r.to_street}|${r.x}|${r.y}|${r.sign_description}`;
     if (seen.has(k)) continue; seen.add(k);
+    const sk = nm(r.on_street); if (!byStreet.has(sk)) byStreet.set(sk, []); byStreet.get(sk).push(r); // street direction uses every sign
+    if (rest && !rest.has(r)) continue;
     const ends = [nm(r.from_street), nm(r.to_street)].sort().join("~");
     const f = `${nm(r.on_street)}|${r.side_of_street}|${ends}`;
     if (!faces.has(f)) faces.set(f, []);
     faces.get(f).push(r);
-    const sk = nm(r.on_street); if (!byStreet.has(sk)) byStreet.set(sk, []); byStreet.get(sk).push(r);
   }
   // Direction of a street near a point, from all its signs (any side, nearby blocks): for faces with one sign or one pole
   const streetAxis = (name, cx, cy) => {
@@ -427,8 +448,6 @@ async function curbs(w, s, e, n, at = new Date()) {
     for (const a of pts) for (const b of pts) { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > best) { best = d; ax = [(b.x - a.x) / d, (b.y - a.y) / d]; } }
     return best >= 120 ? ax : null;
   };
-  const now = nyNow(at), feats = [];
-  const pad = 600, minX = Math.min(x0, x1) - pad, maxX = Math.max(x0, x1) + pad, minY = Math.min(y0, y1) - pad, maxY = Math.max(y0, y1) + pad;
   for (const face of faces.values()) {
     if (!face.some((r) => r.x > minX && r.x < maxX && r.y > minY && r.y < maxY)) continue;
     // Block direction from the two signs farthest apart; one sign (or one pole) uses the street's direction instead
@@ -465,7 +484,7 @@ async function curbs(w, s, e, n, at = new Date()) {
   }
   // Bus stops from the city's own bus stop panels (one point per pole), marked red on their curb by the app
   const busSeen = [];
-  for (const rows of await Promise.all(jobs)) for (const r of rows) {
+  for (const rows of tiles) for (const r of rows) {
     const d = String(r.sign_description || "").toUpperCase();
     if (!/ROUTE PANEL|DESTINATION PANEL|BUS STOP/.test(d) || /NO STANDING|NO PARKING|NO STOPPING/.test(d)) continue;
     if (r.x < minX || r.x > maxX || r.y < minY || r.y > maxY || busSeen.some(([x, y]) => Math.hypot(x - r.x, y - r.y) < 60)) continue;
@@ -475,7 +494,7 @@ async function curbs(w, s, e, n, at = new Date()) {
   }
   // Hydrant points ride along; the app puts them on the right curb and marks 15 ft each way red
   for (const c of await hydrants(w, s, e, n).catch(() => [])) feats.push({ type: "Feature", properties: { hyd: 1 }, geometry: { type: "Point", coordinates: c } });
-  return { type: "FeatureCollection", features: feats, at: at.toISOString() };
+  return { type: "FeatureCollection", features: feats, at: at.toISOString(), stats, partial: settled.length - tiles.length || undefined };
 }
 
 // ---------- City-wide self check (runs once after each deploy, results in the server log) ----------

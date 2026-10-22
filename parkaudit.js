@@ -74,6 +74,7 @@ async function audit() {
   const t0 = Date.now(), now = park.nyNow(new Date());
   const tot = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0, redFt: 0 }]));
   const examples = { extra: new Map(), missing: new Map() }, per = [];
+  const cov = {}, covPer = [], unplaced = [];
   let faces = 0, poles = 0, signsN = 0, skipped = 0;
   for (const [name, lat, lng] of AREAS) {
     const a = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0 }]));
@@ -126,6 +127,15 @@ async function audit() {
           if (rules.length && park.stateNow(rules, now).s === "red") tot[v].redFt += 10;
         }
       }
+      // Coverage: how many block sides in a phone-screen view come back colored, gray (no signs) or not at all
+      try {
+        const dv = 0.0025, fc = await park.curbs(lng - dv, lat - dv * 0.75, lng + dv, lat + dv * 0.75), st = fc.stats || {};
+        const backup = fc.features.filter((f) => f.geometry.type === "LineString" && !f.properties.cc).length;
+        for (const k of ["blocks", "sides", "signed", "none", "placedSigns", "unplacedSigns"]) cov[k] = (cov[k] || 0) + (st[k] || 0);
+        cov.backup = (cov.backup || 0) + backup; if (!fc.stats) cov.noMap = (cov.noMap || 0) + 1;
+        for (const u of st.unplacedTop || []) unplaced.push(`${name}: ${u}`);
+        covPer.push(`${name}: ${st.sides || 0} block sides · ${st.signed || 0} with signs · ${st.none || 0} no signs (gray) · signs placed ${st.placedSigns || 0}, not placed ${st.unplacedSigns || 0}${fc.stats ? "" : " · CITY STREET MAP FAILED"}`);
+      } catch (e) { covPer.push(`${name}: coverage ERROR ${e.message}`); }
       const pc = (v) => (a[v].checks ? `${(100 * (1 - (a[v].extra + a[v].missing) / a[v].checks)).toFixed(1)}%` : "-");
       per.push(`${name}: ${a.now.checks} checks · agree old ${pc("old")} → first fix ${pc("first")} → now ${pc("now")} · proven wrong old ${a.old.wrong} → now ${a.now.wrong}`);
     } catch (e) { per.push(`${name}: ERROR ${e.message}`); }
@@ -133,6 +143,9 @@ async function audit() {
   const sum = Object.fromEntries(Object.entries(tot).map(([v, t]) => [v, { ...t, agree: `${(100 * (1 - (t.extra + t.missing) / Math.max(1, t.checks))).toFixed(2)}%` }]));
   console.log("PARKAUDIT summary " + JSON.stringify({ areas: AREAS.length, faces, poles, signs: signsN, skippedOnePole: skipped, secs: Math.round((Date.now() - t0) / 1000), ...sum }));
   for (const l of per) console.log("PARKAUDIT area " + l);
+  console.log("PARKAUDIT coverage " + JSON.stringify(cov));
+  for (const l of covPer) console.log("PARKAUDIT cov " + l);
+  for (const l of unplaced.slice(0, 40)) console.log("PARKAUDIT unplaced " + l);
   for (const kind of ["extra", "missing"]) for (const [k, e] of [...examples[kind].entries()].sort((m, n) => n[1].n - m[1].n).slice(0, 25))
     console.log(`PARKAUDIT ${kind} ${e.n}× ${k} | e.g. ${e.at} | pole: ${e.pole}`);
   return sum;
