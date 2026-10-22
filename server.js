@@ -129,7 +129,27 @@ function classify(t) {
   return "closed";
 }
 
+// Demo plate for App Store / Google Play reviewers and screenshots: sample tickets, no real person's plate.
+// Dates move with today, so it always shows a fresh ticket, a late fee coming, and one in penalty.
+const DEMO_PLATE = "ROVADEMO";
+function demoLookup(state) {
+  const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const t = (summons, ago, violation, fine, extra = {}) => ({ summons, issued: day(ago), time: "09:14A", violation, agency: "TRAFFIC", county: "K", precinct: "078",
+    fine, penalty: 0, interest: 0, reduction: 0, paid: 0, due: fine, hearing: null, image: null, ageDays: ago, status: "open", judgment: false, ...extra });
+  const tickets = [
+    t("9990000001", 3, "NO PARKING-STREET CLEANING", 65, { location: { lat: 40.6782, lng: -73.9772, address: "5TH AVE near PARK PL", approx: true } }),
+    t("9990000002", 26, "FAIL TO DSPLY MUNI METER RECPT", 65, { location: { lat: 40.6869, lng: -73.9746, address: "FULTON ST near S PORTLAND AVE", approx: true } }),
+    t("9990000003", 70, "PHTO SCHOOL ZN SPEED VIOLATION", 50, { penalty: 25, interest: 1.12, due: 76.12, status: "penalty", agency: "DEPARTMENT OF TRANSPORTATION", location: { lat: 40.6713, lng: -73.9636, address: "EASTERN PKWY near WASHINGTON AVE", approx: true } }),
+    t("9990000004", 140, "NO STANDING-BUS STOP", 115, { paid: 115, due: 0, status: "closed", hearing: "HEARING HELD-GUILTY" }),
+  ];
+  const open = tickets.filter((x) => x.status === "open" || x.status === "penalty");
+  return { plate: DEMO_PLATE, state, checkedAt: new Date().toISOString(), demo: true,
+    summary: { count: tickets.length, openCount: open.length, totalDue: Math.round(open.reduce((s, x) => s + x.due, 0) * 100) / 100, penaltiesAdded: 26.12, judgmentDue: 0, bootRisk: false, mapped: 3 },
+    tickets };
+}
+
 async function lookup(plate, state, opts = {}) {
+  if (plate === DEMO_PLATE) return demoLookup(state);
   const params = new URLSearchParams({ plate, state, $limit: "5000" });
   const res = await fetch(`${DATASET}?${params}`, {
     headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {},
