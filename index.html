@@ -2978,6 +2978,7 @@ function curbReason(c) {
   const what = k === "stop" ? "No stopping means you can't stop here at all, even for a moment."
     : k === "stand" ? "No standing means you can't wait or stand here, even with someone in the car. You may only quickly drop off or pick up passengers."
     : k === "truck" ? "Only commercial vehicles that are loading or unloading may park here."
+    : k === "reserved" ? "This curb is reserved for them. Any other car can be ticketed or towed."
     : /street cleaning/i.test(why) ? "The street sweeper comes through during these hours, so the car has to be moved."
     : "No parking means you can't leave the car here. You may stop briefly to load or unload passengers or packages.";
   return { h: `You can't park here: ${why.replace(/^Street cleaning: no parking/i, "street cleaning").replace(/^./, (x) => x.toLowerCase())}`, d: what };

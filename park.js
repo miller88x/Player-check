@@ -49,8 +49,20 @@ function parseSign(desc) {
   if (/NO STOPPING/.test(d)) kind = "stop";
   else if (/NO STANDING/.test(d)) kind = "stand";
   else if (/NO PARKING/.test(d)) kind = "park";
-  else if (/TRUCK LOADING ONLY|COMMERCIAL VEHICLES ONLY|LOADING ZONE|LOADING ONLY/.test(d)) kind = "truck";
-  else if (/(\d+|ONE|TWO|THREE|1\/2)\s*(HOUR|HR|MIN|HMP|HMCP)\b/.test(d) || /METER|MUNI|\bHMP\b/.test(d)) kind = "meter";
+  // Curbs reserved for someone else: a regular car can't park there (bus stops, taxi stands, agency and permit spots)
+  let who = null;
+  if (!kind) {
+    const R = [[/\bBUS STOP\b/, "Bus stop: no standing"], [/TAXI (RELIEF )?STAND|TAXI.*ONLY/, "Taxi stand"], [/SCHOOL BUS/, "School buses only"],
+      [/BUS LAYOVER|BUS LAY-?OVER|BUSES ONLY/, "Buses only"], [/FIRE ZONE|FIRE LANE/, "Fire zone"], [/HOTEL/, "Hotel loading zone"],
+      [/AMBULETTE|AMBULANCE/, "Ambulettes and ambulances only"], [/DIPLOMAT|CONSUL|\bD\/?P\b|UNITED NATIONS|\bUN\b MISSION/, "Diplomatic vehicles only"],
+      [/CAR ?SHARE|ZIPCAR|CAR SHARING/, "Car share vehicles only"], [/\bNYPD\b|POLICE/, "Police vehicles only"], [/\bFDNY\b|FIRE DEP/, "Fire department vehicles only"],
+      [/ACCESSIBLE|HANDICAP|DISABILIT|WHEELCHAIR/, "Accessible permit parking only"], [/ELECTRIC VEHICLE|EV CHARG/, "Electric vehicles charging only"],
+      [/AUTHORIZED VEHICLES|PERMIT PARKING|VEHICLES ONLY|PARKING ONLY|OFFICIAL|GOVERNMENT|\bDOT\b VEH|\bDEPT\b|DEPARTMENT|AGENCY|PRESS/, "Authorized vehicles only"]];
+    const hit = R.find(([re]) => re.test(d));
+    if (hit && !/^(\d+|ONE|TWO|THREE)\s*(HOUR|HR|HMP|HMCP)/.test(d)) { kind = "reserved"; who = hit[1]; }
+  }
+  if (!kind && /TRUCK LOADING ONLY|COMMERCIAL VEHICLES ONLY|LOADING ZONE|LOADING ONLY/.test(d)) kind = "truck";
+  if (!kind && (/(\d+|ONE|TWO|THREE|1\/2)\s*(HOUR|HR|MIN|HMP|HMCP)\b/.test(d) || /METER|MUNI|\bHMP\b/.test(d))) kind = "meter";
   if (!kind) return null;
 
   // Time windows like 8AM-9:30AM, 7:30AM-NOON, MIDNIGHT-3AM
@@ -86,10 +98,10 @@ function parseSign(desc) {
 
   const sweeping = /BROOM|SANITATION/.test(d);
   const hrs = d.match(/(\d+|ONE|TWO|THREE)\s*(?:HOUR|HR|HMP|HMCP)\b/);
-  const commercial = /COMMERCIAL|TRUCK|LOADING/.test(d) && kind !== "meter";
+  const commercial = /COMMERCIAL|TRUCK|LOADING/.test(d) && kind !== "meter" && kind !== "reserved";
   const n = hrs && (hrs[1] === "ONE" ? 1 : hrs[1] === "TWO" ? 2 : hrs[1] === "THREE" ? 3 : hrs[1]);
   const label = {
-    stop: "No stopping", stand: "No standing", park: sweeping ? "Street cleaning: no parking" : "No parking",
+    stop: "No stopping", stand: "No standing", park: sweeping ? "Street cleaning: no parking" : "No parking", reserved: who,
     truck: /COMMERCIAL VEHICLES ONLY/.test(d) ? "Commercial vehicles only" : "Truck loading only",
     meter: n ? `${n}-hour ${/HMP|HMCP|METER|MUNI/.test(d) ? "metered " : ""}parking` : "Metered parking",
   }[kind];
@@ -253,8 +265,9 @@ async function check(lat, lng, at = new Date()) {
   let status, headline, detail, moveBy = null;
   if (active) {
     status = "red";
-    headline = active.anytime ? `${active.label} anytime` : `${active.label} right now`;
-    detail = active.anytime ? "You can't leave the car here." : `Until ${fmtWhen({ ...activeEnd, s: activeEnd.e, start: -1 }, now)}.${active.kind === "truck" ? " Only commercial vehicles loading or unloading." : ""}`;
+    headline = active.kind === "reserved" ? `You can't park here: ${active.label.replace(/^./, (x) => x.toLowerCase())}` : active.anytime ? `${active.label} anytime` : `${active.label} right now`;
+    detail = (active.anytime ? "You can't leave the car here." : `Until ${fmtWhen({ ...activeEnd, s: activeEnd.e, start: -1 }, now)}.`) +
+      (active.kind === "truck" ? " Only commercial vehicles loading or unloading." : active.kind === "reserved" ? " This curb is reserved, and other cars get ticketed or towed." : "");
   } else if (meterNow) {
     status = "yellow";
     headline = `${meterNow.label} now`;
@@ -336,7 +349,7 @@ function stateNow(rules, now) {
       else if (w.start > 0 && r.kind !== "meter" && (!next || w.start < next.start)) next = { r, start: w.start, w };
     }
   }
-  if (red) return { s: "red", why: red.anytime ? `${red.label} anytime` : `${red.label} until ${fmtWhen({ ...redW, s: redW.e, start: -1 }, now)}`, k: red.kind };
+  if (red) return { s: "red", why: red.anytime ? (red.kind === "reserved" ? red.label : `${red.label} anytime`) : `${red.label} until ${fmtWhen({ ...redW, s: redW.e, start: -1 }, now)}`, k: red.kind };
   if (yellow) return { s: "yellow", why: `${yellow.label} now` };
   return { s: "green", why: next && next.start <= 7 * 1440 ? `Park until ${fmtWhen(next.w, now)}` : "No rules on the signs right now" };
 }
