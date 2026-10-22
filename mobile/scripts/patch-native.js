@@ -38,3 +38,28 @@ if (fs.existsSync(manifest)) {
 // Android: Firebase config for phone notifications (google-services.json from the Rova Firebase project)
 const gs = path.join(__dirname, "../google-services.json"), gsTo = path.join(__dirname, "../android/app/google-services.json");
 if (fs.existsSync(gs) && fs.existsSync(path.dirname(gsTo))) { fs.copyFileSync(gs, gsTo); console.log("Android google-services.json added"); }
+
+// Android release signing (Google Play). Codemagic provides the keystore through these variables when the
+// workflow lists android_signing: rova_keystore. Local or debug builds without them are left unsigned.
+const gradle = path.join(__dirname, "../android/app/build.gradle");
+if (fs.existsSync(gradle)) {
+  let g = fs.readFileSync(gradle, "utf8");
+  if (!g.includes("signingConfigs {") && g.includes("buildTypes {")) {
+    g = g.replace("buildTypes {", `signingConfigs {
+        release {
+            if (System.getenv("CM_KEYSTORE_PATH")) {
+                storeFile file(System.getenv("CM_KEYSTORE_PATH"))
+                storePassword System.getenv("CM_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("CM_KEY_ALIAS")
+                keyPassword System.getenv("CM_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {`);
+    g = g.replace(/(buildTypes \{\s*release \{)/, `$1\n            if (System.getenv("CM_KEYSTORE_PATH")) signingConfig signingConfigs.release`);
+  }
+  // Each Play upload needs a higher version number: use Codemagic's build number
+  g = g.replace(/versionCode \d+/, 'versionCode ((System.getenv("BUILD_NUMBER") ?: "1").toInteger() + 1)');
+  fs.writeFileSync(gradle, g);
+  console.log("Android release signing patched");
+}

@@ -20,6 +20,30 @@ workflows:
     artifacts:
       - mobile/android/app/build/outputs/apk/debug/*.apk
 
+  # Signed Android App Bundle for Google Play. Needs the keystore saved in Codemagic as "rova_keystore"
+  # (Team settings > Code signing identities > Android keystores > Generate). Keep that keystore forever:
+  # every future Play update must be signed with it.
+  android-release:
+    name: Rova Android (Google Play release)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      node: 20
+      java: 21
+      android_signing:
+        - rova_keystore
+    triggering:
+      events: []
+    scripts:
+      - name: Install
+        script: cd mobile && npm install
+      - name: Create native project
+        script: cd mobile && npx cap add android && npm run assets && npm run patch && npx cap sync android
+      - name: Build signed bundle
+        script: cd mobile/android && chmod +x gradlew && ./gradlew bundleRelease
+    artifacts:
+      - mobile/android/app/build/outputs/bundle/release/*.aab
+
   # iPhone build for TestFlight / App Store. Needs the Apple Developer account ($99/yr):
   # in Codemagic, Team settings > Integrations > App Store Connect, add an API key, name it "Rova ASC".
   ios-release:
