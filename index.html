@@ -3082,6 +3082,28 @@ function parkedSheet() {
 $("#parkedPill").onclick = parkedSheet;
 drawParked();
 setInterval(tickParked, 30000);
+// Re-read the rules at the parked spot when Rova opens: a holiday can cancel street cleaning (move-by moves later),
+// and a new or temporary sign can make the spot red. Tell the driver either way.
+async function recheckParked() {
+  const car = store.get("parked", null);
+  if (!car?.at || Date.now() - (car.savedAt || 0) > 14 * 864e5) return;
+  try {
+    const r = await fetch(`/api/park?lat=${car.at[1]}&lng=${car.at[0]}`); if (!r.ok) return;
+    const j = await r.json(), cur = store.get("parked", null);
+    if (!cur || cur.savedAt !== car.savedAt) return;
+    const was = car.moveBy ? new Date(car.moveBy) : null, now = j.moveBy ? new Date(j.moveBy) : null;
+    const busy = $("#sheet").classList.contains("show");
+    if (j.suspendedToday && j.sweeping && was && now && now - was > 30 * 60000) {
+      cur.moveBy = j.moveBy; cur.warned = false; store.set("parked", cur); queueSync(); tickParked();
+      if (!busy) { openSheet("Good news", `<div class="verdict green"><div class="ic">✓</div><div><div class="big2">No need to move your car today</div><div class="muted" style="color:var(--ink)">Street cleaning is cancelled (${esc(j.suspendedToday)}). New move-by: ${esc(now.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}.</div></div></div><button class="btn primary" type="button" id="ok">Got it</button>`, "parked"); $("#ok").onclick = closeSheet; }
+    } else if (j.status === "red" && !cur.redWarned) {
+      cur.redWarned = true; store.set("parked", cur);
+      if (!busy) { openSheet("Check your car", `<div class="verdict red"><div class="ic">!</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink)">The rules at your parked spot say you can't be there right now. ${esc(j.detail || "")}</div></div></div><button class="btn primary" type="button" id="ok">OK</button>`, "parked"); $("#ok").onclick = closeSheet; }
+    } else if (now && was && Math.abs(now - was) > 30 * 60000) { cur.moveBy = j.moveBy; store.set("parked", cur); queueSync(); tickParked(); }
+  } catch {}
+}
+setTimeout(recheckParked, 4000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) recheckParked(); });
 const _closeSheet = closeSheet;
 closeSheet = function () { if (sheetMode === "park") clearCheck(); _closeSheet(); };
 
@@ -3296,6 +3318,7 @@ async function setupPush() {
     P.addListener("pushNotificationActionPerformed", (a) => {
       const d = a?.notification?.data || {};
       if (d.open === "tickets" && d.plate) checkPlate(d.plate, d.state || "NY", true).then(() => ticketsSheet()).catch(() => {});
+      if (d.open === "parked") parkedSheet();
     });
     if (window.Capacitor.getPlatform() === "android") await P.createChannel?.({ id: "alerts", name: "Ticket alerts", importance: 5, visibility: 1 }).catch(() => {});
     let perm = await P.checkPermissions();
