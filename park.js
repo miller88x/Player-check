@@ -370,8 +370,8 @@ async function curbs(w, s, e, n, at = new Date()) {
     const q = face.reduce((t, r) => t + (r.x * -uy + r.y * ux), 0) / face.length; // distance across: keeps each side of the street on its own curb
     const cuts = [...new Set([lo, hi, ...zones.flatMap((z) => z.iv.flat()).filter((p) => p > lo && p < hi)])].sort((a, b) => a - b);
     const pt = (p) => { const [la, ln] = toLatLng(p * ux + q * -uy, p * uy + q * ux); return [+ln.toFixed(6), +la.toFixed(6)]; };
-    let run = null;
-    const flush = () => { if (run && run.b - run.a > 8) feats.push({ type: "Feature", properties: { s: run.s, why: run.why, st: tc(face[0].on_street) }, geometry: { type: "LineString", coordinates: [pt(run.a), pt(run.b)] } }); };
+    let run = null; const mine = [];
+    const flush = () => { if (run && run.b - run.a > 8) mine.push({ type: "Feature", properties: { s: run.s, why: run.why, st: tc(face[0].on_street) }, geometry: { type: "LineString", coordinates: [pt(run.a), pt(run.b)] } }); };
     for (let i = 0; i < cuts.length - 1; i++) {
       const a = cuts[i], b = cuts[i + 1], m = (a + b) / 2;
       const rules = zones.filter((z) => z.iv.some(([p0, p1]) => m >= p0 - 1 && m <= p1 + 1)).map((z) => z.rule);
@@ -380,6 +380,8 @@ async function curbs(w, s, e, n, at = new Date()) {
       else { flush(); run = { a, b, ...st }; }
     }
     flush();
+    // The rule at each end of the block runs on to the corner: the app stretches these two to the cross streets
+    if (mine.length) { mine[0].properties.first = 1; mine[mine.length - 1].properties.last = 1; feats.push(...mine); }
   }
   return { type: "FeatureCollection", features: feats, at: at.toISOString() };
 }
