@@ -18,6 +18,7 @@ const truck = require("./truck");
 const billing = require("./billing");
 const ads = require("./ads");
 const legal = require("./legal");
+const push = require("./push");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -279,6 +280,9 @@ http
     if (url.pathname.startsWith("/api/reports") && reports.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/park") && park.routes(url, res, send)) return;
     if (url.pathname.startsWith("/api/dispute") && dispute.routes(url, res, send, readBody, req)) return;
+    if (url.pathname.startsWith("/api/push/") && push.routes(url, res, send, req)) return;
+    // The daily alerts trigger also sends phone notifications
+    if (url.pathname === "/api/alerts/run" && process.env.ALERTS_KEY && url.searchParams.get("key") === process.env.ALERTS_KEY) push.runAll(lookup).catch(() => {});
     if (url.pathname.startsWith("/api/alerts/") && alerts.routes(url, res, send, readBody, req)) return;
     if (url.pathname === "/api/cameras/rebuild") { cameras.build(); return send(res, 200, { started: true }); }
     if (url.pathname === "/api/cameras/status") {

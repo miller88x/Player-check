@@ -21,10 +21,14 @@ if (fs.existsSync(plist)) {
 const manifest = path.join(__dirname, "../android/app/src/main/AndroidManifest.xml");
 if (fs.existsSync(manifest)) {
   let s = fs.readFileSync(manifest, "utf8");
-  for (const p of ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "CAMERA"]) {
+  for (const p of ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "CAMERA", "POST_NOTIFICATIONS"]) {
     const line = `<uses-permission android:name="android.permission.${p}" />`;
     if (!s.includes(`android.permission.${p}"`)) s = s.replace("</manifest>", `    ${line}\n</manifest>`);
   }
   fs.writeFileSync(manifest, s);
   console.log("Android manifest patched");
 }
+
+// Android: Firebase config for phone notifications (google-services.json from the Rova Firebase project)
+const gs = path.join(__dirname, "../google-services.json"), gsTo = path.join(__dirname, "../android/app/google-services.json");
+if (fs.existsSync(gs) && fs.existsSync(path.dirname(gsTo))) { fs.copyFileSync(gs, gsTo); console.log("Android google-services.json added"); }

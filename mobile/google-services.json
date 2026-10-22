@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "709518956974",
+    "project_id": "rova-aeeeb",
+    "storage_bucket": "rova-aeeeb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:709518956974:android:b293a1614e6cd5d64e903f",
+        "android_client_info": {
+          "package_name": "com.getrova.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-peoTPs8aeJvt8zLCYvoT4_Ir6AAg2_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

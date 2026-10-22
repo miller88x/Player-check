@@ -42,7 +42,8 @@ async function newSession(userId) {
 }
 // _billing is server-owned (set by the Stripe webhook): the phone gets a short summary, never the raw ids
 const pub = (u) => {
-  const { _billing: b, ...data } = u.data || {};
+  const all = u.data || {}, b = all._billing;
+  const data = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith("_"))); // _billing, _push: server-owned
   return { email: u.email, plan: PLANS.includes(u.plan) ? u.plan : "free", data, since: u.created_at,
     billing: b ? { status: b.status || null, ends: b.ends || null, cars: b.cars || null } : null };
 };
@@ -123,8 +124,9 @@ function routes(url, res, send, req) {
     Promise.all([userFromReq(req), readJSON(req, MAX_DATA)]).then(async ([u, b]) => {
       if (!u) return fail(401, "Signed out");
       if (!b.data || typeof b.data !== "object" || Array.isArray(b.data)) return fail(400, "Bad data");
-      const { _billing, ...mine } = b.data; // the phone can't write billing; keep what the webhook stored
-      const keep = u.data?._billing ? { ...mine, _billing: u.data._billing } : mine;
+      // Keys starting with _ (billing, push tokens) are server-owned: the phone can't write them, and they're kept as stored
+      const keep = { ...Object.fromEntries(Object.entries(b.data).filter(([k]) => !k.startsWith("_"))),
+        ...Object.fromEntries(Object.entries(u.data || {}).filter(([k]) => k.startsWith("_"))) };
       await sb(`pc_users?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ data: keep, updated_at: new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
       send(res, 200, { ok: true });
     }).catch((e) => fail(e.message === "too big" ? 413 : 400, e.message === "too big" ? "Too much data" : "Couldn't save."));

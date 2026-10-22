@@ -2811,12 +2811,14 @@ function accountSheet(mode) {
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
+      ${isNative() ? '<button class="btn" type="button" id="pushTest">🔔 Send a test notification</button>' : ""}
       <button class="btn" type="button" id="delBtn" style="color:#ff8a8d">Delete account</button>
       <p class="note">${LEGAL_LINKS}</p>`, "account");
     wireAcct();
     if ($("#plansBtn")) $("#plansBtn").onclick = () => plansSheet();
     if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
     $("#delBtn").onclick = deleteSheet;
+    if ($("#pushTest")) $("#pushTest").onclick = testPush;
     $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
     return;
   }
@@ -2843,7 +2845,7 @@ function accountSheet(mode) {
     try {
       const j = await api(`/api/auth/${signup ? "signup" : "login"}`, { method: "POST", body: JSON.stringify({ email: $("#aEm").value, password: $("#aPw").value }) });
       store.set("tok", j.token); account = j.user; paintMe();
-      mergeIn(account.data); pushSync(); setTimeout(resumeUpgrade, 1500);
+      mergeIn(account.data); pushSync(); setTimeout(resumeUpgrade, 1500); setupPush();
       openSheet(signup ? "You're in" : "Welcome back", `<div class="alert go"><b>${signup ? "Account created" : "Signed in"}</b>${esc(account.email)} · everything on this phone is now saved to your account.</div><button class="btn primary" type="button" id="ok">Done</button>`, "account");
       $("#ok").onclick = () => closeSheet();
     } catch (err) {
@@ -2908,6 +2910,33 @@ function advertiseSheet() {
       $("#ok").onclick = () => closeSheet();
     } catch (err) { $("#adGo").disabled = false; alert2(err.message); }
   };
+}
+
+// ================= PHONE NOTIFICATIONS (store apps only) =================
+// The App Store / Google Play app asks once, then sends its token to the server. Ticket alerts arrive even with Rova closed.
+const isNative = () => !!window.Capacitor?.isNativePlatform?.();
+let pushWired = false;
+async function setupPush() {
+  if (!account || !isNative() || pushWired) return;
+  const P = window.Capacitor.Plugins?.PushNotifications;
+  if (!P) return;
+  pushWired = true;
+  try {
+    P.addListener("registration", (t) => api("/api/push/register", { method: "POST", body: JSON.stringify({ token: t.value, platform: window.Capacitor.getPlatform() }) }).catch(() => {}));
+    P.addListener("pushNotificationActionPerformed", (a) => {
+      const d = a?.notification?.data || {};
+      if (d.open === "tickets" && d.plate) checkPlate(d.plate, d.state || "NY", true).then(() => ticketsSheet()).catch(() => {});
+    });
+    if (window.Capacitor.getPlatform() === "android") await P.createChannel?.({ id: "alerts", name: "Ticket alerts", importance: 5, visibility: 1 }).catch(() => {});
+    let perm = await P.checkPermissions();
+    if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") perm = await P.requestPermissions();
+    if (perm.receive === "granted") await P.register();
+  } catch (e) { console.warn("push setup", e); }
+}
+function testPush() {
+  api("/api/push/test", { method: "POST" })
+    .then(() => notice("Sent", "Check your notifications. It should arrive in a few seconds."))
+    .catch((e) => notice("Not sent", e.message));
 }
 
 // ================= DELETE ACCOUNT =================
@@ -3044,7 +3073,7 @@ paintSaved();
 const savedPlate = store.get("plate", null);
 if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
 afterCheckout();
-if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); resumeUpgrade(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
+if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); resumeUpgrade(); setupPush(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
 if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocation" }).then((p) => { if (p.state === "granted") startWatch(); }).catch(() => {});
 </script>
 </body>

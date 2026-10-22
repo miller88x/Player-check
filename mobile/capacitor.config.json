@@ -8,6 +8,20 @@
     "errorPath": "index.html"
   },
   "backgroundColor": "#01050e",
-  "ios": { "contentInset": "never", "scheme": "Rova" },
-  "android": { "allowMixedContent": false }
+  "ios": {
+    "contentInset": "never",
+    "scheme": "Rova"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
 }
