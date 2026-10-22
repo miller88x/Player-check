@@ -182,7 +182,13 @@ async function place(rows, box, now) {
     const l = locate(b, mid(o)); if (!l || l.d > 160 || l.side !== side || l.s < 5 || l.s > b.L - 5) return false;
     const lo = locate(o, mid(o)); return lo && Math.abs(l.ux * lo.ux + l.uy * lo.uy) > 0.8; // runs alongside
   });
-  // Every other block side in view: no parking signs on record (shown gray, never green)
+  // Blocks with no signs at all, on a street whose neighboring blocks have no street cleaning either, really are
+  // unregulated: parking is allowed (green, "no signs posted"). If a neighbor has street cleaning or a sign stands
+  // close by, signs are probably missing from the city's records here, so it stays gray ("check posted signs").
+  const sweepBlocks = new Set([...faces.values()].filter((F) => F.signs.some((s) => s.rule.sweeping)).map((F) => F.b.id));
+  const endNodes = new Map(); for (const b of B) for (const p of [b.pts[0], b.pts[b.pts.length - 1]]) { const k = nodeKey(p); if (!endNodes.has(k)) endNodes.set(k, []); endNodes.get(k).push(b); }
+  const neighborSweeps = (b) => [b.pts[0], b.pts[b.pts.length - 1]].some((p) => (endNodes.get(nodeKey(p)) || []).some((o) => o !== b && o.name === b.name && sweepBlocks.has(o.id)));
+  // Every other block side in view
   for (const b of B) {
     if (b.L < 40 || b.lanes === 0 || !inView(b)) continue; // no parking lane on this street: no curb to color
     stats.blocks++;
@@ -190,10 +196,12 @@ async function place(rows, box, now) {
       stats.sides++;
       if (faces.has(`${b.id}|${side}`)) { stats.signed++; continue; }
       if (facesOther(b, side)) { stats.median = (stats.median || 0) + 1; continue; }
-      stats.none++;
       const near = rows.filter((r) => { if (!park.parseSign(r.sign_description)) return false; const l = locate(b, [r.x, r.y]); return l && l.side === side && l.d < 45 && l.s > 15 && l.s < b.L - 15; });
       if (near.length) { stats.grayWithSigns = (stats.grayWithSigns || 0) + 1; (stats.grayEx ||= []).length < 4 && stats.grayEx.push(`${b.full} (${b.crossA[0] || "?"}–${b.crossB[0] || "?"}): ${near.length} signs nearby filed as ${[...new Set(near.map((r) => `${r.on_street} ${r.side_of_street} ${r.from_street}→${r.to_street}`))].slice(0, 2).join(" / ")}`); }
-      emit(b, side, 0, b.L, { s: "none", why: "No parking signs on record", st: tc(b.full), fr: tc(b.crossA[0] || ""), to: tc(b.crossB[0] || "") });
+      const where = { st: tc(b.full), fr: tc(b.crossA[0] || ""), to: tc(b.crossB[0] || "") };
+      const blockSigned = faces.has(`${b.id}|${-side}`);
+      if (!near.length && !blockSigned && !neighborSweeps(b)) { stats.free = (stats.free || 0) + 1; emit(b, side, 0, b.L, { s: "green", why: "No signs posted: parking allowed", k: "free", free: 1, ...where }); }
+      else { stats.none++; emit(b, side, 0, b.L, { s: "none", why: "Signs may be missing here", ...where }); }
     }
   }
   stats.placedSigns = ruled - left.length; stats.unplacedSigns = left.length;

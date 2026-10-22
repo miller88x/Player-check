@@ -185,9 +185,14 @@ async function cellRows(cx, cy) {
     const params = new URLSearchParams({
       $select: "on_street,from_street,to_street,side_of_street,sign_x_coord,sign_y_coord,sign_description,arrow_direction",
       $where: `record_type='Current' AND sign_x_coord between ${x0} and ${x1} AND sign_y_coord between ${y0} and ${y1}`,
-      $limit: "5000",
+      $limit: "50000", // dense blocks (Midtown) have thousands of signs: never cut the list short
     });
-    const res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(15000) });
+    let res;
+    for (let k = 0; ; k++) {
+      try { res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(20000) }); if (res.ok || (res.status < 500 && res.status !== 429) || k >= 2) break; }
+      catch (e) { if (k >= 2) throw e; }
+      await new Promise((ok) => setTimeout(ok, 600 * (k + 1)));
+    }
     if (!res.ok) throw new Error(`signs ${res.status}`);
     const rows = (await res.json()).map((r) => ({ ...r, x: +r.sign_x_coord, y: +r.sign_y_coord })).filter((r) => r.x && r.y);
     cellCache.set(key, { at: Date.now(), rows });
@@ -337,26 +342,33 @@ function ics(url, res) {
 // Every block face in view, split into stretches by its sign arrows, colored by what applies right now:
 // green = park, yellow = metered / time limit, red = no parking / standing / stopping now.
 // Signs fetched in 1,500 ft tiles (+200 ft margin so faces on tile edges are whole), cached 12 hours.
-const TILE = 1500, TMARGIN = 200, tileCache = new Map(), tileBusy = new Map();
+const TILE = 1500, TMARGIN = 200, tileCache = new Map(), tileBusy = new Map(), tileStats = { paged: 0 };
 async function tileRows(tx, ty) {
   const key = `${tx}|${ty}`, hit = tileCache.get(key);
   if (hit && Date.now() - hit.at < 12 * 3600e3) return hit.rows;
   if (tileBusy.has(key)) return tileBusy.get(key);
   const x0 = tx * TILE - TMARGIN, x1 = (tx + 1) * TILE + TMARGIN, y0 = ty * TILE - TMARGIN, y1 = (ty + 1) * TILE + TMARGIN;
   const p = (async () => {
-    const params = new URLSearchParams({
-      $select: "on_street,from_street,to_street,side_of_street,sign_x_coord,sign_y_coord,sign_description,arrow_direction",
-      $where: `record_type='Current' AND sign_x_coord between ${x0} and ${x1} AND sign_y_coord between ${y0} and ${y1}`,
-      $limit: "20000",
-    });
-    let res;
-    for (let k = 0; ; k++) { // the city's servers drop a request now and then: try again before giving up
-      try { res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(20000) }); if (res.ok || (res.status < 500 && res.status !== 429) || k >= 2) break; }
-      catch (e) { if (k >= 2) throw e; }
-      await new Promise((ok) => setTimeout(ok, 700 * (k + 1)));
+    // Busy areas (Midtown) have more signs per tile than one request returns: page through all of them
+    const PAGE = 20000, rows = [];
+    for (let off = 0; off < 200000; off += PAGE) {
+      const params = new URLSearchParams({
+        $select: "on_street,from_street,to_street,side_of_street,sign_x_coord,sign_y_coord,sign_description,arrow_direction",
+        $where: `record_type='Current' AND sign_x_coord between ${x0} and ${x1} AND sign_y_coord between ${y0} and ${y1}`,
+        $order: ":id", $limit: String(PAGE), $offset: String(off),
+      });
+      let res;
+      for (let k = 0; ; k++) { // the city's servers drop a request now and then: try again before giving up
+        try { res = await fetch(`${SIGNS}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(25000) }); if (res.ok || (res.status < 500 && res.status !== 429) || k >= 2) break; }
+        catch (e) { if (k >= 2) throw e; }
+        await new Promise((ok) => setTimeout(ok, 700 * (k + 1)));
+      }
+      if (!res.ok) throw new Error(`signs ${res.status}`);
+      const page = await res.json();
+      for (const r of page) { const x = +r.sign_x_coord, y = +r.sign_y_coord; if (x && y) rows.push({ ...r, x, y }); }
+      if (page.length < PAGE) break;
+      tileStats.paged++;
     }
-    if (!res.ok) throw new Error(`signs ${res.status}`);
-    const rows = (await res.json()).map((r) => ({ ...r, x: +r.sign_x_coord, y: +r.sign_y_coord })).filter((r) => r.x && r.y);
     tileCache.set(key, { at: Date.now(), rows });
     if (tileCache.size > 600) tileCache.delete(tileCache.keys().next().value);
     return rows;
