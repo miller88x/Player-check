@@ -213,6 +213,10 @@ body.navigating .tabs{display:none}
 /* Sheet */
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:12;max-width:600px;margin:0 auto;background:#1f1f1f;border-radius:28px 28px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.5);max-height:72%;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .34s cubic-bezier(.2,.9,.25,1)}
 .sheet.show{transform:none}
+.sheet.show.peek{transform:translateY(calc(100% - var(--peekH,104px)))}
+.sheet.dragging{transition:none}
+.sheet::before,.sheet-head{touch-action:none;cursor:grab}
+.sheet.peek .sheet-body{visibility:hidden}
 .sheet::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:#5f6368;margin:10px auto 0}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;padding:10px 18px 8px;gap:12px}
 .sheet-head h2{margin:0;font:600 24px var(--body);min-width:0}
@@ -1019,7 +1023,7 @@ let sheetMode = null;
 const TAB_FOR = { plate: "plateBtn", tickets: "plateBtn", alerts: "plateBtn", dispute: "plateBtn", letter: "plateBtn", park: "parkBtn", parked: "parkBtn", report: "reportBtn", account: "youBtn" };
 function setTab(mode) { const id = TAB_FOR[mode] || "tabExplore"; document.querySelectorAll(".tab").forEach((t) => (t.id === id ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"))); }
 function openSheet(t, html, mode = null) {
-  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; hideAdMob(); $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
+  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; hideAdMob(); $("#sheet").classList.remove("peek"); $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
 const LEGAL_LINKS = '<a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a>';
 const LEGAL_NOTE = `<p class="note">Routes are guidance only. Always follow posted signs and traffic laws. ${LEGAL_LINKS}</p>`;
 function closeSheet() {
@@ -1031,6 +1035,54 @@ function closeSheet() {
   sheetMode = null; setTab(null);
 }
 $("#sheetX").onclick = () => closeSheet();
+
+// ---- Drag the sheet: down to peek at the map, up to open fully, far down to close ----
+(() => {
+  const sh = $("#sheet"), head = sh.querySelector(".sheet-head"), body = $("#sheetBody");
+  let drag = null;
+  const peekH = () => head.getBoundingClientRect().bottom - sh.getBoundingClientRect().top + 6;
+  const setPeek = (on) => { sh.style.setProperty("--peekH", `${Math.round(peekH())}px`); sh.classList.toggle("peek", on); };
+  const start = (y, fromBody) => {
+    if (!sh.classList.contains("show")) return;
+    const h = sh.getBoundingClientRect().height, pk = peekH();
+    drag = { y0: y, t0: performance.now(), h, pk, base: sh.classList.contains("peek") ? h - pk : 0, fromBody, live: false, off: 0 };
+  };
+  const move = (y, e) => {
+    if (!drag) return;
+    const dy = y - drag.y0;
+    if (!drag.live) {
+      if (Math.abs(dy) < 6) return;
+      if (drag.fromBody && (dy < 0 || body.scrollTop > 0)) { drag = null; return; } // normal list scrolling
+      drag.live = true; sh.classList.add("dragging");
+    }
+    e?.cancelable && e.preventDefault();
+    drag.off = Math.max(0, drag.base + dy);
+    sh.style.transform = `translateY(${drag.off}px)`;
+  };
+  const end = (y) => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    if (!d.live) { if (sh.classList.contains("peek") && !d.fromBody) setPeek(false); return; } // a tap on a peeking sheet opens it
+    sh.classList.remove("dragging"); sh.style.transform = "";
+    const v = (y - d.y0) / Math.max(1, performance.now() - d.t0); // px per ms, + is down
+    const closeAt = d.h - d.pk + 50;
+    if (d.off > closeAt || (d.base > 0 && v > 0.8)) { sh.classList.remove("peek"); closeSheet(); return; }
+    setPeek(v > 0.5 || (v > -0.5 && d.off > d.h * 0.3 && d.off > 40));
+  };
+  const onBtn = (e) => e.target.closest("button, a, input, select, textarea");
+  head.addEventListener("touchstart", (e) => { if (!onBtn(e)) start(e.touches[0].clientY, false); }, { passive: true });
+  sh.addEventListener("touchstart", (e) => { if (e.target === sh) start(e.touches[0].clientY, false); }, { passive: true }); // the grab bar
+  body.addEventListener("touchstart", (e) => start(e.touches[0].clientY, true), { passive: true });
+  sh.addEventListener("touchmove", (e) => move(e.touches[0].clientY, e), { passive: false });
+  sh.addEventListener("touchend", (e) => end(e.changedTouches[0].clientY));
+  sh.addEventListener("touchcancel", () => { if (drag) { drag = null; sh.classList.remove("dragging"); sh.style.transform = ""; } });
+  head.addEventListener("mousedown", (e) => { if (!onBtn(e)) { start(e.clientY, false); e.preventDefault(); } });
+  addEventListener("mousemove", (e) => move(e.clientY, e));
+  addEventListener("mouseup", (e) => end(e.clientY));
+  // A new sheet always opens fully
+  new MutationObserver(() => { if (!sh.classList.contains("show")) sh.classList.remove("peek"); }).observe(sh, { attributes: true, attributeFilter: ["class"] });
+  window.sheetPeek = setPeek;
+})();
 function notice(h, msg) { openSheet(h, `<p class="muted" style="margin:0">${esc(msg)}</p><button class="btn primary" type="button" id="ok">OK</button>`); $("#ok").onclick = closeSheet; }
 
 // ================= TICKETS =================
