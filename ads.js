@@ -52,6 +52,11 @@ function routes(url, res, send, readBody, req) {
   const p = url.pathname;
   if (!p.startsWith("/api/ads")) return false;
 
+  // Store apps: which AdMob banner to use. Test ads until ADMOB_LIVE=1 on Render (flip at launch, never click your own live ads).
+  if (p === "/api/ads/config") {
+    send(res, 200, { android: "ca-app-pub-2690587342980831/2480545795", ios: process.env.ADMOB_IOS_BANNER || null, testing: process.env.ADMOB_LIVE !== "1" });
+    return true;
+  }
   if (p === "/api/ads" && req.method === "GET") {
     const ad = pick(parseFloat(url.searchParams.get("lat")), parseFloat(url.searchParams.get("lng")));
     if (ad) bump(ad.id, "views");

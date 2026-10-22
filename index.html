@@ -253,6 +253,7 @@ ul.tix li{background:var(--ui);border-radius:12px;padding:12px 14px;display:grid
 .links{display:flex;gap:14px;font-size:14px;flex-wrap:wrap}
 a{color:var(--blue)}
 .note{color:var(--muted);font-size:12px}
+body.admob .sheet-body{padding-bottom:70px}
 .adslot{display:flex;gap:12px;align-items:center;background:var(--ui);border:1px solid var(--ui2);border-radius:14px;padding:12px 14px;margin-top:4px;min-height:56px}
 .adslot .adtxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.adslot .adtxt small{color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
 .adslot .adtxt b{font-size:15px}.adslot .adtxt span{color:var(--muted);font-size:13px}.adslot button{all:unset;cursor:pointer;flex:none;background:var(--ui2);color:var(--blue);font-weight:700;font-size:14px;border-radius:18px;padding:8px 14px}
@@ -1018,11 +1019,11 @@ let sheetMode = null;
 const TAB_FOR = { plate: "plateBtn", tickets: "plateBtn", alerts: "plateBtn", dispute: "plateBtn", letter: "plateBtn", park: "parkBtn", parked: "parkBtn", report: "reportBtn", account: "youBtn" };
 function setTab(mode) { const id = TAB_FOR[mode] || "tabExplore"; document.querySelectorAll(".tab").forEach((t) => (t.id === id ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"))); }
 function openSheet(t, html, mode = null) {
-  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
+  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; hideAdMob(); $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
 const LEGAL_LINKS = '<a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a>';
 const LEGAL_NOTE = `<p class="note">Routes are guidance only. Always follow posted signs and traffic laws. ${LEGAL_LINKS}</p>`;
 function closeSheet() {
-  $("#sheet").classList.remove("show");
+  $("#sheet").classList.remove("show"); hideAdMob();
   if (sheetMode === "route" && !nav.active) clearRoute();
   if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
   if (sheetMode === "cat") clearCats();
@@ -1262,7 +1263,7 @@ document.querySelectorAll("[data-saved]").forEach((b) => (b.onclick = () => {
 // Tap the search box: Home, Work and recent places show right away (like Google)
 // ---- Full-screen search ----
 function enterSearch() { if (!document.body.classList.contains("searching")) { document.body.classList.add("searching"); closeSheet(); } showRecents(); }
-function exitSearch() { document.body.classList.remove("searching"); $("#results").hidden = true; $("#q").blur(); if (pendingSave) { pendingSave = null; $("#q").placeholder = "Search here"; } }
+function exitSearch() { hideAdMob(); document.body.classList.remove("searching"); $("#results").hidden = true; $("#q").blur(); if (pendingSave) { pendingSave = null; $("#q").placeholder = "Search here"; } }
 $("#qBack").addEventListener("click", (e) => { e.preventDefault(); $("#q").value = ""; $("#qClear").style.display = "none"; exitSearch(); });
 const PIN_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#9aa0a6"/></svg>';
 const CLOCK_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#9aa0a6" stroke-width="2"/><path d="M12 7.5V12l3 2" stroke="#9aa0a6" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
@@ -1596,6 +1597,7 @@ function routeSheet(to) {
 // ================= NAVIGATION =================
 const nav = { active: false, sim: null, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, lastReroute: 0 };
 function startNav(sim) {
+  hideAdMob(); // never an ad while driving
   if (!route) return;
   unlockVoice(); speak(sim ? "Starting test drive" : "Starting route"); // first sound must come straight from the tap on iPhone
   (route.steps || []).forEach((st) => ttsPrefetch(instruction(st))); // have the turn phrases ready before they're needed
@@ -2884,6 +2886,8 @@ async function placeAd(host, where) {
       if (ad.phone) location.href = `tel:${ad.phone}`;
       else if (ad.at) planRoute({ name: ad.name, line: ad.text, at: [ad.at.lng, ad.at.lat] });
     };
+  } else if (await showAdMob()) {
+    return; // the store app shows a Google banner at the bottom instead of a house card
   } else if (houseTurn++ % 2 === 0) {
     el.innerHTML = `<div class="adtxt"><small>Rova</small><b>Drive without ads</b><span>Bronze: no ads plus AI voices · $4.99/mo</span></div><button type="button">See plans</button>`;
     el.querySelector("button").onclick = () => (account ? plansSheet() : accountSheet());
@@ -2892,6 +2896,36 @@ async function placeAd(host, where) {
     el.querySelector("button").onclick = advertiseSheet;
   }
   host.append(el);
+}
+// ---- AdMob banner (store apps only), shown while a stop screen is open, hidden everywhere else ----
+let admob = null;
+async function admobReady() {
+  const A = window.Capacitor?.isNativePlatform?.() && window.Capacitor.Plugins?.AdMob;
+  if (!A) return null;
+  if (admob) return admob;
+  try {
+    const cfg = await fetch("/api/ads/config").then((r) => r.json());
+    const unit = cfg[window.Capacitor.getPlatform()];
+    if (!unit) return null;
+    if (window.Capacitor.getPlatform() === "ios") await A.requestTrackingAuthorization?.().catch(() => {});
+    await A.initialize({ initializeForTesting: cfg.testing });
+    admob = { A, unit, testing: cfg.testing, shown: false };
+    return admob;
+  } catch (e) { console.warn("admob", e); return null; }
+}
+async function showAdMob() {
+  const m = await admobReady();
+  if (!m || !adsOn()) return false;
+  try {
+    if (m.shown) await m.A.resumeBanner();
+    else await m.A.showBanner({ adId: m.unit, adSize: "ADAPTIVE_BANNER", position: "BOTTOM_CENTER", margin: 0, isTesting: m.testing });
+    m.shown = true; document.body.classList.add("admob");
+    return true;
+  } catch { return false; }
+}
+function hideAdMob() {
+  if (!admob?.shown) return;
+  admob.A.hideBanner().catch(() => {}); document.body.classList.remove("admob");
 }
 function advertiseSheet() {
   openSheet("Advertise on Rova", `
