@@ -291,6 +291,8 @@ http
     }
 
     if (legal.routes(url, res, send)) return;
+    // AdMob checks this file on the developer website listed in the app stores
+    if (url.pathname === "/app-ads.txt") return send(res, 200, "google.com, pub-2690587342980831, DIRECT, f08c47fec0942fa0\n", "text/plain", "public, max-age=86400");
     if (url.pathname === "/health") return send(res, 200, { ok: true });
 
     // Serve the app
