@@ -159,4 +159,4 @@ function routes(url, res, send, req) {
   return true;
 }
 
-module.exports = { routes, runAll, ready, sendOne };
+module.exports = { routes, runAll, ready, sendOne, sendToUser };

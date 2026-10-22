@@ -19,6 +19,7 @@ const billing = require("./billing");
 const ads = require("./ads");
 const legal = require("./legal");
 const push = require("./push");
+const parkwatch = require("./parkwatch");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -335,5 +336,5 @@ http
     }
     sendPage(req, res);
   })
-  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); });
+  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); parkwatch.start(); });
 alerts.init(lookup);
