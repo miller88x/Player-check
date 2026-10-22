@@ -430,6 +430,7 @@ body.navigating #recenter.on{display:grid!important}
   <div class="lhead">Show on map</div>
   <div class="lcol">
     <button class="ltog" type="button" data-layer="tickets"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#e5484d"/></svg>Tickets</button>
+    <button class="ltog" type="button" data-layer="curbs"><svg width="18" height="16" viewBox="0 0 24 20" aria-hidden="true"><rect x="1" y="3" width="10" height="5" rx="2.5" fill="#1e8e3e"/><rect x="13" y="3" width="10" height="5" rx="2.5" fill="#d93025"/><rect x="1" y="12" width="22" height="5" rx="2.5" fill="#f29900"/></svg>Parking curbs</button>
     <button class="ltog" type="button" data-layer="speed"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/><circle cx="12" cy="13" r="1.8" fill="#f08a24"/></svg>Speed cams</button>
     <button class="ltog" type="button" data-layer="rovers"><svg width="16" height="17" viewBox="0 0 44 48" aria-hidden="true"><path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="#2f6bff"/></svg>Rovers</button>
     <button class="ltog" type="button" data-rshare aria-pressed="true"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#2f6bff"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2f6bff" stroke-width="2" opacity=".5"/></svg>Show me as a Rover</button>
@@ -562,6 +563,7 @@ let mapType = store.get("mapType", "map");
 const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: false });
 map.once("load", () => window.hideSplash?.()); map.once("error", () => window.hideSplash?.());
 let layerOn = store.get("layers", { tickets: true, speed: true, redlight: true });
+if (layerOn.curbs === undefined) { layerOn.curbs = true; store.set("layers", layerOn); } // colored curbs on by default
 let cams = [];
 
 function camIcon(color, kind) {
@@ -770,7 +772,7 @@ map.on("mousemove", (e) => { const f = map.queryRenderedFeatures(e.point).find((
 function paintChips() { document.querySelectorAll("[data-layer]").forEach((b) => b.setAttribute("aria-pressed", !!layerOn[b.dataset.layer])); }
 paintChips();
 document.querySelectorAll("[data-layer]").forEach((b) => (b.onclick = () => {
-  const k = b.dataset.layer; layerOn[k] = !layerOn[k]; store.set("layers", layerOn); paintChips(); if (k === "rovers") loadRovers?.();
+  const k = b.dataset.layer; layerOn[k] = !layerOn[k]; store.set("layers", layerOn); paintChips(); if (k === "rovers") loadRovers?.(); if (k === "curbs") paintCurbs(true);
   if (k === "tickets") drawPins(false); else if (map.getLayer("cams")) map.setFilter("cams", camFilter());
 }));
 
@@ -2483,6 +2485,40 @@ function paintTruckLayer() {
   } catch (e) { window.reportError2?.("truck layer: " + e.message); }
 }
 map.on("style.load", paintTruckLayer);
+
+// ---- Colored curbs (NYC): green = park, yellow = meter / time limit, red = no parking now. Zoomed in, never while driving ----
+let curbT = null, curbKey = "";
+function paintCurbs(force) {
+  try {
+    if (!map.getSource("curbs")) map.addSource("curbs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    if (!map.getLayer("curb-line")) {
+      map.addLayer({ id: "curb-line", type: "line", source: "curbs", minzoom: 16, layout: { "line-cap": "round" },
+        paint: { "line-color": ["match", ["get", "s"], "red", "#d93025", "yellow", "#f29900", "#1e8e3e"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 16, 3, 18, 7], "line-opacity": 0.9 } },
+        map.getLayer("route-casing") ? "route-casing" : undefined);
+      map.on("click", "curb-line", (e) => { if (!nav.active) parkCheck([e.lngLat.lng, e.lngLat.lat], true); });
+      map.on("mouseenter", "curb-line", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "curb-line", () => (map.getCanvas().style.cursor = ""));
+    }
+    const c = map.getCenter(), show = layerOn.curbs !== false && !nav.active && map.getZoom() >= 16 && inNYC(c.lng, c.lat);
+    map.setLayoutProperty("curb-line", "visibility", show ? "visible" : "none");
+    if (!show) return;
+    clearTimeout(curbT);
+    curbT = setTimeout(async () => {
+      const b = map.getBounds(), k = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(3)).join(",") + "|" + Math.floor(Date.now() / 300000);
+      if (k === curbKey && !force) return; // same area within 5 min: colors already current
+      curbKey = k;
+      try {
+        const r = await fetch(`/api/park/curbs?w=${b.getWest().toFixed(5)}&s=${b.getSouth().toFixed(5)}&e=${b.getEast().toFixed(5)}&n=${b.getNorth().toFixed(5)}`);
+        if (r.ok) map.getSource("curbs")?.setData(await r.json());
+      } catch {}
+    }, 450);
+  } catch (e) { window.reportError2?.("curbs: " + e.message); }
+}
+map.on("style.load", () => { curbKey = ""; paintCurbs(); });
+map.on("moveend", () => paintCurbs());
+if (map.isStyleLoaded?.()) paintCurbs();
+setInterval(() => { if (!document.hidden) paintCurbs(); }, 5 * 60 * 1000); // colors change as rules start and end
 map.on("moveend", () => { if (truckOn()) paintTruckLayer(); });
 if (map.isStyleLoaded?.()) paintTruckLayer();
 
