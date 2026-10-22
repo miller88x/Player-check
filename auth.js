@@ -8,6 +8,9 @@ const SB_URL = (process.env.SUPABASE_URL || "").replace(/[\s​-‍﻿ ]/g, "")
 const SB_KEY = (process.env.SUPABASE_SERVICE_KEY || "").replace(/[\s​-‍﻿ ]/g, "");
 const ready = () => !!(SB_URL && SB_KEY);
 const PLANS = ["free", "bronze", "silver", "gold", "fleet"];
+// Free Gold for listed accounts (store reviewers, your own testing): COMP_GOLD on Render = comma-separated emails
+const COMP = new Set((process.env.COMP_GOLD || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean));
+const comp = (u) => { if (u && COMP.has(String(u.email).toLowerCase()) && (!u.plan || u.plan === "free")) u.plan = "gold"; return u; };
 const SESSION_DAYS = 365;
 const MAX_DATA = 200000; // ~200 KB of synced app data per account
 
@@ -42,6 +45,7 @@ async function newSession(userId) {
 }
 // _billing is server-owned (set by the Stripe webhook): the phone gets a short summary, never the raw ids
 const pub = (u) => {
+  comp(u);
   const all = u.data || {}, b = all._billing;
   const data = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith("_"))); // _billing, _push: server-owned
   return { email: u.email, plan: PLANS.includes(u.plan) ? u.plan : "free", data, since: u.created_at,
@@ -53,7 +57,7 @@ async function userFromReq(req) {
   const m = String(req.headers.authorization || "").match(/^Bearer\s+([A-Za-z0-9_-]{20,})$/);
   if (!m || !ready()) return null;
   const rows = await sb(`pc_sessions?token_hash=eq.${sha(m[1])}&expires_at=gt.${new Date().toISOString()}&select=user_id,pc_users(id,email,plan,data,created_at)`);
-  return rows?.[0]?.pc_users || null;
+  return comp(rows?.[0]?.pc_users || null);
 }
 
 // ---------- abuse guard: 10 tries per 15 min per visitor ----------
