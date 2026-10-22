@@ -2492,11 +2492,15 @@ function paintCurbs(force) {
   try {
     if (!map.getSource("curbs")) map.addSource("curbs", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     if (!map.getLayer("curb-line")) {
-      map.addLayer({ id: "curb-line", type: "line", source: "curbs", minzoom: 16, layout: { "line-cap": "round" },
+      map.addLayer({ id: "curb-line", type: "line", source: "curbs", minzoom: 16, layout: { "line-cap": "butt", "line-sort-key": ["coalesce", ["get", "z"], 0] },
         paint: { "line-color": ["match", ["get", "s"], "red", "#d93025", "yellow", "#f29900", "#1e8e3e"],
           "line-width": ["interpolate", ["linear"], ["zoom"], 16, 3, 18, 7], "line-opacity": 0.9 } },
         map.getLayer("route-casing") ? "route-casing" : undefined);
-      map.on("click", "curb-line", (e) => { if (!nav.active) parkCheck([e.lngLat.lng, e.lngLat.lat], true); });
+      map.on("click", "curb-line", (e) => {
+        if (nav.active) return;
+        if (e.features?.some((f) => f.properties.bus)) return notice("Bus stop", "No standing at a bus stop: buses only. Park past the bus stop sign.");
+        parkCheck([e.lngLat.lng, e.lngLat.lat], true);
+      });
       map.on("mouseenter", "curb-line", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "curb-line", () => (map.getCanvas().style.cursor = ""));
     }
@@ -2510,12 +2514,67 @@ function paintCurbs(force) {
       curbKey = k;
       try {
         const r = await fetch(`/api/park/curbs?w=${b.getWest().toFixed(5)}&s=${b.getSouth().toFixed(5)}&e=${b.getEast().toFixed(5)}&n=${b.getNorth().toFixed(5)}`);
-        if (r.ok) map.getSource("curbs")?.setData(await r.json());
+        if (r.ok) map.getSource("curbs")?.setData(snapCurbs(await r.json()));
       } catch {}
     }, 450);
   } catch (e) { window.reportError2?.("curbs: " + e.message); }
 }
 map.on("style.load", () => { curbKey = ""; paintCurbs(); });
+
+// The city's sign points sit on the sidewalk, not the curb. Move each stretch onto its street (same name in the map
+// data, else the nearest street), keep it on its own side, and stop it short of the corner. Then mark bus stops red.
+const ABBR = { AVENUE: "AVE", AV: "AVE", STREET: "ST", BOULEVARD: "BLVD", ROAD: "RD", PLACE: "PL", PARKWAY: "PKWY", DRIVE: "DR", LANE: "LN", COURT: "CT", TERRACE: "TER", EAST: "E", WEST: "W", NORTH: "N", SOUTH: "S", SAINT: "ST" };
+const normSt = (n) => String(n || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean).map((w) => ABBR[w] || w).join(" ").replace(/(\d+)(ST|ND|RD|TH)\b/g, "$1");
+function snapCurbs(fc) {
+  try {
+    const roads = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation_name" })
+      .concat(map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }));
+    if (!roads.length) return fc;
+    const lat0 = map.getCenter().lat, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110540;
+    const toM = ([lng, lat]) => [lng * kx, lat * ky], toLL = ([x, y]) => [x / kx, y / ky];
+    const segs = [];
+    for (const f of roads) {
+      if (f.properties.class && /rail|path|track|ferry|aerialway|pier|service|transit|busway/.test(f.properties.class)) continue;
+      const nm = normSt(f.properties.name || f.properties["name:en"] || ""), g = f.geometry;
+      const lines = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
+      for (const L of lines) for (let i = 0; i < L.length - 1; i++) segs.push({ a: toM(L[i]), b: toM(L[i + 1]), nm });
+    }
+    const proj = (p, s) => { const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - s.a[0]) * dx + (p[1] - s.a[1]) * dy) / L2)); const q = [s.a[0] + t * dx, s.a[1] + t * dy];
+      return { q, d: Math.hypot(p[0] - q[0], p[1] - q[1]) }; };
+    const nearest = (p, nm) => { let best = null;
+      for (const s of segs) { const r = proj(p, s), score = r.d - (nm && s.nm === nm ? 15 : 0); if (!best || score < best.score) best = { ...r, s, score }; }
+      return best; };
+    const out = [];
+    for (const f of fc.features) {
+      const [A, B] = f.geometry.coordinates.map(toM), nm = normSt(f.properties.st);
+      const pa = nearest(A, nm), pb = nearest(B, nm);
+      if (!pa || !pb || pa.d > 30 || pb.d > 30) { out.push(f); continue; }
+      let a = pa.q, b = pb.q; const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 6) continue;
+      const ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len, mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+      const side = Math.sign((mid[0] - a[0]) * -uy + (mid[1] - a[1]) * ux) || 1; // which side of the street the signs are on
+      const off = Math.max(4, Math.min(11, (pa.d + pb.d) / 2 - 2)) * side, trim = Math.min(4, len / 4);
+      a = [a[0] + ux * trim - uy * off, a[1] + uy * trim + ux * off]; b = [b[0] - ux * trim - uy * off, b[1] - uy * trim + ux * off];
+      out.push({ ...f, properties: { ...f.properties, z: 1 }, geometry: { type: "LineString", coordinates: [toLL(a), toLL(b)] } });
+    }
+    // Bus stops (map data): red 20 m each way along the curb they sit on
+    const stops = map.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "class"], "bus"] });
+    const done = new Set();
+    for (const st of stops) {
+      const p = toM(st.geometry.coordinates), key = p.map((v) => Math.round(v / 5)).join(",");
+      if (done.has(key)) continue; done.add(key);
+      let best = null;
+      for (const f of out) { if (f.geometry.coordinates.length !== 2) continue; const s = { a: toM(f.geometry.coordinates[0]), b: toM(f.geometry.coordinates[1]) }; const r = proj(p, s); if (!best || r.d < best.r.d) best = { r, s }; }
+      if (!best || best.r.d > 15) continue;
+      const { s } = best, L = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) || 1, ux = (s.b[0] - s.a[0]) / L, uy = (s.b[1] - s.a[1]) / L;
+      const t = (best.r.q[0] - s.a[0]) * ux + (best.r.q[1] - s.a[1]) * uy, t0 = Math.max(0, t - 20), t1 = Math.min(L, t + 20);
+      out.push({ type: "Feature", properties: { s: "red", why: "Bus stop: no standing", bus: 1, z: 2 },
+        geometry: { type: "LineString", coordinates: [toLL([s.a[0] + ux * t0, s.a[1] + uy * t0]), toLL([s.a[0] + ux * t1, s.a[1] + uy * t1])] } });
+    }
+    return { ...fc, features: out };
+  } catch (e) { window.reportError2?.("snap curbs: " + e.message); return fc; }
+}
 map.on("moveend", () => paintCurbs());
 if (map.isStyleLoaded?.()) paintCurbs();
 setInterval(() => { if (!document.hidden) paintCurbs(); }, 5 * 60 * 1000); // colors change as rules start and end
