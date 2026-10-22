@@ -106,6 +106,16 @@ ol.ev{margin:0;padding-left:20px;color:var(--ink);font-size:14px;display:flex;fl
 .verdict.yellow{background:color-mix(in srgb,#f29900 22%,#202124)}.verdict.yellow .ic{background:#f29900}
 .verdict.red{background:color-mix(in srgb,#d93025 24%,#202124)}.verdict.red .ic{background:#d93025}
 .verdict.unknown{background:var(--ui)}.verdict.unknown .ic{background:#5f6368}
+/* Big glanceable answer: solid color, huge words, readable from the driver's seat */
+.verdict.huge{flex-direction:column;align-items:flex-start;gap:12px;padding:20px 20px 22px;border-radius:20px;color:#fff}
+.verdict.huge.green{background:#188038}.verdict.huge.yellow{background:#c26401}.verdict.huge.red{background:#c5221f}.verdict.huge.unknown{background:#5f6368}
+.verdict.huge .ic{width:54px;height:54px;border-radius:16px;font-size:30px;background:rgba(255,255,255,.22)!important}
+.verdict.huge .big2{font:800 clamp(24px,7vw,30px)/1.12 var(--body);letter-spacing:-.01em}
+.verdict.huge .muted{color:#fff!important;opacity:.92!important;font-size:16px;line-height:1.35;margin-top:4px}
+/* Curb color key on the map */
+#curbKey{position:fixed;left:14px;bottom:calc(var(--safeB) + var(--tabH) + 86px);z-index:9;display:none;gap:10px;align-items:center;background:rgba(32,33,36,.92);color:#e8eaed;border-radius:16px;padding:6px 12px;font:600 12px var(--body);box-shadow:0 2px 8px rgba(0,0,0,.35)}
+#curbKey.on{display:flex}#curbKey b{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:5px;vertical-align:middle}
+body.navigating #curbKey,body.searching #curbKey{display:none!important}
 ul.rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 ul.rules li{background:var(--ui);border-radius:10px;padding:10px 12px;font-size:14px}
 #parkedPill{position:fixed;left:50%;transform:translateX(-50%);top:calc(var(--safeT) + 136px);z-index:10;border:0;border-radius:22px;background:#1a73e8;color:#fff;font-weight:700;padding:9px 16px;box-shadow:0 3px 12px rgba(0,0,0,.4);white-space:nowrap;display:flex;gap:8px;align-items:center}
@@ -444,6 +454,7 @@ body.navigating #recenter.on{display:grid!important}
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#00363f"/></svg></button>
 <button class="fab" id="recenter" type="button"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
+<div id="curbKey" aria-label="Curb colors"><span><b style="background:#1e8e3e"></b>Park</span><span><b style="background:#f29900"></b>Meter / limit</span><span><b style="background:#d93025"></b>No parking</span></div>
 <div class="inAlert" id="inAlert" role="alert" hidden></div>
 <div id="dirTop"><div class="pts"><div><span class="dot"></span>Your location</div><div id="dirTo"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true" style="flex:0 0 auto"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#ea4335"/></svg><span></span></div></div><button class="x" id="dirX" type="button" aria-label="Close directions">✕</button></div>
 
@@ -2559,6 +2570,7 @@ function paintCurbs(force) {
     }
     const c = map.getCenter(), show = layerOn.curbs !== false && !nav.active && map.getZoom() >= 16 && inNYC(c.lng, c.lat);
     map.setLayoutProperty("curb-line", "visibility", show ? "visible" : "none");
+    $("#curbKey").classList.toggle("on", show);
     if (!show) return;
     clearTimeout(curbT);
     curbT = setTimeout(async () => {
@@ -3003,7 +3015,7 @@ async function parkCheck(at, fromTap, curb) {
     }
     const moveTxt = j.moveBy ? new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
     openSheet("Can I park here?", `
-      <div class="verdict ${j.status}"><div class="ic">${ICON_P[j.status]}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink);opacity:.85">${esc(j.detail)}</div></div></div>
+      <div class="verdict huge ${j.status}"><div class="ic">${ICON_P[j.status]}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink);opacity:.85">${esc(j.detail)}</div></div></div>
       ${j.where ? `<div class="muted">📍 ${esc(j.where)}</div>` : ""}
       ${curb?.s === "red" ? `<div><b>Why</b></div><ul class="rules"><li>${esc(curb.hyd ? "Fire hydrant: no parking within 15 ft, anytime" : curb.bus ? "Bus stop: no standing, anytime" : curb.why || "")}</li></ul>` : ""}
       ${j.rules.length && curb?.s !== "red" ? `<div><b>At your spot</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
@@ -3032,7 +3044,7 @@ function saveParked(j, at) {
   store.set("parked", car); clearCheck(); closeSheet(); drawParked();
   if (j.moveBy) {
     openSheet("Parked ✓", `
-      <div class="verdict green"><div class="ic">P</div><div><div class="big2">${j.meterEnd && j.moveBy === j.meterEnd ? "Meter runs out" : "Move by"} ${esc(new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div><div class="muted" style="color:var(--ink)">The app will warn you ${j.meterEnd ? 10 : 30} minutes before when it's open.</div></div></div>
+      <div class="verdict huge green"><div class="ic">P</div><div><div class="big2">${j.meterEnd && j.moveBy === j.meterEnd ? "Meter runs out" : "Move by"} ${esc(new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div><div class="muted" style="color:var(--ink)">The app will warn you ${j.meterEnd ? 10 : 30} minutes before when it's open.</div></div></div>
       <a class="btn primary" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(j.moveBy)}&w=${encodeURIComponent(j.where || "")}">Add phone reminder</a>
       <p class="note">The phone reminder goes in your Calendar app and alerts you 30 and 5 minutes before, even when this app is closed.</p>`, "parked");
   }
@@ -3070,7 +3082,7 @@ function parkedSheet() {
   map.flyTo({ center: car.at, zoom: 17, duration: 700 });
   openSheet("Your car", `
     <div class="muted">📍 ${esc(car.where || "Saved spot")} · parked ${new Date(car.savedAt).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</div>
-    ${car.moveBy ? `<div class="verdict ${new Date(car.moveBy) - Date.now() < 1800000 ? "red" : "green"}"><div class="ic">P</div><div class="big2">Move by ${esc(new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div></div>
+    ${car.moveBy ? `<div class="verdict huge ${new Date(car.moveBy) - Date.now() < 1800000 ? "red" : "green"}"><div class="ic">P</div><div class="big2">Move by ${esc(new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div></div>
       <a class="btn" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(car.moveBy)}&w=${encodeURIComponent(car.where || "")}">Add phone reminder</a>` : ""}
     ${car.meter?.paid ? `<a class="btn" style="text-decoration:none;text-align:center" href="${PARKNYC_WEB}" target="_blank" rel="noopener">Add time with ParkNYC</a>` : ""}
     <div class="row"><button class="btn primary grow" type="button" id="walkCar">Directions to my car</button><button class="btn" type="button" id="movedCar">I moved it</button></div>
@@ -3095,10 +3107,10 @@ async function recheckParked() {
     const busy = $("#sheet").classList.contains("show");
     if (j.suspendedToday && j.sweeping && was && now && now - was > 30 * 60000) {
       cur.moveBy = j.moveBy; cur.warned = false; store.set("parked", cur); queueSync(); tickParked();
-      if (!busy) { openSheet("Good news", `<div class="verdict green"><div class="ic">✓</div><div><div class="big2">No need to move your car today</div><div class="muted" style="color:var(--ink)">Street cleaning is cancelled (${esc(j.suspendedToday)}). New move-by: ${esc(now.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}.</div></div></div><button class="btn primary" type="button" id="ok">Got it</button>`, "parked"); $("#ok").onclick = closeSheet; }
+      if (!busy) { openSheet("Good news", `<div class="verdict huge green"><div class="ic">✓</div><div><div class="big2">No need to move your car today</div><div class="muted" style="color:var(--ink)">Street cleaning is cancelled (${esc(j.suspendedToday)}). New move-by: ${esc(now.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}.</div></div></div><button class="btn primary" type="button" id="ok">Got it</button>`, "parked"); $("#ok").onclick = closeSheet; }
     } else if (j.status === "red" && !cur.redWarned) {
       cur.redWarned = true; store.set("parked", cur);
-      if (!busy) { openSheet("Check your car", `<div class="verdict red"><div class="ic">!</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink)">The rules at your parked spot say you can't be there right now. ${esc(j.detail || "")}</div></div></div><button class="btn primary" type="button" id="ok">OK</button>`, "parked"); $("#ok").onclick = closeSheet; }
+      if (!busy) { openSheet("Check your car", `<div class="verdict huge red"><div class="ic">!</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink)">The rules at your parked spot say you can't be there right now. ${esc(j.detail || "")}</div></div></div><button class="btn primary" type="button" id="ok">OK</button>`, "parked"); $("#ok").onclick = closeSheet; }
     } else if (now && was && Math.abs(now - was) > 30 * 60000) { cur.moveBy = j.moveBy; store.set("parked", cur); queueSync(); tickParked(); }
   } catch {}
 }
