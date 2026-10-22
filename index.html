@@ -2526,7 +2526,8 @@ function paintCurbs(force) {
     if (!map.getLayer("curb-line")) {
       map.addLayer({ id: "curb-line", type: "line", source: "curbs", minzoom: 16, layout: { "line-cap": "butt", "line-sort-key": ["coalesce", ["get", "z"], 0] },
         paint: { "line-color": ["match", ["get", "s"], "red", "#d93025", "yellow", "#f29900", "#1e8e3e"],
-          "line-width": ["interpolate", ["linear"], ["zoom"], 16, 3, 18, 7], "line-opacity": ["case", ["has", "hyd"], 1, 0.9] } },
+          "line-width": ["interpolate", ["exponential", 2], ["zoom"], ...Object.entries(CURB_W).flatMap(([z, w]) => [+z, w])],
+          "line-offset": curbOffsetExpr(), "line-opacity": ["case", ["has", "hyd"], 1, 0.92] } },
         map.getLayer("route-casing") ? "route-casing" : undefined);
       map.on("click", "curb-line", (e) => {
         if (nav.active) return;
@@ -2547,86 +2548,169 @@ function paintCurbs(force) {
       curbKey = k;
       try {
         const r = await fetch(`/api/park/curbs?w=${b.getWest().toFixed(5)}&s=${b.getSouth().toFixed(5)}&e=${b.getEast().toFixed(5)}&n=${b.getNorth().toFixed(5)}`);
-        if (r.ok) map.getSource("curbs")?.setData(snapCurbs(await r.json()));
+        if (r.ok) {
+          const fc = await r.json();
+          map.getSource("curbs")?.setData(snapCurbs(fc));
+          map.once("idle", () => { if (lastCurbFC === fc) map.getSource("curbs")?.setData(snapCurbs(fc)); }); // again once every street tile has loaded
+        }
       } catch {}
     }, 450);
   } catch (e) { window.reportError2?.("curbs: " + e.message); }
 }
 map.on("style.load", () => { curbKey = ""; paintCurbs(); });
+// Zooming changes how wide the roads are drawn, so the corners move: re-lay the same data (no new download)
+map.on("zoomend", () => { if (lastCurbFC && map.getLayer("curb-line") && map.getLayoutProperty("curb-line", "visibility") !== "none") map.getSource("curbs")?.setData(snapCurbs(lastCurbFC)); });
 
-// The city's sign points sit on the sidewalk, not the curb. Move each stretch onto its street (same name in the map
-// data, else the nearest street), keep it on its own side, and stop it short of the corner. Then mark bus stops red.
+// The city's sign points sit on the sidewalk and drift a few meters. Each stretch is laid onto its own street's
+// centerline (same name in the map data), runs corner to corner for the block, and is drawn on the correct side
+// (from the city's side-of-street field) with MapLibre line-offset, so it hugs the drawn road edge at every zoom.
 const ABBR = { AVENUE: "AVE", AV: "AVE", STREET: "ST", BOULEVARD: "BLVD", ROAD: "RD", PLACE: "PL", PARKWAY: "PKWY", DRIVE: "DR", LANE: "LN", COURT: "CT", TERRACE: "TER", EAST: "E", WEST: "W", NORTH: "N", SOUTH: "S", SAINT: "ST" };
 const normSt = (n) => String(n || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean).map((w) => ABBR[w] || w).join(" ").replace(/(\d+)(ST|ND|RD|TH)\b/g, "$1");
-function snapCurbs(fc) {
+const CURB_W = { 15: 2, 16: 3, 17: 4, 18: 6, 19: 7, 20: 8, 21: 9, 22: 10 };
+const ROAD_GROUPS = ["motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"];
+// Width (px) of the drawn road for each class at a zoom, read from the map style itself (casing = the outer edge)
+function styleWidth(v, z) {
+  if (typeof v === "number") return v;
+  if (v && v.stops) { const b = v.base || 1, st = v.stops; if (z <= st[0][0]) return st[0][1]; for (let i = 1; i < st.length; i++) if (z <= st[i][0]) { const [z0, w0] = st[i - 1], [z1, w1] = st[i], t = b === 1 ? (z - z0) / (z1 - z0) : (Math.pow(b, z - z0) - 1) / (Math.pow(b, z1 - z0) - 1); return w0 + (w1 - w0) * t; } return st[st.length - 1][1]; }
+  if (Array.isArray(v) && v[0] === "interpolate" && Array.isArray(v[2]) && v[2][0] === "zoom") {
+    const b = v[1][0] === "exponential" ? v[1][1] : 1, st = []; for (let i = 3; i < v.length; i += 2) st.push([v[i], styleWidth(v[i + 1], z)]);
+    return styleWidth({ base: b, stops: st }, z);
+  }
+  if (Array.isArray(v) && v[0] === "step" && Array.isArray(v[1]) && v[1][0] === "zoom") { let w = styleWidth(v[2], z); for (let i = 3; i < v.length; i += 2) if (z >= v[i]) w = styleWidth(v[i + 1], z); return w; }
+  return null;
+}
+let roadWidthTable = null;
+function roadWidths() {
+  if (roadWidthTable) return roadWidthTable;
+  const t = {}, fallback = { motorway: [10, 16, 26, 40], trunk: [9, 14, 22, 34], primary: [9, 14, 22, 34], secondary: [8, 12, 19, 30], tertiary: [8, 12, 19, 30], minor: [6, 9, 15, 24], service: [3, 5, 8, 12] };
   try {
-    const roads = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation_name" })
-      .concat(map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }));
-    if (!roads.length) return fc;
+    const layers = map.getStyle().layers.filter((l) => l.type === "line" && l["source-layer"] === "transportation" && !/rail|path|tunnel|ferry|pier|aerial|one_?way|area/.test(l.id));
+    for (const g of ROAD_GROUPS) {
+      const pick = (casing) => layers.find((l) => /casing/.test(l.id) === casing && JSON.stringify(l.filter || "").includes(`"${g}"`) && !/bridge/.test(l.id));
+      const L = pick(true) || pick(false);
+      if (L) t[g] = { v: L.paint?.["line-width"], add: /casing/.test(L.id) ? 0 : 2 };
+    }
+  } catch {}
+  roadWidthTable = (z, g) => {
+    const e = t[g] || t[g === "trunk" ? "primary" : g === "tertiary" ? "secondary" : "minor"];
+    const w = e ? styleWidth(e.v, z) : null;
+    if (w != null && w > 0) return w + e.add;
+    const f = fallback[g] || fallback.minor; return f[Math.max(0, Math.min(3, Math.round(z) - 16))];
+  };
+  return roadWidthTable;
+}
+map.on("style.load", () => { roadWidthTable = null; });
+const roadGroup = (c) => (ROAD_GROUPS.includes(c) ? c : /motorway/.test(c) ? "motorway" : /trunk/.test(c) ? "trunk" : /primary/.test(c) ? "primary" : /secondary/.test(c) ? "secondary" : /tertiary/.test(c) ? "tertiary" : /service|track/.test(c) ? "service" : "minor");
+// line-offset expression: half the drawn road + half the curb line, by road class, at every zoom
+function curbOffsetExpr() {
+  const W = roadWidths(), stops = [];
+  for (let z = 15; z <= 22; z++) stops.push(z, ["match", ["get", "cls"], ...ROAD_GROUPS.flatMap((g) => [g, +(W(z, g) / 2 + CURB_W[z] / 2 - 0.5).toFixed(2)]), +(W(z, "minor") / 2 + CURB_W[z] / 2 - 0.5).toFixed(2)]);
+  return ["interpolate", ["exponential", 2], ["zoom"], ...stops];
+}
+let lastCurbFC = null;
+function snapCurbs(fc) {
+  lastCurbFC = fc;
+  try {
+    const named = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation_name" });
+    const all = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }).concat(named);
+    if (!named.length) return { type: "FeatureCollection", features: [] };
     const lat0 = map.getCenter().lat, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110540;
-    const toM = ([lng, lat]) => [lng * kx, lat * ky], toLL = ([x, y]) => [x / kx, y / ky];
-    const segs = [];
-    for (const f of roads) {
-      if (f.properties.class && /rail|path|track|ferry|aerialway|pier|service|transit|busway/.test(f.properties.class)) continue;
-      const nm = normSt(f.properties.name || f.properties["name:en"] || ""), g = f.geometry;
-      const lines = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
-      for (const L of lines) for (let i = 0; i < L.length - 1; i++) segs.push({ a: toM(L[i]), b: toM(L[i + 1]), nm });
-    }
-    const proj = (p, s) => { const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], L2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((p[0] - s.a[0]) * dx + (p[1] - s.a[1]) * dy) / L2)); const q = [s.a[0] + t * dx, s.a[1] + t * dy];
-      return { q, d: Math.hypot(p[0] - q[0], p[1] - q[1]) }; };
-    const nearest = (p, nm) => { let best = null;
-      for (const s of segs) { const r = proj(p, s), score = r.d - (nm && s.nm === nm ? 15 : 0); if (!best || score < best.score) best = { ...r, s, score }; }
-      return best; };
-    // Distance along a ray to the first street that crosses it (streets running alongside don't count)
-    const rayHit = (p, d) => { let best = null;
-      for (const s of segs) {
-        const ex = s.b[0] - s.a[0], ey = s.b[1] - s.a[1], el = Math.hypot(ex, ey) || 1, den = d[0] * ey - d[1] * ex;
-        if (Math.abs(den) / el < 0.5) continue; // within 30° of parallel: same street, not a cross street
-        const wx = s.a[0] - p[0], wy = s.a[1] - p[1], t = (wx * ey - wy * ex) / den, v = (wx * d[1] - wy * d[0]) / den;
-        if (v >= 0 && v <= 1 && t > SETMIN && t < 250 && (!best || t < best)) best = t;
+    const toM = ([lng, lat]) => [lng * kx, lat * ky], toLL = ([x, y]) => [+(x / kx).toFixed(7), +(y / ky).toFixed(7)];
+    const SKIP = /rail|path|track|ferry|aerialway|pier|transit|busway|footway|cycleway|steps|bridleway/;
+    const segsOf = (feats, withName) => { const out = [];
+      for (const f of feats) {
+        const c = f.properties.class || "", nm = withName ? normSt(f.properties.name || f.properties["name:en"] || "") : "";
+        if (SKIP.test(c) || (withName && !nm)) continue;
+        const g = f.geometry, lines = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
+        for (const L of lines) for (let i = 0; i < L.length - 1; i++) { const a = toM(L[i]), b = toM(L[i + 1]); if (Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.5) out.push({ a, b, nm, cls: roadGroup(c) }); }
       }
-      return best; };
-    const SETMIN = 0.5; // a sign right at the corner: stop there, never skip ahead to the next block
-    const out = [], hyds = fc.features.filter((f) => f.properties.hyd).map((f) => f.geometry.coordinates);
+      return out; };
+    const nsegs = segsOf(named, true), csegs = segsOf(all, false).concat(nsegs);
+    const byName = new Map(); for (const s of nsegs) { if (!byName.has(s.nm)) byName.set(s.nm, []); byName.get(s.nm).push(s); }
+    const proj = (p, s) => { const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - s.a[0]) * dx + (p[1] - s.a[1]) * dy) / L2)), q = [s.a[0] + t * dx, s.a[1] + t * dy];
+      return { q, d: Math.hypot(p[0] - q[0], p[1] - q[1]) }; };
+    const nearestOn = (p, list) => { let best = null; for (const s of list) { const r = proj(p, s); if (!best || r.d < best.d) best = { ...r, s }; } return best; };
+    const z = map.getZoom(), mpp = 40075016.686 * Math.cos((lat0 * Math.PI) / 180) / (512 * Math.pow(2, z)), W = roadWidths();
+    const halfM = (cls) => (W(z, cls) / 2 + (CURB_W[Math.round(Math.min(22, Math.max(15, z)))] || 6) / 2) * mpp;
+    // First crossing street along a ray (streets within 30° of parallel are the same street, not a corner)
+    const corner = (p, d, prefer) => { let best = null, bestPref = null;
+      for (const s of csegs) {
+        const ex = s.b[0] - s.a[0], ey = s.b[1] - s.a[1], el = Math.hypot(ex, ey), den = d[0] * ey - d[1] * ex;
+        if (Math.abs(den) / el < 0.5) continue;
+        const wx = s.a[0] - p[0], wy = s.a[1] - p[1], t = (wx * ey - wy * ex) / den, v = (wx * d[1] - wy * d[0]) / den;
+        if (v < 0 || v > 1 || t < -25 || t > 260) continue;
+        const hit = { t, cls: s.cls };
+        if (prefer.includes(s.nm)) { if (!bestPref || Math.abs(t) < Math.abs(bestPref.t) || (t > 0 && bestPref.t < 0)) bestPref = hit; }
+        else if (s.cls !== "service" && t > 0.5 && (!best || t < best.t)) best = hit; // driveways and alleys aren't corners
+      }
+      return bestPref || best; };
+    const SIDE = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] };
+    const out = [], hyds = [];
     for (const f of fc.features) {
+      if (f.properties.hyd) { hyds.push(f.geometry.coordinates); continue; }
       if (f.geometry.type !== "LineString") continue;
-      const [A, B] = f.geometry.coordinates.map(toM), nm = normSt(f.properties.st);
-      const pa = nearest(A, nm), pb = nearest(B, nm);
-      if (!pa || !pb || pa.d > 30 || pb.d > 30) { out.push(f); continue; }
-      let a = pa.q, b = pb.q; const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (len < 6) continue;
-      const ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len, mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
-      const side = Math.sign((mid[0] - a[0]) * -uy + (mid[1] - a[1]) * ux) || 1; // which side of the street the signs are on
-      const off = Math.max(4, Math.min(11, (pa.d + pb.d) / 2 - 2)) * side;
-      // Ends of the block: run on to the cross street, stopping at its curb (no gap at the corner)
-      const SET = 9;
-      if (f.properties.first) { const t = rayHit(a, [-ux, -uy]); if (t > SET) a = [a[0] - ux * (t - SET), a[1] - uy * (t - SET)]; }
-      if (f.properties.last) { const t = rayHit(b, [ux, uy]); if (t > SET) b = [b[0] + ux * (t - SET), b[1] + uy * (t - SET)]; }
-      a = [a[0] - uy * off, a[1] + ux * off]; b = [b[0] - uy * off, b[1] + ux * off];
-      out.push({ ...f, properties: { ...f.properties, z: 1 }, geometry: { type: "LineString", coordinates: [toLL(a), toLL(b)] } });
+      const P = f.properties, list = byName.get(normSt(P.st));
+      if (!list) continue; // street not in the map data here: better no line than a wrong one
+      const [A, B] = f.geometry.coordinates.map(toM), na = nearestOn(A, list), nb = nearestOn(B, list);
+      if (!na || !nb || na.d > 35 || nb.d > 35) continue;
+      let a = na.q, b = nb.q, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      // Street direction from the segment itself (short one-pole stretches have no reliable chord)
+      let ux, uy;
+      if (len >= 8) { ux = (b[0] - a[0]) / len; uy = (b[1] - a[1]) / len; }
+      else { const s = na.s, sl = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]); ux = (s.b[0] - s.a[0]) / sl; uy = (s.b[1] - s.a[1]) / sl; const sd = (B[0] - A[0]) * ux + (B[1] - A[1]) * uy; if (sd < 0) { ux = -ux; uy = -uy; } }
+      const prefer = [normSt(P.fr), normSt(P.to)].filter(Boolean);
+      // Block ends: start / finish at the cross street's curb
+      if (P.first) { const c = corner(a, [-ux, -uy], prefer); if (c) { const t = c.t - halfM(c.cls); a = [a[0] - ux * t, a[1] - uy * t]; } }
+      if (P.last) { const c = corner(b, [ux, uy], prefer); if (c) { const t = c.t - halfM(c.cls); b = [b[0] + ux * t, b[1] + uy * t]; } }
+      len = (b[0] - a[0]) * ux + (b[1] - a[1]) * uy;
+      if (len < 3) continue;
+      // Follow bends: the street's own vertices between the two ends
+      const pts = [a];
+      for (const s of list) for (const v of [s.a, s.b]) {
+        const t = (v[0] - a[0]) * ux + (v[1] - a[1]) * uy, off = Math.abs((v[0] - a[0]) * -uy + (v[1] - a[1]) * ux);
+        if (t > 2 && t < len - 2 && off < 6 && !pts.some((q) => Math.hypot(q[0] - v[0], q[1] - v[1]) < 2)) pts.push(v);
+      }
+      pts.push(b); pts.sort((p, q) => ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) - ((q[0] - a[0]) * ux + (q[1] - a[1]) * uy));
+      // Which side: the city's side-of-street field; if the street runs along that axis, where the signs stand
+      const sv = SIDE[P.sd], right = [uy, -ux];
+      let onRight = sv && Math.abs(right[0] * sv[0] + right[1] * sv[1]) > 0.35 ? right[0] * sv[0] + right[1] * sv[1] > 0 : null;
+      if (onRight === null) { const m = [(A[0] + B[0]) / 2 - a[0], (A[1] + B[1]) / 2 - a[1]]; onRight = ux * m[1] - uy * m[0] < 0; }
+      if (!onRight) pts.reverse(); // line-offset draws on the right of the line's direction
+      out.push({ type: "Feature", properties: { s: P.s, why: P.why, cls: na.s.cls, z: 1 }, geometry: { type: "LineString", coordinates: pts.map(toLL) } });
     }
-    // Bus stops (map data, 20 m each way) and fire hydrants (city data, 15 ft = 4.6 m each way): red on the curb they sit on
-    const curbLines = out.filter((f) => f.geometry.coordinates.length === 2).map((f) => ({ a: toM(f.geometry.coordinates[0]), b: toM(f.geometry.coordinates[1]) }));
-    const mark = (ll, half, maxD, props) => {
+    // Bus stops (20 m each way) and fire hydrants (15 ft = 4.6 m each way): red on the curb they stand beside
+    const curbs = out.map((f) => ({ f, pts: f.geometry.coordinates.map(toM) }));
+    const mark = (ll, half, props) => {
       const p = toM(ll); let best = null;
-      for (const s of curbLines) { const r = proj(p, s); if (!best || r.d < best.r.d) best = { r, s }; }
-      if (!best || best.r.d > maxD) return;
-      const { s } = best, L = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) || 1, ux = (s.b[0] - s.a[0]) / L, uy = (s.b[1] - s.a[1]) / L;
-      const t = (best.r.q[0] - s.a[0]) * ux + (best.r.q[1] - s.a[1]) * uy, t0 = Math.max(0, t - half), t1 = Math.min(L, t + half);
-      if (t1 - t0 < 1) return;
-      out.push({ type: "Feature", properties: { s: "red", z: 2, ...props }, geometry: { type: "LineString", coordinates: [toLL([s.a[0] + ux * t0, s.a[1] + uy * t0]), toLL([s.a[0] + ux * t1, s.a[1] + uy * t1])] } });
+      for (const c of curbs) { let along = 0;
+        for (let i = 0; i < c.pts.length - 1; i++) {
+          const s = { a: c.pts[i], b: c.pts[i + 1] }, L = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]), r = proj(p, s);
+          const ux = (s.b[0] - s.a[0]) / L, uy = (s.b[1] - s.a[1]) / L, rightSide = ux * (p[1] - s.a[1]) - uy * (p[0] - s.a[0]) < 0;
+          if (rightSide && r.d < 24 && (!best || r.d < best.d)) best = { d: r.d, c, at: along + Math.hypot(r.q[0] - s.a[0], r.q[1] - s.a[1]) };
+          along += L;
+        } }
+      if (!best) return;
+      const slice = [], P = best.c.pts; let along = 0;
+      const t0 = Math.max(0, best.at - half), t1 = best.at + half;
+      for (let i = 0; i < P.length - 1; i++) {
+        const L = Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]), at = (t) => [P[i][0] + ((P[i + 1][0] - P[i][0]) * (t - along)) / L, P[i][1] + ((P[i + 1][1] - P[i][1]) * (t - along)) / L];
+        if (along + L >= t0 && along <= t1) { if (!slice.length) slice.push(at(Math.max(t0, along))); slice.push(at(Math.min(t1, along + L))); }
+        along += L;
+      }
+      if (slice.length >= 2) out.push({ type: "Feature", properties: { s: "red", z: 2, cls: best.c.f.properties.cls, ...props }, geometry: { type: "LineString", coordinates: slice.map(toLL) } });
     };
     const done = new Set();
     for (const st of map.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "class"], "bus"] })) {
       const key = toM(st.geometry.coordinates).map((v) => Math.round(v / 5)).join(",");
       if (done.has(key)) continue; done.add(key);
-      mark(st.geometry.coordinates, 20, 15, { why: "Bus stop: no standing", bus: 1 });
+      mark(st.geometry.coordinates, 20, { why: "Bus stop: no standing", bus: 1 });
     }
-    for (const h of hyds) mark(h, 4.6, 12, { why: "Fire hydrant: no parking within 15 ft", hyd: 1 });
-    return { ...fc, features: out };
-  } catch (e) { window.reportError2?.("snap curbs: " + e.message); return fc; }
+    for (const h of hyds) mark(h, 4.6, { why: "Fire hydrant: no parking within 15 ft", hyd: 1 });
+    return { type: "FeatureCollection", features: out };
+  } catch (e) { window.reportError2?.("snap curbs: " + e.message); return { type: "FeatureCollection", features: [] }; }
 }
+
 map.on("moveend", () => paintCurbs());
 if (map.isStyleLoaded?.()) paintCurbs();
 setInterval(() => { if (!document.hidden) paintCurbs(); }, 5 * 60 * 1000); // colors change as rules start and end

@@ -196,9 +196,10 @@ const tc = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUppe
 // sign in the arrow's direction until a sign of the same rule pointing back, or the end of the block.
 // "<->" (no arrow) means the sign is in the middle of its stretch.
 const COMPASS = { EAST: [1, 0], WEST: [-1, 0], NORTH: [0, 1], SOUTH: [0, -1], E: [1, 0], W: [-1, 0], N: [0, 1], S: [0, -1] };
-function curbZones(face, px, py) {
-  let ux = 1, uy = 0, best = 0; // block direction = the two signs farthest apart
-  for (const a of face) for (const b of face) { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > best) { best = d; ux = (b.x - a.x) / d; uy = (b.y - a.y) / d; } }
+function curbZones(face, px, py, axis) {
+  let ux = 1, uy = 0, best = 0; // block direction = the two signs farthest apart (or the street's direction when given)
+  if (axis) [ux, uy] = axis;
+  else for (const a of face) for (const b of face) { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > best) { best = d; ux = (b.x - a.x) / d; uy = (b.y - a.y) / d; } }
   const pos = (x, y) => x * ux + y * uy;
   const ps = face.map((s) => pos(s.x, s.y)), lo = Math.min(...ps) - 40, hi = Math.max(...ps) + 40;
   const me = Math.max(lo, Math.min(hi, pos(px, py)));
@@ -373,31 +374,51 @@ async function curbs(w, s, e, n, at = new Date()) {
   if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 12) return { type: "FeatureCollection", features: [], tooBig: true };
   const jobs = [];
   for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) jobs.push(tileRows(tx, ty));
-  const seen = new Set(), faces = new Map();
+  // Street names are spelled several ways in the city's data (ST / STREET, AVE / AVENUE): one key per real block face
+  const AB = { AVENUE: "AVE", AV: "AVE", STREET: "ST", BOULEVARD: "BLVD", ROAD: "RD", PLACE: "PL", PARKWAY: "PKWY", DRIVE: "DR", LANE: "LN", COURT: "CT", TERRACE: "TER", EAST: "E", WEST: "W", NORTH: "N", SOUTH: "S" };
+  const nm = (v) => String(v || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean).map((w) => AB[w] || w).join(" ").replace(/(\d+)(ST|ND|RD|TH)\b/g, "$1");
+  const seen = new Set(), faces = new Map(), byStreet = new Map();
   for (const rows of await Promise.all(jobs)) for (const r of rows) {
     const k = `${r.on_street}|${r.side_of_street}|${r.from_street}|${r.to_street}|${r.x}|${r.y}|${r.sign_description}`;
     if (seen.has(k)) continue; seen.add(k);
-    const f = `${r.on_street}|${r.side_of_street}|${r.from_street}|${r.to_street}`;
+    const ends = [nm(r.from_street), nm(r.to_street)].sort().join("~");
+    const f = `${nm(r.on_street)}|${r.side_of_street}|${ends}`;
     if (!faces.has(f)) faces.set(f, []);
     faces.get(f).push(r);
+    const sk = nm(r.on_street); if (!byStreet.has(sk)) byStreet.set(sk, []); byStreet.get(sk).push(r);
   }
+  // Direction of a street near a point, from all its signs (any side, nearby blocks): for faces with one sign or one pole
+  const streetAxis = (name, cx, cy) => {
+    const pts = (byStreet.get(nm(name)) || []).filter((r) => Math.hypot(r.x - cx, r.y - cy) < 1200);
+    let best = 0, ax = null;
+    for (const a of pts) for (const b of pts) { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > best) { best = d; ax = [(b.x - a.x) / d, (b.y - a.y) / d]; } }
+    return best >= 120 ? ax : null;
+  };
   const now = nyNow(at), feats = [];
   const pad = 600, minX = Math.min(x0, x1) - pad, maxX = Math.max(x0, x1) + pad, minY = Math.min(y0, y1) - pad, maxY = Math.max(y0, y1) + pad;
   for (const face of faces.values()) {
-    if (face.length < 2) continue;
     if (!face.some((r) => r.x > minX && r.x < maxX && r.y > minY && r.y < maxY)) continue;
-    // Block direction from the two signs farthest apart; skip faces that are really two different blocks
-    let ux = 1, uy = 0, best = 0;
+    // Block direction from the two signs farthest apart; one sign (or one pole) uses the street's direction instead
+    let ux = 1, uy = 0, best = 0, axis = null;
     for (const a of face) for (const b of face) { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d > best) { best = d; ux = (b.x - a.x) / d; uy = (b.y - a.y) / d; } }
-    if (best < 40 || best > 1400) continue;
-    const zones = curbZones(face, face[0].x, face[0].y);
+    if (best > 2000) continue; // really two different blocks
+    if (best < 60) {
+      const cx = face.reduce((t, r) => t + r.x, 0) / face.length, cy = face.reduce((t, r) => t + r.y, 0) / face.length;
+      axis = streetAxis(face[0].on_street, cx, cy);
+      if (!axis) continue;
+      [ux, uy] = axis;
+    }
+    const zones = curbZones(face, face[0].x, face[0].y, axis);
     if (!zones.length) continue;
-    const ps = face.map((r) => r.x * ux + r.y * uy), lo = Math.min(...ps), hi = Math.max(...ps);
+    const ps = face.map((r) => r.x * ux + r.y * uy);
+    let lo = Math.min(...ps), hi = Math.max(...ps);
+    if (hi - lo < 80) { const m = (lo + hi) / 2; lo = m - 40; hi = m + 40; } // one pole: a short stretch the app grows to the corners
     const q = face.reduce((t, r) => t + (r.x * -uy + r.y * ux), 0) / face.length; // distance across: keeps each side of the street on its own curb
     const cuts = [...new Set([lo, hi, ...zones.flatMap((z) => z.iv.flat()).filter((p) => p > lo && p < hi)])].sort((a, b) => a - b);
     const pt = (p) => { const [la, ln] = toLatLng(p * ux + q * -uy, p * uy + q * ux); return [+ln.toFixed(6), +la.toFixed(6)]; };
     let run = null; const mine = [];
-    const flush = () => { if (run && run.b - run.a > 8) mine.push({ type: "Feature", properties: { s: run.s, why: run.why, st: tc(face[0].on_street) }, geometry: { type: "LineString", coordinates: [pt(run.a), pt(run.b)] } }); };
+    const props = { st: tc(face[0].on_street), fr: tc(face[0].from_street), to: tc(face[0].to_street), sd: face[0].side_of_street || "" };
+    const flush = () => { if (run && run.b - run.a > 8) mine.push({ type: "Feature", properties: { s: run.s, why: run.why, ...props }, geometry: { type: "LineString", coordinates: [pt(run.a), pt(run.b)] } }); };
     for (let i = 0; i < cuts.length - 1; i++) {
       const a = cuts[i], b = cuts[i + 1], m = (a + b) / 2;
       const rules = zones.filter((z) => z.iv.some(([p0, p1]) => m >= p0 - 1 && m <= p1 + 1)).map((z) => z.rule);
