@@ -92,3 +92,4 @@ function routes(url, res, send, req) {
 }
 
 module.exports = { routes, answer };
+console.log(`AI sign reading: ${API_KEY ? "on" : "off (set ANTHROPIC_API_KEY on Render)"}`);

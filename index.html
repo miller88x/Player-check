@@ -378,6 +378,38 @@ body.navigating #recenter.on{display:grid!important}
 </style>
 </head>
 <body>
+<div id="welcome" hidden role="dialog" aria-label="Welcome to Rova">
+  <button type="button" class="wc-skip" id="wcSkip">Skip</button>
+  <div class="wc-track" id="wcTrack">
+    <section class="wc-card">
+      <div class="wc-art"><svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="56" fill="#0f2a52"/><path d="M34 86c10-26 22-14 30-34s22-14 22-14" stroke="#8ab4f8" stroke-width="8" fill="none" stroke-linecap="round"/><circle cx="34" cy="86" r="8" fill="#fff"/><path d="M86 22c-8 0-14 6-14 14 0 10 14 24 14 24s14-14 14-24c0-8-6-14-14-14z" fill="#e5484d"/><circle cx="86" cy="36" r="5" fill="#fff"/></svg></div>
+      <h2>Navigate</h2><p>Turn-by-turn voice directions with live traffic, speed and red-light camera alerts, and road reports from other drivers.</p>
+    </section>
+    <section class="wc-card">
+      <div class="wc-art"><svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="56" fill="#0f2a52"/><rect x="22" y="40" width="76" height="40" rx="6" fill="#2a3a55"/><rect x="22" y="34" width="34" height="8" rx="4" fill="#1e8e3e"/><rect x="58" y="34" width="18" height="8" rx="4" fill="#f29900"/><rect x="78" y="34" width="20" height="8" rx="4" fill="#d93025"/><rect x="45" y="50" width="30" height="22" rx="6" fill="#1a73e8"/><text x="60" y="67" text-anchor="middle" font-size="17" font-weight="800" fill="#fff" font-family="system-ui">P</text></svg></div>
+      <h2>Park</h2><p>Curbs light up green, yellow or red. Tap any curb, or point your camera at a sign, to know if you can park and until when.</p>
+    </section>
+    <section class="wc-card">
+      <div class="wc-art"><svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="56" fill="#0f2a52"/><path d="M60 22l30 11v20c0 21-13 36-30 43-17-7-30-22-30-43V33z" fill="#1e8e3e"/><path d="M47 60l9 9 18-20" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h2>Avoid tickets</h2><p>Add your plate and Rova warns you about new tickets and late fees before they hit, and helps you fight a ticket.</p>
+    </section>
+  </div>
+  <div class="wc-dots" id="wcDots"><i></i><i></i><i></i></div>
+  <button type="button" class="wc-next" id="wcNext">Next</button>
+</div>
+<style>
+#welcome{position:fixed;inset:0;z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:calc(var(--safeT,0px) + 24px) 20px calc(var(--safeB,0px) + 28px);
+  background:radial-gradient(120% 80% at 50% 35%,#0a2244 0%,#041024 55%,#01050e 100%);color:#e8eaed;font-family:var(--body)}
+#welcome[hidden]{display:none}
+.wc-skip{all:unset;cursor:pointer;position:absolute;top:calc(var(--safeT,0px) + 18px);right:20px;color:#9fb6d3;font-weight:600;padding:8px}
+.wc-track{display:flex;width:100%;max-width:420px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.wc-track::-webkit-scrollbar{display:none}
+.wc-card{flex:0 0 100%;scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;padding:0 12px;box-sizing:border-box}
+.wc-card h2{margin:6px 0 0;font:800 32px/1.1 var(--body);letter-spacing:-.01em}
+.wc-card p{margin:0;color:#b8c7dc;font-size:17px;line-height:1.45;max-width:330px}
+.wc-dots{display:flex;gap:8px}.wc-dots i{width:8px;height:8px;border-radius:4px;background:#2c3e5c;transition:width .25s,background .25s}.wc-dots i.on{width:22px;background:#8ab4f8}
+.wc-next{all:unset;cursor:pointer;box-sizing:border-box;width:min(100%,380px);text-align:center;background:#8ab4f8;color:#06213f;font:800 18px var(--body);border-radius:28px;padding:16px}
+</style>
 <div id="splash" aria-label="Rova" role="img">
   <div class="sp-logo"><img src="/rova-logo.jpg" alt="" width="520" height="572"></div>
   <div class="sp-tag">Drive smarter. Park legal. Skip the ticket.</div>
@@ -403,9 +435,22 @@ body.navigating #recenter.on{display:grid!important}
 // Hide the splash once the map is ready (at least 2.8 s so the logo and tagline can be read, at most 5 s)
 (function () {
   const t0 = Date.now(); let gone = false;
+  // First run: three quick cards after the logo (Navigate, Park, Avoid tickets)
+  window.showWelcome = function () {
+    let seen = false; try { seen = localStorage.getItem("welcomed") === "1"; } catch {}
+    const w = document.getElementById("welcome"); if (seen || !w) return;
+    w.hidden = false;
+    const tr = document.getElementById("wcTrack"), dots = [...document.querySelectorAll("#wcDots i")], next = document.getElementById("wcNext");
+    const idx = () => Math.round(tr.scrollLeft / tr.clientWidth);
+    const paint = () => { const i = idx(); dots.forEach((d, k) => d.classList.toggle("on", k === i)); next.textContent = i === dots.length - 1 ? "Get started" : "Next"; };
+    const done = () => { try { localStorage.setItem("welcomed", "1"); } catch {} w.hidden = true; };
+    tr.addEventListener("scroll", paint, { passive: true }); paint();
+    next.onclick = () => { const i = idx(); if (i >= dots.length - 1) done(); else tr.scrollTo({ left: (i + 1) * tr.clientWidth, behavior: "smooth" }); };
+    document.getElementById("wcSkip").onclick = done;
+  };
   window.hideSplash = function () {
     if (gone) return; gone = true;
-    setTimeout(() => { const el = document.getElementById("splash"); if (!el) return; el.classList.add("out"); setTimeout(() => el.remove(), 600); }, Math.max(0, 2800 - (Date.now() - t0)));
+    setTimeout(() => { const el = document.getElementById("splash"); if (!el) return; try { window.showWelcome(); } catch {} el.classList.add("out"); setTimeout(() => el.remove(), 600); }, Math.max(0, 2800 - (Date.now() - t0)));
   };
   setTimeout(window.hideSplash, 5000);
 })();
@@ -447,7 +492,7 @@ body.navigating #recenter.on{display:grid!important}
     <button class="ltog" type="button" data-layer="rovers"><svg width="16" height="17" viewBox="0 0 44 48" aria-hidden="true"><path d="M22 2c2 0 3.4 1 4.4 2.6l14 25c3.4 6.2-1 13.4-8 13.4H11.6c-7 0-11.4-7.2-8-13.4l14-25C18.6 3 20 2 22 2z" fill="#2f6bff"/></svg>Rovers</button>
     <button class="ltog" type="button" data-rshare aria-pressed="true"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="#2f6bff"/><circle cx="12" cy="12" r="9" fill="none" stroke="#2f6bff" stroke-width="2" opacity=".5"/></svg>Show me as a Rover</button>
     <button class="ltog" type="button" data-truckmode>🚚 My truck</button>
-    <button class="ltog" type="button" data-myrover>🎨 Customize my Rover</button>
+    <button class="ltog" type="button" data-myrover><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10a2.5 2.5 0 0 0 2.5-2.5c0-.61-.23-1.2-.64-1.67a.53.53 0 0 1-.13-.33c0-.28.22-.5.5-.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9z" fill="#8ab4f8"/></svg>Customize my Rover</button>
     <button class="ltog" type="button" data-layer="redlight"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#d93025"/><rect x="9" y="5" width="6" height="14" rx="2" fill="#fff"/><circle cx="12" cy="8.5" r="1.6" fill="#d93025"/><circle cx="12" cy="12" r="1.6" fill="#9aa0a6"/><circle cx="12" cy="15.5" r="1.6" fill="#9aa0a6"/></svg>Red lights</button>
   </div>
 </div>
@@ -3014,6 +3059,18 @@ function reportsAhead(pos, brg, R) {
 let checkMarker = null, signMarkers = [], parkedMarker = null, lastPark = null;
 const ICON_P = { green: "✓", yellow: "$", red: "✕", unknown: "?" };
 function clearCheck() { checkMarker?.remove(); checkMarker = null; signMarkers.forEach((m) => m.remove()); signMarkers = []; }
+// ---- One icon set for buttons (line icons in the text color, like Google Maps) ----
+const IC = {
+  camera: "M12 9a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM20 5h-3.2L15 3H9L7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 14H4V7h4.05l1.83-2h4.24l1.83 2H20v12z",
+  car: "M18.92 6.01A1.5 1.5 0 0 0 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h12v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-5h14v5zM7.5 13a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm9 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z",
+  palette: "M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10a2.5 2.5 0 0 0 2.5-2.5c0-.61-.23-1.2-.64-1.67a.53.53 0 0 1-.13-.33c0-.28.22-.5.5-.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9zm4 13h-1.77a2.5 2.5 0 0 0-1.87 4.16c.04.06.06.12.06.16 0 .27-.22.5-.5.5-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.14 8 7c0 2.21-1.79 4-4 4zM6.5 10a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm3-4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm5 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm3 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z",
+  volume: "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z",
+  pin: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z",
+  star: "M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+  share: "M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11A2.99 2.99 0 0 0 21 5a3 3 0 1 0-5.91.7L8.04 9.81A3 3 0 1 0 6 15c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65A2.92 2.92 0 1 0 18 16.08z",
+};
+const ico = (n, sz = 18) => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" aria-hidden="true" style="flex:0 0 auto;vertical-align:-3px;margin-right:6px"><path d="${IC[n]}" fill="currentColor"/></svg>`;
+const parkBadge = (sz = 18) => `<b style="display:inline-grid;place-items:center;width:${sz}px;height:${sz}px;border-radius:5px;background:#1a73e8;color:#fff;font:800 ${Math.round(sz * .66)}px var(--body);vertical-align:-3px;margin-right:6px">P</b>`;
 // ---- Point the camera at a sign: AI reads it, Rova works out the answer for right now (Bronze and up) ----
 const camIn = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
 camIn.setAttribute("capture", "environment"); camIn.hidden = true; document.body.append(camIn);
@@ -3041,12 +3098,12 @@ camIn.onchange = async () => {
       ${j.signs?.length ? `<div><b>What the sign says</b></div><ul class="rules">${j.signs.map((s) => `<li>${esc(s.text)}${s.arrow && s.arrow !== "none" ? ` <span class="muted">(arrow ${esc(s.arrow)})</span>` : ""}</li>`).join("")}</ul>` : ""}
       ${j.arrowNote ? `<p class="note">${esc(j.arrowNote)}</p>` : ""}
       ${j.status === "green" || j.status === "yellow" ? `<button class="btn primary" type="button" id="parkHereCam">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
-      <button class="btn" type="button" data-signcam>📷 Read another sign</button>
+      <button class="btn" type="button" data-signcam>${ico("camera")}Read another sign</button>
       <p class="note">Read by AI from your photo. Double-check the sign, hydrants, driveways and bus stops.</p>`, "park");
     $("#parkHereCam")?.addEventListener("click", async () => { let at; try { at = await getMe(6000); } catch { const m = map.getCenter(); at = [m.lng, m.lat]; } saveParked({ ...j, where: "Spot from sign photo" }, at); });
   } catch (err) {
     if (err.status === 402) return signCam();
-    openSheet("Couldn't read the sign", `<div class="alert stop"><b>Try again</b>${esc(err.message || "")}</div><button class="btn primary" type="button" data-signcam>📷 Take another photo</button>`, "park");
+    openSheet("Couldn't read the sign", `<div class="alert stop"><b>Try again</b>${esc(err.message || "")}</div><button class="btn primary" type="button" data-signcam>${ico("camera")}Take another photo</button>`, "park");
   }
 };
 
@@ -3082,14 +3139,14 @@ async function parkCheck(at, fromTap, curb) {
     const moveTxt = j.moveBy ? new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
     openSheet("Can I park here?", `
       <div class="verdict huge ${j.status}"><div class="ic">${ICON_P[j.status]}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink);opacity:.85">${esc(j.detail)}</div></div></div>
-      ${j.where ? `<div class="muted">📍 ${esc(j.where)}</div>` : ""}
+      ${j.where ? `<div class="muted">${ico("pin", 16)}${esc(j.where)}</div>` : ""}
       ${curb?.s === "red" ? `<div><b>Why</b></div><ul class="rules"><li>${esc(curb.hyd ? "Fire hydrant: no parking within 15 ft, anytime" : curb.bus ? "Bus stop: no standing, anytime" : curb.why || "")}</li></ul>` : ""}
       ${j.rules.length && curb?.s !== "red" ? `<div><b>At your spot</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${curb?.s === "red" && (j.rules.length || j.rulesElse?.length) ? `<div class="muted" style="font-size:14px"><b>Other signs on this block</b></div><ul class="rules" style="opacity:.6">${[...j.rules, ...(j.rulesElse || [])].filter((x, i, a) => a.indexOf(x) === i).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${j.rulesElse?.length && curb?.s !== "red" ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${payBlock(j)}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
-      <button class="btn" type="button" data-signcam>📷 Read the sign with your camera</button>
+      <button class="btn" type="button" data-signcam>${ico("camera")}Read the sign with your camera</button>
       <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Press and hold anywhere on the map to drop a pin there."}</p>`, "park");
     $("#parkHere")?.addEventListener("click", () => saveParked(j, at));
     document.querySelectorAll("[data-meter]").forEach((b) => (b.onclick = () => startMeter(j, at, +b.dataset.meter)));
@@ -3129,10 +3186,10 @@ function tickParked() {
   const car = store.get("parked", null), pill = $("#parkedPill");
   if (!car) { pill.hidden = true; return; }
   pill.hidden = false;
-  if (!car.moveBy) { pill.textContent = "🅿️ Parked"; pill.classList.remove("soon"); return; }
+  if (!car.moveBy) { pill.innerHTML = `${parkBadge(18).replace("#1a73e8", "rgba(255,255,255,.25)")}Parked`; pill.classList.remove("soon"); return; }
   const mins = Math.round((new Date(car.moveBy) - Date.now()) / 60000);
   const left = mins <= 0 ? "Move your car now" : mins < 60 ? `Move in ${mins} min` : mins < 1440 ? `Move in ${Math.floor(mins / 60)}h ${mins % 60}m` : `Move by ${new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
-  pill.textContent = `🅿️ ${left}`;
+  pill.innerHTML = `${parkBadge(18).replace("#1a73e8", "rgba(255,255,255,.25)")}${esc(left)}`;
   const warnAt = car.meterEnd && car.moveBy === car.meterEnd ? 10 : 30;
   pill.classList.toggle("soon", mins <= warnAt);
   if (mins <= warnAt && !car.warned) {
@@ -3148,11 +3205,11 @@ function parkedSheet() {
   const car = store.get("parked", null); if (!car) return;
   map.flyTo({ center: car.at, zoom: 17, duration: 700 });
   openSheet("Your car", `
-    <div class="muted">📍 ${esc(car.where || "Saved spot")} · parked ${new Date(car.savedAt).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</div>
+    <div class="muted">${ico("pin", 16)}${esc(car.where || "Saved spot")} · parked ${new Date(car.savedAt).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</div>
     ${car.moveBy ? `<div class="verdict huge ${new Date(car.moveBy) - Date.now() < 1800000 ? "red" : "green"}"><div class="ic">P</div><div class="big2">Move by ${esc(new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div></div>
       <a class="btn" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(car.moveBy)}&w=${encodeURIComponent(car.where || "")}">Add phone reminder</a>` : ""}
     ${car.meter?.paid ? `<a class="btn" style="text-decoration:none;text-align:center" href="${PARKNYC_WEB}" target="_blank" rel="noopener">Add time with ParkNYC</a>` : ""}
-    <button class="btn green" type="button" id="leaveSpot">🅿️ I'm leaving · share my spot (+10 points)</button>
+    <button class="btn green" type="button" id="leaveSpot">${ico("share")}I'm leaving · share my spot (+10 points)</button>
     <div class="row"><button class="btn primary grow" type="button" id="walkCar">Directions to my car</button><button class="btn" type="button" id="movedCar">I moved it</button></div>
     <button class="btn" type="button" id="goneCar" style="color:#ff8a8d">My car is gone</button>`, "parked");
   $("#goneCar").onclick = towSheet;
@@ -3260,7 +3317,7 @@ function acctRow() {
 }
 function wireAcct() { const b = $("#acctBtn"); if (b) b.onclick = () => accountSheet(); const v = $("#vehBtn"); if (v) v.onclick = vehicleSheet; const vo = $("#voiceBtn"); if (vo) vo.onclick = voiceSheet; }
 const vehRow = () => `<button class="acct" type="button" id="vehBtn"><span style="width:34px;display:grid;place-items:center">${vehicleSVG(myVehicle().kind, myVehicle().color, 34)}</span><span><span style="display:block">Your vehicle</span><small>Pick the car you see on the map</small></span></button>
-  <button class="acct" type="button" id="voiceBtn"><span class="av" style="background:#3c4043;color:#e8eaed">🔊</span><span><span style="display:block">Navigation voice</span><small>${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</small></span></button>`;
+  <button class="acct" type="button" id="voiceBtn"><span class="av" style="background:#3c4043;color:#e8eaed">${ico("volume", 20).replace("margin-right:6px", "")}</span><span><span style="display:block">Navigation voice</span><small>${esc((VOICES.find((x) => x[0] === myVoice()) || VOICES[0])[1])}</small></span></button>`;
 function paintMe() {
   const b = $("#meBtn");
   if (account) { b.classList.remove("out"); b.textContent = account.email[0].toUpperCase(); b.setAttribute("aria-label", `Your account, ${account.email}`); }
@@ -3273,9 +3330,9 @@ function accountSheet(mode) {
     openSheet("Your account", `
       <div class="acct" style="cursor:default"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>Member since ${new Date(account.since).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</small></span></div>
       ${vehRow()}
-      <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
-      <button class="btn" type="button" data-myrover>🎨 My Rover</button>
-      <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Rova points</span><b>⭐ ${points()}</b></div>
+      <button class="btn" type="button" data-mycar>${ico("car")}My car · renewals & tow help</button>
+      <button class="btn" type="button" data-myrover>${ico("palette")}My Rover</button>
+      <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Rova points</span><b>${ico("star", 16)}${points()}</b></div>
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan${account.billing?.cars ? ` · ${account.billing.cars} cars` : ""}${account.billing?.ends ? ` · ends ${new Date(account.billing.ends * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
       ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button><button class="btn" type="button" id="plansBtn">Compare plans</button>'}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
@@ -3304,8 +3361,8 @@ function accountSheet(mode) {
     </form>
     <p class="note">${signup ? `Free forever. Your plates, tickets and parked car follow you to any phone. By creating an account you agree to the ${LEGAL_LINKS}.` : "Forgot your password? Password reset by email is coming soon."}</p>
     ${vehRow()}
-    <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
-    <button class="btn" type="button" data-myrover>🎨 My Rover</button>`, "account");
+    <button class="btn" type="button" data-mycar>${ico("car")}My car · renewals & tow help</button>
+    <button class="btn" type="button" data-myrover>${ico("palette")}My Rover</button>`, "account");
   wireAcct();
   document.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => accountSheet(b.dataset.m)));
   $("#authF").onsubmit = async (e) => {
