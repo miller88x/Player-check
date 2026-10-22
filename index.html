@@ -2526,11 +2526,12 @@ function paintCurbs(force) {
     if (!map.getLayer("curb-line")) {
       map.addLayer({ id: "curb-line", type: "line", source: "curbs", minzoom: 16, layout: { "line-cap": "butt", "line-sort-key": ["coalesce", ["get", "z"], 0] },
         paint: { "line-color": ["match", ["get", "s"], "red", "#d93025", "yellow", "#f29900", "#1e8e3e"],
-          "line-width": ["interpolate", ["linear"], ["zoom"], 16, 3, 18, 7], "line-opacity": 0.9 } },
+          "line-width": ["interpolate", ["linear"], ["zoom"], 16, 3, 18, 7], "line-opacity": ["case", ["has", "hyd"], 1, 0.9] } },
         map.getLayer("route-casing") ? "route-casing" : undefined);
       map.on("click", "curb-line", (e) => {
         if (nav.active) return;
         if (e.features?.some((f) => f.properties.bus)) return notice("Bus stop", "No standing at a bus stop: buses only. Park past the bus stop sign.");
+        if (e.features?.some((f) => f.properties.hyd)) return notice("Fire hydrant", "No parking within 15 feet of a hydrant, any time, even if there's no sign. The ticket is $115.");
         parkCheck([e.lngLat.lng, e.lngLat.lat], true);
       });
       map.on("mouseenter", "curb-line", () => (map.getCanvas().style.cursor = "pointer"));
@@ -2587,8 +2588,9 @@ function snapCurbs(fc) {
       }
       return best; };
     const SETMIN = 0.5; // a sign right at the corner: stop there, never skip ahead to the next block
-    const out = [];
+    const out = [], hyds = fc.features.filter((f) => f.properties.hyd).map((f) => f.geometry.coordinates);
     for (const f of fc.features) {
+      if (f.geometry.type !== "LineString") continue;
       const [A, B] = f.geometry.coordinates.map(toM), nm = normSt(f.properties.st);
       const pa = nearest(A, nm), pb = nearest(B, nm);
       if (!pa || !pb || pa.d > 30 || pb.d > 30) { out.push(f); continue; }
@@ -2604,20 +2606,24 @@ function snapCurbs(fc) {
       a = [a[0] - uy * off, a[1] + ux * off]; b = [b[0] - uy * off, b[1] + ux * off];
       out.push({ ...f, properties: { ...f.properties, z: 1 }, geometry: { type: "LineString", coordinates: [toLL(a), toLL(b)] } });
     }
-    // Bus stops (map data): red 20 m each way along the curb they sit on
-    const stops = map.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "class"], "bus"] });
-    const done = new Set();
-    for (const st of stops) {
-      const p = toM(st.geometry.coordinates), key = p.map((v) => Math.round(v / 5)).join(",");
-      if (done.has(key)) continue; done.add(key);
-      let best = null;
-      for (const f of out) { if (f.geometry.coordinates.length !== 2) continue; const s = { a: toM(f.geometry.coordinates[0]), b: toM(f.geometry.coordinates[1]) }; const r = proj(p, s); if (!best || r.d < best.r.d) best = { r, s }; }
-      if (!best || best.r.d > 15) continue;
+    // Bus stops (map data, 20 m each way) and fire hydrants (city data, 15 ft = 4.6 m each way): red on the curb they sit on
+    const curbLines = out.filter((f) => f.geometry.coordinates.length === 2).map((f) => ({ a: toM(f.geometry.coordinates[0]), b: toM(f.geometry.coordinates[1]) }));
+    const mark = (ll, half, maxD, props) => {
+      const p = toM(ll); let best = null;
+      for (const s of curbLines) { const r = proj(p, s); if (!best || r.d < best.r.d) best = { r, s }; }
+      if (!best || best.r.d > maxD) return;
       const { s } = best, L = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) || 1, ux = (s.b[0] - s.a[0]) / L, uy = (s.b[1] - s.a[1]) / L;
-      const t = (best.r.q[0] - s.a[0]) * ux + (best.r.q[1] - s.a[1]) * uy, t0 = Math.max(0, t - 20), t1 = Math.min(L, t + 20);
-      out.push({ type: "Feature", properties: { s: "red", why: "Bus stop: no standing", bus: 1, z: 2 },
-        geometry: { type: "LineString", coordinates: [toLL([s.a[0] + ux * t0, s.a[1] + uy * t0]), toLL([s.a[0] + ux * t1, s.a[1] + uy * t1])] } });
+      const t = (best.r.q[0] - s.a[0]) * ux + (best.r.q[1] - s.a[1]) * uy, t0 = Math.max(0, t - half), t1 = Math.min(L, t + half);
+      if (t1 - t0 < 1) return;
+      out.push({ type: "Feature", properties: { s: "red", z: 2, ...props }, geometry: { type: "LineString", coordinates: [toLL([s.a[0] + ux * t0, s.a[1] + uy * t0]), toLL([s.a[0] + ux * t1, s.a[1] + uy * t1])] } });
+    };
+    const done = new Set();
+    for (const st of map.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "class"], "bus"] })) {
+      const key = toM(st.geometry.coordinates).map((v) => Math.round(v / 5)).join(",");
+      if (done.has(key)) continue; done.add(key);
+      mark(st.geometry.coordinates, 20, 15, { why: "Bus stop: no standing", bus: 1 });
     }
+    for (const h of hyds) mark(h, 4.6, 12, { why: "Fire hydrant: no parking within 15 ft", hyd: 1 });
     return { ...fc, features: out };
   } catch (e) { window.reportError2?.("snap curbs: " + e.message); return fc; }
 }

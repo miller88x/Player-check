@@ -340,6 +340,32 @@ function stateNow(rules, now) {
   return { s: "green", why: next && next.start <= 7 * 1440 ? `Park until ${fmtWhen(next.w, now)}` : "No rules on the signs right now" };
 }
 
+// Fire hydrants (NYC DEP, dataset 5bgh-vtsn): no parking within 15 ft. Fetched by ~550 m cells, cached 7 days.
+const HYD = "https://data.cityofnewyork.us/resource/5bgh-vtsn.json", HC = 0.005, hydCache = new Map(), hydBusy = new Map();
+async function hydCell(cx, cy) {
+  const key = `${cx}|${cy}`, hit = hydCache.get(key);
+  if (hit && Date.now() - hit.at < 7 * 864e5) return hit.pts;
+  if (hydBusy.has(key)) return hydBusy.get(key);
+  const p = (async () => {
+    const la0 = cy * HC, ln0 = cx * HC;
+    const params = new URLSearchParams({ $select: "latitude,longitude", $where: `latitude between ${la0} and ${la0 + HC} AND longitude between ${ln0} and ${ln0 + HC}`, $limit: "5000" });
+    const res = await fetch(`${HYD}?${params}`, { headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {}, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`hydrants ${res.status}`);
+    const pts = (await res.json()).map((r) => [+(+r.longitude).toFixed(6), +(+r.latitude).toFixed(6)]).filter(([x, y]) => x && y);
+    hydCache.set(key, { at: Date.now(), pts });
+    if (hydCache.size > 3000) hydCache.delete(hydCache.keys().next().value);
+    return pts;
+  })().finally(() => hydBusy.delete(key));
+  hydBusy.set(key, p);
+  return p;
+}
+async function hydrants(w, s, e, n) {
+  const jobs = [];
+  for (let cx = Math.floor(w / HC); cx <= Math.floor(e / HC); cx++) for (let cy = Math.floor(s / HC); cy <= Math.floor(n / HC); cy++) jobs.push(hydCell(cx, cy).catch(() => []));
+  const seen = new Set();
+  return (await Promise.all(jobs)).flat().filter(([x, y]) => { const k = `${x},${y}`; if (seen.has(k) || x < w || x > e || y < s || y > n) return false; seen.add(k); return true; });
+}
+
 async function curbs(w, s, e, n, at = new Date()) {
   const [x0, y0] = toStatePlane(s, w), [x1, y1] = toStatePlane(n, e);
   const tx0 = Math.floor(Math.min(x0, x1) / TILE), tx1 = Math.floor(Math.max(x0, x1) / TILE);
@@ -383,6 +409,8 @@ async function curbs(w, s, e, n, at = new Date()) {
     // The rule at each end of the block runs on to the corner: the app stretches these two to the cross streets
     if (mine.length) { mine[0].properties.first = 1; mine[mine.length - 1].properties.last = 1; feats.push(...mine); }
   }
+  // Hydrant points ride along; the app puts them on the right curb and marks 15 ft each way red
+  for (const c of await hydrants(w, s, e, n).catch(() => [])) feats.push({ type: "Feature", properties: { hyd: 1 }, geometry: { type: "Point", coordinates: c } });
   return { type: "FeatureCollection", features: feats, at: at.toISOString() };
 }
 
