@@ -11,7 +11,10 @@ const APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
 const CURB_TYPES = new Set((process.env.CL_CURB_TYPES || "1").split(","));
 const AB = { AVENUE: "AVE", AV: "AVE", STREET: "ST", BOULEVARD: "BLVD", ROAD: "RD", PLACE: "PL", PARKWAY: "PKWY", DRIVE: "DR", LANE: "LN", COURT: "CT", TERRACE: "TER", EAST: "E", WEST: "W", NORTH: "N", SOUTH: "S" };
 const nm0 = (v) => String(v || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean).map((w) => AB[w] || w).join(" ").replace(/(\d+)(ST|ND|RD|TH)\b/g, "$1");
-const nm = (v) => nm0(v).replace(/ /g, ""); // "MAC DOUGAL ST" and "MACDOUGAL STREET" are the same street
+// Same street, different spellings in the two city datasets
+const WORDS = { FIRST: "1", SECOND: "2", THIRD: "3", FOURTH: "4", FIFTH: "5", SIXTH: "6", SEVENTH: "7", EIGHTH: "8", NINTH: "9", TENTH: "10", ELEVENTH: "11", TWELFTH: "12", SAINT: "ST", FORT: "FT", MOUNT: "MT" };
+const ALIAS = { "AVEOFTHEAMERICAS": "6AVE", "ADAMCPOWELLBLVD": "ADAMCLAYTONPOWELLBLVD", "ADAMCLAYTONPOWELLJRBLVD": "ADAMCLAYTONPOWELLBLVD", "FREDDOUGLASSBLVD": "FREDERICKDOUGLASSBLVD", "MALCOLMXBLVD": "LENOXAVE" };
+const nm = (v) => { let k = nm0(String(v || "").toUpperCase().replace(/\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH|SAINT|FORT|MOUNT)\b/g, (w) => WORDS[w])).replace(/ /g, "").replace(/JR(BLVD|AVE|ST)$/, "$1"); return ALIAS[k] || k; }; // "MAC DOUGAL ST" = "MACDOUGAL STREET"
 const tc = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase()).replace(/\b(\d+)(St|Nd|Rd|Th)\b/g, (m, a, b) => a + b.toLowerCase());
 const COMPASS = { EAST: [1, 0], WEST: [-1, 0], NORTH: [0, 1], SOUTH: [0, -1], E: [1, 0], W: [-1, 0], N: [0, 1], S: [0, -1] };
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -127,10 +130,12 @@ async function place(rows, box, now) {
     const rule = park.parseSign(r.sign_description);
     if (!rule) continue;
     ruled++;
-    const cands = byName.get(nm(r.on_street)) || [], cross = [nm(r.from_street), nm(r.to_street)];
+    const cross = [nm(r.from_street), nm(r.to_street)];
+    let cands = byName.get(nm(r.on_street)) || [];
+    if (!cands.length) cands = B.filter((b) => cross.some((c) => c && (b.crossA.includes(c) || b.crossB.includes(c)))); // name unknown: blocks ending at its cross streets
     let best = null;
     for (const b of cands) {
-      const loc = locate(b, [r.x, r.y]); if (!loc || loc.d > 130) continue;
+      const loc = locate(b, [r.x, r.y]); if (!loc || loc.d > (b.name === nm(r.on_street) ? 130 : 70)) continue;
       const hits = cross.filter((c) => b.crossA.includes(c) || b.crossB.includes(c)).length;
       const score = loc.d + (hits ? 0 : 45) + (loc.s < -5 || loc.s > b.L + 5 ? 40 : 0);
       if (!best || score < best.score) best = { b, loc, score };
@@ -177,6 +182,8 @@ async function place(rows, box, now) {
       stats.sides++;
       if (faces.has(`${b.id}|${side}`)) { stats.signed++; continue; }
       stats.none++;
+      const near = rows.filter((r) => { if (!park.parseSign(r.sign_description)) return false; const l = locate(b, [r.x, r.y]); return l && l.side === side && l.d < 45 && l.s > 15 && l.s < b.L - 15; });
+      if (near.length) { stats.grayWithSigns = (stats.grayWithSigns || 0) + 1; (stats.grayEx ||= []).length < 4 && stats.grayEx.push(`${b.full} (${b.crossA[0] || "?"}–${b.crossB[0] || "?"}): ${near.length} signs nearby filed as ${[...new Set(near.map((r) => `${r.on_street} ${r.side_of_street} ${r.from_street}→${r.to_street}`))].slice(0, 2).join(" / ")}`); }
       emit(b, side, 0, b.L, { s: "none", why: "No parking signs on record", st: tc(b.full), fr: tc(b.crossA[0] || ""), to: tc(b.crossB[0] || "") });
     }
   }
