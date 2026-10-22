@@ -437,6 +437,8 @@ body.navigating #recenter.on{display:grid!important}
   <button type="button" data-style="sat"><span style="background:linear-gradient(135deg,#3d5a3a,#6b6b55 50%,#2f4b5e)"></span>Satellite</button>
   <button type="button" data-style="dark"><span style="background:linear-gradient(135deg,#1d2633 40%,#0e1621 40% 55%,#1d2633 55%)"></span>Night</button>
 </div>
+  <div class="lhead">Dark mode</div>
+  <div class="tchips" style="padding:0 2px 6px"><button type="button" class="tchip" data-dark="auto">Auto at night</button><button type="button" class="tchip" data-dark="on">On</button><button type="button" class="tchip" data-dark="off">Off</button></div>
   <div class="lhead">Show on map</div>
   <div class="lcol">
     <button class="ltog" type="button" data-layer="tickets"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#e5484d"/></svg>Tickets</button>
@@ -571,6 +573,8 @@ const repGeo = () => ({ type: "FeatureCollection", features: reports.filter((r) 
 // ================= MAP =================
 const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 let mapType = store.get("mapType", "map");
+// Open straight into the night map after sunset (no flash of the day map)
+if (mapType === "map") { const d = store.get("darkMode", "auto"); try { if (d === "on" || (d === "auto" && sunDown(NYC[0], NYC[1]))) mapType = "dark"; } catch {} }
 const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: false });
 map.once("load", () => window.hideSplash?.()); map.once("error", () => window.hideSplash?.());
 let layerOn = store.get("layers", { tickets: true, speed: true, redlight: true });
@@ -755,12 +759,16 @@ function paintCredit() { $("#credit").textContent = mapType === "sat" ? "© Open
 paintCredit();
 function setLook(t) {
   $("#layers").hidden = true;
-  if (t === mapType) return;
-  mapType = t; store.set("mapType", t); map.setStyle(STYLES[t]); paintLayerBtns(); paintCredit();
+  store.set("mapType", t);
+  if (t === "map" && darkPref() === "auto" && wantDark()) { store.set("darkMode", "off"); paintDarkBtns(); } // picking Default at night means "show me day"
+  autoNight(); paintLayerBtns();
 }
-function paintLayerBtns() { document.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.style === mapType)); }
+function paintDarkBtns() { document.querySelectorAll("[data-dark]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.dark === darkPref())); }
+function paintLayerBtns() { const picked = store.get("mapType", "map"); document.querySelectorAll("[data-style]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.style === picked)); }
 paintLayerBtns();
 document.querySelectorAll("[data-style]").forEach((b) => (b.onclick = () => setLook(b.dataset.style)));
+document.querySelectorAll("[data-dark]").forEach((b) => (b.onclick = () => { store.set("darkMode", b.dataset.dark); paintDarkBtns(); autoNight(); }));
+paintDarkBtns();
 $("#layersBtn").onclick = (e) => { e.stopPropagation(); $("#layers").hidden = !$("#layers").hidden; };
 document.addEventListener("pointerdown", (e) => { if (!$("#layers").hidden && !e.target.closest("#layers,#layersBtn")) $("#layers").hidden = true; }, true);
 map.on("click", () => { $("#layers").hidden = true; $("#results").hidden = true; });
@@ -2116,13 +2124,24 @@ function sunDown(lng, lat, d = new Date()) {
   const tst = (((d.getUTCHours() * 60 + d.getUTCMinutes() + eqt + 4 * lng) % 1440) + 1440) % 1440, ha = (tst / 4 - 180) * rad;
   return Math.asin(Math.sin(lat * rad) * Math.sin(decl) + Math.cos(lat * rad) * Math.cos(decl) * Math.cos(ha)) / rad < -1;
 }
-function autoNight() {
-  const p = me || route?.from; if (!nav.active || !p || store.get("mapType", "map") !== "map") return;
-  const dark = sunDown(p[0], p[1]);
-  if (dark && !nav.night) { nav.night = true; mapType = "dark"; map.setStyle(STYLES.dark); }
-  else if (!dark && nav.night) { nav.night = false; mapType = "map"; map.setStyle(STYLES.map); }
+// Dark mode: Auto (night map after sunset, like Waze and Google), always on, or off. Only changes the Default map;
+// Satellite and Night stay as picked. Checked when the app opens, every minute, and during navigation.
+const darkPref = () => store.get("darkMode", "auto");
+function wantDark() {
+  const picked = store.get("mapType", "map"); if (picked !== "map") return picked === "dark";
+  const d = darkPref(); if (d === "on") return true; if (d === "off") return false;
+  const p = me || route?.from || [map.getCenter().lng, map.getCenter().lat];
+  return sunDown(p[0], p[1]);
 }
-function nightOff() { if (!nav.night) return; nav.night = false; mapType = store.get("mapType", "map"); map.setStyle(STYLES[mapType]); paintCredit(); }
+function autoNight() {
+  const dark = wantDark(), want = dark ? "dark" : store.get("mapType", "map");
+  nav.night = dark && store.get("mapType", "map") === "map";
+  document.body.classList.toggle("nightmode", dark);
+  if (want !== mapType) { mapType = want; map.setStyle(STYLES[want]); paintCredit(); paintLayerBtns(); }
+}
+function nightOff() { autoNight(); }
+setInterval(() => { if (!document.hidden) try { autoNight(); } catch {} }, 60000);
+setTimeout(() => { try { autoNight(); } catch {} }, 1500);
 function stopPicker(to) {
   openSheet("Add a stop", `<div class="tchips">${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>
     ${nav.stop ? `<p class="note">Current stop: <b>${esc(nav.stop.name)}</b></p>` : ""}`, "route");
