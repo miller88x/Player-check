@@ -520,7 +520,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (n) => "$" + (n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
-const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen", "roverLook", "upsold", "afterUpgrade"];
+const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen", "roverLook", "upsold", "afterUpgrade", "points", "voted", "darkMode"];
 let account = null, syncT = null;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -2945,6 +2945,14 @@ async function loadReports() {
   try {
     const j = await (await fetch(`/api/reports?bbox=${[b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(5)).join(",")}`)).json();
     reports = j.reports || []; map.getSource("reports")?.setData(repGeo());
+    // While driving, also look around the destination (the map follows the car, not where you're going)
+    const to = nav.active && nav.dest?.at;
+    if (to) {
+      const d = await (await fetch(`/api/reports?bbox=${[to[0] - 0.005, to[1] - 0.004, to[0] + 0.005, to[1] + 0.004].map((v) => v.toFixed(5)).join(",")}`)).json();
+      const have = new Set(reports.map((r) => String(r.id)));
+      reports = reports.concat((d.reports || []).filter((r) => !have.has(String(r.id)))); map.getSource("reports")?.setData(repGeo());
+      spotsNearDest();
+    }
   } catch {}
 }
 map.on("moveend", () => { clearTimeout(repTimer); repTimer = setTimeout(loadReports, 400); });
@@ -2956,11 +2964,14 @@ map.on("click", "reports", (e) => {
   const r = reports.find((x) => String(x.id) === String(e.features[0].properties.id)); if (!r) return;
   const t = RTYPES[r.type];
   const pop = new maplibregl.Popup({ offset: 30 }).setLngLat([r.lng, r.lat]).setHTML(`<div class="pop"><h3>${t.e} ${esc(t.label)}</h3>
-    <div class="meta">Reported ${ago(r.created_at)}${r.up > 1 ? ` · confirmed by ${r.up - 1}` : ""}</div>${r.note ? `<div>${esc(r.note)}</div>` : ""}
+    <div class="meta">${r.type === "spot" ? "Shared" : "Reported"} ${ago(r.created_at)}${r.up > 1 ? ` · confirmed by ${r.up - 1}` : ""}</div>${r.note ? `<div>${esc(r.note)}</div>` : ""}
+    ${r.type === "spot" ? `<button type="button" class="btn primary" data-go style="margin-top:8px;width:100%">Go to this spot</button>` : ""}
     <div class="votes"><button type="button" data-v="1">👍 Still there</button><button type="button" data-v="0">👎 Not there</button></div></div>`).addTo(map);
+  pop.getElement().querySelector("[data-go]")?.addEventListener("click", () => { pop.remove(); dest = { name: "Open spot", line: r.note || "", at: [r.lng, r.lat] }; planRoute(dest); });
   pop.getElement().querySelectorAll("[data-v]").forEach((b) => (b.onclick = async () => {
     try { await fetch("/api/reports/vote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id, up: b.dataset.v === "1" }) }); } catch {}
     pop.setHTML(`<div class="pop"><h3>Thanks!</h3><div class="meta">That helps other drivers.</div></div>`); setTimeout(() => pop.remove(), 1200); loadReports();
+    const voted = store.get("voted", []); if (!voted.includes(String(r.id))) { store.set("voted", [String(r.id), ...voted].slice(0, 200)); addPoints(2, "For keeping the map accurate."); }
   }));
 });
 function reportSheet() {
@@ -3104,11 +3115,39 @@ function parkedSheet() {
     ${car.moveBy ? `<div class="verdict huge ${new Date(car.moveBy) - Date.now() < 1800000 ? "red" : "green"}"><div class="ic">P</div><div class="big2">Move by ${esc(new Date(car.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}</div></div>
       <a class="btn" style="text-decoration:none" href="/api/park/reminder.ics?t=${encodeURIComponent(car.moveBy)}&w=${encodeURIComponent(car.where || "")}">Add phone reminder</a>` : ""}
     ${car.meter?.paid ? `<a class="btn" style="text-decoration:none;text-align:center" href="${PARKNYC_WEB}" target="_blank" rel="noopener">Add time with ParkNYC</a>` : ""}
+    <button class="btn green" type="button" id="leaveSpot">🅿️ I'm leaving · share my spot (+10 points)</button>
     <div class="row"><button class="btn primary grow" type="button" id="walkCar">Directions to my car</button><button class="btn" type="button" id="movedCar">I moved it</button></div>
     <button class="btn" type="button" id="goneCar" style="color:#ff8a8d">My car is gone</button>`, "parked");
   $("#goneCar").onclick = towSheet;
-  $("#movedCar").onclick = () => { store.set("parked", null); parkedMarker?.remove(); parkedMarker = null; $("#parkedPill").hidden = true; closeSheet(); };
+  const clearCar = () => { store.set("parked", null); queueSync(); parkedMarker?.remove(); parkedMarker = null; $("#parkedPill").hidden = true; };
+  $("#movedCar").onclick = () => { clearCar(); closeSheet(); };
+  $("#leaveSpot").onclick = () => shareSpot(car, clearCar);
   $("#walkCar").onclick = () => { dest = { name: "My car", line: car.where || "", at: car.at }; planRoute(dest); };
+}
+// ---- "I'm leaving my spot": the spot goes on the map for 15 minutes so another driver can take it ----
+const points = () => store.get("points", 0);
+function addPoints(n, why) { store.set("points", points() + n); queueSync(); popMsg(`+${n} Rova points`, why, "⭐", "#1a73e8", 2600); }
+async function shareSpot(car, done) {
+  // Say how long the next driver can stay, from the rules at that exact curb
+  let note = "";
+  try { const j = await (await fetch(`/api/park?lat=${car.at[1]}&lng=${car.at[0]}`)).json(); if (j.status === "red") note = ""; else note = j.moveBy ? `Free until ${new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}` : j.status === "yellow" ? "Metered spot" : "No time limit right now"; } catch {}
+  try {
+    const r = await fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "spot", lat: car.at[1], lng: car.at[0], note }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    if (j.report?.id != null) store.set("myReps", [String(j.report.id), ...store.get("myReps", [])].slice(0, 50));
+    done?.(); closeSheet(); loadReports(); addPoints(10, "Thanks for sharing your spot. It's on the map for 15 minutes.");
+  } catch (e) { openSheet("Couldn't share the spot", `<p class="muted">${esc(e.message || "Try again.")}</p>`); }
+}
+// Driving somewhere and a spot opens near where you're going: say so (once per spot)
+const spotSeen = new Set();
+function spotsNearDest() {
+  const to = nav.active ? nav.dest : null; if (!to?.at) return;
+  const mine = new Set(store.get("myReps", []));
+  const s = reports.filter((r) => r.type === "spot" && !mine.has(String(r.id)) && !spotSeen.has(String(r.id)) && dist(to.at, [r.lng, r.lat]) < 300).sort((a, b) => dist(to.at, [a.lng, a.lat]) - dist(to.at, [b.lng, b.lat]))[0];
+  if (!s) return;
+  spotSeen.add(String(s.id));
+  popMsg("Open spot near your destination", `${fmtDist(dist(to.at, [s.lng, s.lat]))} from ${to.name || "there"} · shared ${ago(s.created_at)}`, "🅿️", "#1e8e3e", 6000);
+  speak("A parking spot just opened near your destination.");
 }
 $("#parkedPill").onclick = parkedSheet;
 drawParked();
@@ -3162,6 +3201,8 @@ function mergeIn(sv) {
     else if ((k === "known" || k === "seenAlerts" || k === "alerts") && l && typeof l === "object") {
       v = { ...l }; for (const pk in s) v[pk] = s[pk] && typeof s[pk] === "object" && l[pk] && typeof l[pk] === "object" ? { ...l[pk], ...s[pk] } : s[pk];
     } else if (k === "parked" && l && (l.savedAt || 0) > (s.savedAt || 0)) v = l;
+    else if (k === "points") v = Math.max(+s || 0, +l || 0);
+    else if (k === "voted" && Array.isArray(l)) v = [...new Set([...l, ...s])].slice(0, 200);
     try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
   }
   voiceOn = store.get("voice", true);
@@ -3197,6 +3238,7 @@ function accountSheet(mode) {
       ${vehRow()}
       <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
       <button class="btn" type="button" data-myrover>🎨 My Rover</button>
+      <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Rova points</span><b>⭐ ${points()}</b></div>
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan${account.billing?.cars ? ` · ${account.billing.cars} cars` : ""}${account.billing?.ends ? ` · ends ${new Date(account.billing.ends * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
       ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button><button class="btn" type="button" id="plansBtn">Compare plans</button>'}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>

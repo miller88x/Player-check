@@ -43,7 +43,7 @@ async function list(b) {
 async function add({ type, lat, lng, note }) {
   // Same thing reported close by in the last 15 min → confirm it instead of stacking pins
   const near = (await list([lng - 0.002, lat - 0.002, lng + 0.002, lat + 0.002]))
-    .find((r) => r.type === type && meters(r, { lat, lng }) < 120 && now() - new Date(r.created_at) < 15 * 60000);
+    .find((r) => r.type === type && meters(r, { lat, lng }) < (type === "spot" ? 20 : 120) && now() - new Date(r.created_at) < 15 * 60000);
   if (near) return vote(near.id, true);
   const row = { type, lat, lng, note: note || null, created_at: iso(now()), expires_at: iso(now() + TYPES[type] * 60000), up: 1, down: 0 };
   if (useDb()) return (await sb("pc_road_reports", { method: "POST", body: JSON.stringify(row) }))[0];
