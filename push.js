@@ -104,7 +104,7 @@ async function runAll(lookup) {
             continue;
           }
           const { items, newKnown, newSent } = findAlerts({ known: known[key], sent: sent[key] || {} }, data);
-          known[key] = newKnown; sent[key] = newSent;
+          known[key] = newKnown; if (paid) sent[key] = newSent; // free plan: warnings aren't sent, so don't mark them (they'll come if the driver upgrades)
           const show = paid ? items : items.filter((i) => i.kind === "new");
           if (!show.length) continue;
           const title = show.length === 1 ? show[0].title : `${show.length} ticket alerts for ${p}`;
