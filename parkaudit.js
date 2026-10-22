@@ -2,7 +2,7 @@
 // right next to every sign pole, the rules in force should be exactly the rules that pole posts for that direction.
 //  - "extra"  = Rova applies a rule the pole doesn't post (false red, like Caton Ave)
 //  - "missing" = the pole posts a rule Rova doesn't apply (false green, a ticket risk)
-// Compares the old arrow logic, the current one and a stricter candidate. Results go to the server log (PARKAUDIT).
+// Compares the old arrow logic, the first Caton fix and the live logic. Results go to the server log (PARKAUDIT).
 // Runs when PARK_AUDIT=1 is set on Render (once, after start-up) or via /api/park/audit?key=ALERTS_KEY.
 
 const park = require("./park");
@@ -45,7 +45,12 @@ function zones(signs, lo, hi, opt) {
   return out;
 }
 
-const VARIANTS = { old: { other: false }, current: { other: true }, strict: { other: true, both: true } };
+const toGroups = (signs) => { const g = new Map(); for (const s of signs) { if (!g.has(s.raw)) g.set(s.raw, { rule: s.rule, signs: [] }); g.get(s.raw).signs.push({ p: s.p, dir: s.dir }); } return g; };
+const VARIANTS = {
+  old: (signs, lo, hi) => park.zoneIntervals(toGroups(signs), lo, hi, { dom: false }),
+  first: (signs, lo, hi) => zones(signs, lo, hi, { other: true }), // this morning's Caton fix
+  now: (signs, lo, hi) => park.zoneIntervals(toGroups(signs), lo, hi), // proof-based ending (live)
+};
 const short = (raw) => String(raw).replace(/\s*\(SUPERSEDES[^)]*\)/g, "").replace(/\s+/g, " ").slice(0, 60);
 
 async function facesNear(lat, lng, d) {
@@ -67,11 +72,11 @@ async function facesNear(lat, lng, d) {
 
 async function audit() {
   const t0 = Date.now(), now = park.nyNow(new Date());
-  const tot = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, redFt: 0 }]));
+  const tot = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0, redFt: 0 }]));
   const examples = { extra: new Map(), missing: new Map() }, per = [];
   let faces = 0, poles = 0, signsN = 0, skipped = 0;
   for (const [name, lat, lng] of AREAS) {
-    const a = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0 }]));
+    const a = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0 }]));
     try {
       for (const face of await facesNear(lat, lng, 0.004)) {
         let ux = 1, uy = 0, best = 0;
@@ -90,7 +95,7 @@ async function audit() {
         const pl = [];
         for (const s of [...signs].sort((m, n) => m.p - n.p)) { const last = pl[pl.length - 1]; if (last && s.p - last.p <= 5) last.signs.push(s); else pl.push({ p: s.p, signs: [s] }); }
         poles += pl.length;
-        const zs = Object.fromEntries(Object.entries(VARIANTS).map(([v, o]) => [v, zones(signs, lo, hi, o)]));
+        const zs = Object.fromEntries(Object.entries(VARIANTS).map(([v, f]) => [v, f(signs, lo, hi)]));
         pl.forEach((pole, i) => {
           for (const d of [1, -1]) {
             const nb = pl[i + d];
@@ -104,7 +109,10 @@ async function audit() {
               a[v].checks++; tot[v].checks++;
               if (extra.length) { a[v].extra++; tot[v].extra++; }
               if (missing.length) { a[v].missing++; tot[v].missing++; }
-              if (v === "current") for (const [kind, list] of [["extra", extra], ["missing", missing]]) for (const r of list) {
+              // proven wrong: Rova applies a rule that would make one of this pole's own signs pointless
+              const rr = (raw) => signs.find((s) => s.raw === raw).rule;
+              if (extra.some((x) => pole.signs.some((s) => park.dominates(rr(x), s.rule)))) { a[v].wrong++; tot[v].wrong++; }
+              if (v === "now") for (const [kind, list] of [["extra", extra], ["missing", missing]]) for (const r of list) {
                 const key = `${short(r)}`;
                 const e = examples[kind].get(key) || { n: 0, at: `${face[0].on_street} ${face[0].side_of_street} side, ${face[0].from_street}→${face[0].to_street} (${name})`, pole: pole.signs.map((s) => `${short(s.raw).slice(0, 28)}${s.dir > 0 ? "→" : s.dir < 0 ? "←" : "↔"}`).join(" + ") };
                 e.n++; examples[kind].set(key, e);
@@ -119,7 +127,7 @@ async function audit() {
         }
       }
       const pc = (v) => (a[v].checks ? `${(100 * (1 - (a[v].extra + a[v].missing) / a[v].checks)).toFixed(1)}%` : "-");
-      per.push(`${name}: ${a.current.checks} checks · agree old ${pc("old")} → current ${pc("current")} · strict ${pc("strict")}`);
+      per.push(`${name}: ${a.now.checks} checks · agree old ${pc("old")} → first fix ${pc("first")} → now ${pc("now")} · proven wrong old ${a.old.wrong} → now ${a.now.wrong}`);
     } catch (e) { per.push(`${name}: ERROR ${e.message}`); }
   }
   const sum = Object.fromEntries(Object.entries(tot).map(([v, t]) => [v, { ...t, agree: `${(100 * (1 - (t.extra + t.missing) / Math.max(1, t.checks))).toFixed(2)}%` }]));

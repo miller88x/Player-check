@@ -45,6 +45,8 @@ function parseSign(desc) {
   const d = String(desc || "").toUpperCase().replace(/\(SUPERSEDES[^)]*\)/g, "").replace(/\s+/g, " ").trim();
   // Info plates, not rules (pay-by-cell number, Open Streets info, etc.)
   if (/LOCATOR|INFORMATION SIGN|\(INFO|^OPEN STREETS|^SEE OTHER SIDE/.test(d)) return null;
+  // Riders are small add-on plates under a real sign ("meters not in effect above times", diplomat codes): not rules on their own
+  if (/\bRIDER\b|ABOVE TIMES|NOT IN EFFECT/.test(d)) return null;
   let kind = null;
   if (/NO STOPPING/.test(d)) kind = "stop";
   else if (/NO STANDING/.test(d)) kind = "stand";
@@ -209,6 +211,30 @@ const tc = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toUppe
 // sign in the arrow's direction until a sign of the same rule pointing back, or the end of the block.
 // "<->" (no arrow) means the sign is in the middle of its stretch.
 const COMPASS = { EAST: [1, 0], WEST: [-1, 0], NORTH: [0, 1], SOUTH: [0, -1], E: [1, 0], W: [-1, 0], N: [0, 1], S: [0, -1] };
+// How far each rule on a block face reaches. NYC arrows point the way a rule applies; a rule runs from its sign until
+// a sign of the same rule points back, or the block ends. One more case: a zone also ends at a pole that posts a
+// rule which would be pointless inside it (street cleaning or a meter under "No standing anytime") and doesn't
+// repeat it. The city doesn't post pointless signs, so that pole proves the zone stopped there. We only cut a zone
+// on that proof, so a real rule is never dropped (no false green).
+const STRENGTH = { stop: 3, stand: 2, reserved: 2, truck: 2, park: 1, meter: 0 };
+const dominates = (x, y) => x.anytime && !x.noHours && STRENGTH[x.kind] >= STRENGTH[y.kind] && !(y.anytime && STRENGTH[y.kind] > STRENGTH[x.kind]);
+function zoneIntervals(groups, lo, hi, opt = { dom: true }) {
+  const all = [...groups.entries()].flatMap(([raw, g]) => g.signs.map((s) => ({ ...s, raw, rule: g.rule })));
+  const cut = (raw, rule, dir, from) => !opt.dom ? [] : all.filter((o) => o.raw !== raw && (o.dir === dir || o.dir === 0) && (dir > 0 ? o.p > from + 5 : o.p < from - 5)
+    && dominates(rule, o.rule) && !all.some((x) => x.raw === raw && Math.abs(x.p - o.p) <= 5)).map((o) => o.p);
+  const out = [];
+  for (const [raw, { rule, signs }] of groups.entries()) {
+    const iv = signs.map((g) => {
+      const back = (side) => signs.filter((o) => (side > 0 ? o.p > g.p + 5 && o.dir === -1 : o.p < g.p - 5 && o.dir === 1)).map((o) => o.p);
+      const L = back(-1), R = back(1);
+      const right = Math.min(hi, ...R, ...cut(raw, rule, 1, g.p)), left = Math.max(lo, ...L, ...cut(raw, rule, -1, g.p));
+      return g.dir === 1 ? [g.p, right] : g.dir === -1 ? [left, g.p] : [left, right];
+    });
+    out.push({ raw, rule, iv });
+  }
+  return out;
+}
+
 function curbZones(face, px, py, axis) {
   let ux = 1, uy = 0, best = 0; // block direction = the two signs farthest apart (or the street's direction when given)
   if (axis) [ux, uy] = axis;
@@ -224,23 +250,8 @@ function curbZones(face, px, py, axis) {
     if (!groups.has(r.raw)) groups.set(r.raw, { rule: r, signs: [] });
     groups.get(r.raw).signs.push({ p: pos(s.x, s.y), dir });
   }
-  // NYC sign arrows: a rule runs from its sign in the arrow's direction until (1) a sign of the same rule pointing back,
-  // or (2) the next pole where a DIFFERENT rule starts in the same direction (e.g. street cleaning picking up again
-  // after a driveway's "No parking anytime -->"), or (3) the end of the block. Without (2), short zones like
-  // driveways and bus stops wrongly ran to the corner.
-  const all = [...groups.entries()].flatMap(([raw, g]) => g.signs.map((s) => ({ ...s, raw })));
-  const startsAt = (raw, dir, from) => all.filter((o) => o.raw !== raw && o.dir === dir && (dir > 0 ? o.p > from + 5 : o.p < from - 5)
-    && !all.some((x) => x.raw === raw && x.dir === dir && Math.abs(x.p - o.p) <= 5)) // same rule restated on that pole: it continues
-    .map((o) => o.p);
   const out = [];
-  for (const [raw, { rule, signs }] of groups.entries()) {
-    const iv = signs.map((g) => {
-      const back = (side) => signs.filter((o) => (side > 0 ? o.p > g.p + 5 && o.dir === -1 : o.p < g.p - 5 && o.dir === 1)).map((o) => o.p);
-      const L = back(-1), R = back(1);
-      if (g.dir === 1) return [g.p, Math.min(hi, ...R, ...startsAt(raw, 1, g.p))];
-      if (g.dir === -1) return [Math.max(lo, ...L, ...startsAt(raw, -1, g.p)), g.p];
-      return [L.length ? Math.max(...L) : lo, R.length ? Math.min(...R) : hi];
-    });
+  for (const { raw, rule, iv } of zoneIntervals(groups, lo, hi)) {
     const here = iv.some(([a, b]) => me >= a - 3 && me <= b + 3);
     const edge = Math.min(...iv.map(([a, b]) => (me >= a && me <= b ? 0 : Math.min(Math.abs(me - a), Math.abs(me - b)))));
     out.push({ rule, here, edge, iv });
@@ -540,4 +551,4 @@ function routes(url, res, sendJSON) {
   return true;
 }
 
-module.exports = { ASP_SUSPENDED, TILE, tileRows, stateNow, routes, curbs, parseSign, curbZones, toStatePlane, toLatLng, check, schedule, nyNow, describe };
+module.exports = { ASP_SUSPENDED, zoneIntervals, dominates, TILE, tileRows, stateNow, routes, curbs, parseSign, curbZones, toStatePlane, toLatLng, check, schedule, nyNow, describe };
