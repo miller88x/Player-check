@@ -1023,11 +1023,11 @@ let sheetMode = null;
 const TAB_FOR = { plate: "plateBtn", tickets: "plateBtn", alerts: "plateBtn", dispute: "plateBtn", letter: "plateBtn", park: "parkBtn", parked: "parkBtn", report: "reportBtn", account: "youBtn" };
 function setTab(mode) { const id = TAB_FOR[mode] || "tabExplore"; document.querySelectorAll(".tab").forEach((t) => (t.id === id ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"))); }
 function openSheet(t, html, mode = null) {
-  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; hideAdMob(); $("#sheet").classList.remove("peek"); $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
+  if (mode !== "route" && document.body.classList.contains("routing")) { document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = []; } sheetMode = mode; $("#sheetTitle").textContent = t; hideAdMob(); if ($("#sheet").classList.contains("peek")) $("#sheet").classList.remove("peek"); $("#sheetBody").innerHTML = html; $("#sheet").classList.add("show"); $("#results").hidden = true; setTab(mode); if (mode === "route") $("#sheetBody").insertAdjacentHTML("beforeend", LEGAL_NOTE); if (AD_MODES.has(mode)) placeAd($("#sheetBody"), mode); }
 const LEGAL_LINKS = '<a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a>';
 const LEGAL_NOTE = `<p class="note">Routes are guidance only. Always follow posted signs and traffic laws. ${LEGAL_LINKS}</p>`;
 function closeSheet() {
-  $("#sheet").classList.remove("show"); hideAdMob();
+  const sh = $("#sheet"); sh.classList.remove("show"); if (sh.classList.contains("peek")) sh.classList.remove("peek"); hideAdMob();
   if (sheetMode === "route" && !nav.active) clearRoute();
   if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
   if (sheetMode === "cat") clearCats();
@@ -1080,7 +1080,7 @@ $("#sheetX").onclick = () => closeSheet();
   addEventListener("mousemove", (e) => move(e.clientY, e));
   addEventListener("mouseup", (e) => end(e.clientY));
   // A new sheet always opens fully
-  new MutationObserver(() => { if (!sh.classList.contains("show")) sh.classList.remove("peek"); }).observe(sh, { attributes: true, attributeFilter: ["class"] });
+  // (closing clears peek in closeSheet; no observer here: it re-triggered itself and froze the page)
   window.sheetPeek = setPeek;
 })();
 function notice(h, msg) { openSheet(h, `<p class="muted" style="margin:0">${esc(msg)}</p><button class="btn primary" type="button" id="ok">OK</button>`); $("#ok").onclick = closeSheet; }
@@ -1657,7 +1657,7 @@ function startNav(sim) {
   loadHazards(route); paintShare(); truckLimits(route).catch(() => {});
   routeWeather(route).then((w) => { if (w && nav.active && !nav.wxSaid) { nav.wxSaid = 1; setTimeout(() => speak(`Heads up. ${w.t} expected on your route around ${new Date(w.when).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`), 4000); } });
   Object.assign(anim, { along: 0, routeHint: 0, zoom: map.getZoom(), brg: map.getBearing() });
-  $("#sheet").classList.remove("show"); sheetMode = null;
+  $("#sheet").classList.remove("show", "peek"); sheetMode = null;
   document.body.classList.add("navigating"); popup?.remove(); setPOI(false); paintVehicle();
   routeAlts = [route]; drawRoute(); // only the chosen route while driving
   try { autoNight(); } catch {}
