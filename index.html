@@ -215,6 +215,11 @@ body.navigating .tabs{display:none}
 .sheet.show{transform:none}
 .sheet.show.peek{transform:translateY(calc(100% - var(--peekH,104px)))}
 .sheet.dragging{transition:none}
+#peekRow{display:none;align-items:center;gap:10px;margin-left:auto;min-width:0}
+.sheet.peek #peekRow:not(:empty){display:flex}
+#peekRow .pk{display:flex;flex-direction:column;line-height:1.15;text-align:right;min-width:0}
+#peekRow .pk b{color:#81c995;font-size:18px}#peekRow .pk small{color:var(--muted);font-size:12px;white-space:nowrap}
+#peekRow .startbtn{padding:9px 16px}
 .sheet::before,.sheet-head{touch-action:none;cursor:grab}
 .sheet.peek .sheet-body{visibility:hidden}
 .sheet::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:#5f6368;margin:10px auto 0}
@@ -450,7 +455,7 @@ body.navigating #recenter.on{display:grid!important}
 </nav>
 
 <section class="sheet" id="sheet" aria-live="polite">
-  <div class="sheet-head"><h2 id="sheetTitle"></h2><button class="x" id="sheetX" type="button" aria-label="Close">✕</button></div>
+  <div class="sheet-head"><h2 id="sheetTitle"></h2><div id="peekRow"></div><button class="x" id="sheetX" type="button" aria-label="Close">✕</button></div>
   <div class="sheet-body" id="sheetBody"></div>
 </section>
 
@@ -1041,7 +1046,13 @@ $("#sheetX").onclick = () => closeSheet();
   const sh = $("#sheet"), head = sh.querySelector(".sheet-head"), body = $("#sheetBody");
   let drag = null;
   const peekH = () => head.getBoundingClientRect().bottom - sh.getBoundingClientRect().top + 6;
-  const setPeek = (on) => { sh.style.setProperty("--peekH", `${Math.round(peekH())}px`); sh.classList.toggle("peek", on); };
+  const setPeek = (on) => {
+    // Shrunk route sheet keeps the trip time and a Start button
+    const row = $("#peekRow");
+    row.innerHTML = on && sheetMode === "route" && route ? `<span class="pk"><b>${esc(fmtMin(route.duration))}</b><small>Arrive ${esc(clock(route.duration))}</small></span><button class="startbtn" type="button" id="peekStart">Start</button>` : "";
+    $("#peekStart")?.addEventListener("click", (e) => { e.stopPropagation(); try { unlockVoice(); } catch {} sh.classList.remove("peek"); startNav(false); });
+    sh.classList.toggle("peek", on); sh.style.setProperty("--peekH", `${Math.round(peekH())}px`); // measure after the row shows
+  };
   const start = (y, fromBody) => {
     if (!sh.classList.contains("show")) return;
     const h = sh.getBoundingClientRect().height, pk = peekH();
