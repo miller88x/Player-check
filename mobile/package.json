@@ -1,0 +1,20 @@
+{
+  "name": "rova-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Rova for the App Store and Google Play: a native shell around the live Rova app (player-check.onrender.com)",
+  "scripts": {
+    "native": "npx cap add android && npx cap add ios && npm run assets && npm run patch && npx cap sync",
+    "assets": "npx capacitor-assets generate --iconBackgroundColor '#01050e' --splashBackgroundColor '#01050e' --splashBackgroundColorDark '#01050e'",
+    "patch": "node scripts/patch-native.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  }
+}

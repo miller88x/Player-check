@@ -1,0 +1,56 @@
+# Rova store builds on Codemagic (cloud Macs, free tier). Sign in at codemagic.io with GitHub and add this repo.
+workflows:
+  # Free test build for Android: an installable .apk you can put on any Android phone. No Google account needed.
+  android-test:
+    name: Rova Android (test APK)
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      node: 20
+      java: 21
+    triggering:
+      events: []   # run by hand from Codemagic
+    scripts:
+      - name: Install
+        script: cd mobile && npm install
+      - name: Create native project
+        script: cd mobile && npx cap add android && npm run assets && npm run patch && npx cap sync android
+      - name: Build APK
+        script: cd mobile/android && chmod +x gradlew && ./gradlew assembleDebug
+    artifacts:
+      - mobile/android/app/build/outputs/apk/debug/*.apk
+
+  # iPhone build for TestFlight / App Store. Needs the Apple Developer account ($99/yr):
+  # in Codemagic, Team settings > Integrations > App Store Connect, add an API key, name it "Rova ASC".
+  ios-release:
+    name: Rova iOS (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Rova ASC
+    environment:
+      node: 20
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.getrova.app
+    triggering:
+      events: []
+    scripts:
+      - name: Install
+        script: cd mobile && npm install
+      - name: Create native project
+        script: cd mobile && npx cap add ios && npm run assets && npm run patch && npx cap sync ios
+      - name: Signing
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: |
+          cd mobile/ios/App
+          agvtool new-version -all $(($(date +%s)/60))
+          xcode-project build-ipa --workspace App.xcworkspace --scheme App 2>/dev/null || xcode-project build-ipa --project App.xcodeproj --scheme App
+    artifacts:
+      - mobile/ios/App/build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

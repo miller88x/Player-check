@@ -1,0 +1,13 @@
+{
+  "appId": "com.getrova.app",
+  "appName": "Rova",
+  "webDir": "www",
+  "server": {
+    "url": "https://player-check.onrender.com",
+    "cleartext": false,
+    "errorPath": "index.html"
+  },
+  "backgroundColor": "#01050e",
+  "ios": { "contentInset": "never", "scheme": "Rova" },
+  "android": { "allowMixedContent": false }
+}
