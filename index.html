@@ -1304,13 +1304,32 @@ async function search(pickFirst) {
   try { searchCtl?.abort(); } catch {}
   searchCtl = new AbortController();
   try {
-    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&limit=7&lang=en`, { signal: searchCtl.signal })).json();
-    const list = (j.features || []).map((f) => {
-      const p = f.properties;
-      const name = p.name || [p.housenumber, p.street].filter(Boolean).join(" ") || p.city || "Place";
-      const line = [p.name && p.street ? [p.housenumber, p.street].filter(Boolean).join(" ") : "", p.district || p.locality, p.city, p.state].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i && x !== name).join(", ");
-      return { name, line, at: f.geometry.coordinates };
-    });
+    // Nearby first: one search boxed to about 25 miles around you, one wider (same country) to fill in.
+    // Results are sorted closest first, so "565" means 565 on a street near you, not a place named 565 abroad.
+    const base = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[1]}&lon=${c[0]}&lang=en`;
+    const box = [c[0] - 0.45, c[1] - 0.35, c[0] + 0.45, c[1] + 0.35].map((v) => v.toFixed(4)).join(",");
+    const get = (u) => fetch(u, { signal: searchCtl.signal }).then((r) => r.json()).then((j) => j.features || []).catch((e) => { if (e.name === "AbortError") throw e; return []; });
+    const [nearF, wideF] = await Promise.all([get(`${base}&limit=12&bbox=${box}`), get(`${base}&limit=12&zoom=12&location_bias_scale=0.1`)]);
+    const myCountry = nearF.find((f) => f.properties.countrycode)?.properties.countrycode || (inNYC(c[0], c[1]) ? "US" : null);
+    const seen = new Set(), list = [];
+    for (const [f, isNear] of [...nearF.map((f) => [f, true]), ...wideF.map((f) => [f, false])]) {
+      const p = f.properties, at = f.geometry.coordinates;
+      if (!isNear && myCountry && p.countrycode && p.countrycode !== myCountry) continue; // stay in your country
+      const street = [p.housenumber, p.street].filter(Boolean).join(" ");
+      if (/^\d+[a-z]?$/i.test(p.name || "") && !p.street) continue; // a bare number with no street is never what a driver means
+      const name = (p.name && !/^\d+[a-z]?$/i.test(p.name) ? p.name : "") || street || p.city || "Place";
+      const k = `${name.toLowerCase()}|${at[0].toFixed(3)}|${at[1].toFixed(3)}`;
+      if (seen.has(k)) continue; seen.add(k);
+      const m = dist(c, at);
+      const place = [p.name && street && name !== street ? street : "", p.district || p.locality, p.city, p.state].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i && x !== name).join(", ");
+      list.push({ name, line: [m < 160000 ? fmtDist(m) : "", place].filter(Boolean).join(" · "), at, d: m, near: isNear });
+    }
+    // Best text match first (starts with what you typed > has every word > loose match), then closest
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const score = (r) => { const t = `${r.name} ${r.line}`.toLowerCase(); return r.name.toLowerCase().startsWith(q.toLowerCase()) ? 0 : words.every((w) => t.includes(w)) ? 1 : 2; };
+    list.forEach((r) => (r.sc = score(r)));
+    list.sort((x, y) => (x.near !== y.near ? (x.near ? -1 : 1) : x.sc - y.sc || x.d - y.d));
+    list.splice(8);
     searchCache.set(key, list); if (searchCache.size > 200) searchCache.delete(searchCache.keys().next().value);
     if (seq !== searchSeq) return; // a newer search already started; drop this one
     if (pickFirst && list[0]) return showPlace(list[0]);
@@ -1418,7 +1437,7 @@ async function catSearch(key) {
   const c = me || [map.getCenter().lng, map.getCenter().lat];
   openSheet(label, '<p class="muted" style="margin:0">Finding the closest ones…</p>', "cat");
   try {
-    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&osm_tag=${tag}&lat=${c[1]}&lon=${c[0]}&limit=25&lang=en`)).json();
+    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&osm_tag=${tag}&lat=${c[1]}&lon=${c[0]}&limit=25&lang=en&bbox=${[c[0] - 0.18, c[1] - 0.14, c[0] + 0.18, c[1] + 0.14].map((v) => v.toFixed(4)).join(",")}`)).json();
     const list = (j.features || []).map((f) => { const p = f.properties; return { name: p.name || label, line: [[p.housenumber, p.street].filter(Boolean).join(" "), p.district || p.city].filter(Boolean).join(", "), at: f.geometry.coordinates, d: dist(c, f.geometry.coordinates) }; })
       .filter((r) => r.d < 15000).sort((a, b) => a.d - b.d).slice(0, 10);
     if (sheetMode !== "cat") return;
