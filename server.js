@@ -345,5 +345,5 @@ http
     }
     sendPage(req, res);
   })
-  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); parkwatch.start(); });
+  .listen(PORT, () => { console.log(`Ticket app running on port ${PORT}`); cameras.start(); truck.start(); parkwatch.start(); if (process.env.PARK_AUDIT === "1") setTimeout(() => require("./parkaudit").run(), 20000); });
 alerts.init(lookup);
