@@ -2861,7 +2861,7 @@ function accountSheet(mode) {
       <button class="btn" type="button" data-mycar>🚗 My car · renewals & tow help</button>
       <button class="btn" type="button" data-myrover>🎨 My Rover</button>
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan${account.billing?.cars ? ` · ${account.billing.cars} cars` : ""}${account.billing?.ends ? ` · ends ${new Date(account.billing.ends * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
-      ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button>'}
+      ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button><button class="btn" type="button" id="plansBtn">Compare plans</button>'}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
