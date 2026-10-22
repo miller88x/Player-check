@@ -2550,9 +2550,9 @@ function paintCurbs(force) {
         map.getLayer("route-casing") ? "route-casing" : undefined);
       map.on("click", "curb-line", (e) => {
         if (nav.active) return;
-        if (e.features?.some((f) => f.properties.bus)) return notice("Bus stop", "No standing at a bus stop: buses only. Park past the bus stop sign.");
-        if (e.features?.some((f) => f.properties.hyd)) return notice("Fire hydrant", "No parking within 15 feet of a hydrant, any time, even if there's no sign. The ticket is $115.");
-        parkCheck([e.lngLat.lng, e.lngLat.lat], true);
+        // The stretch you tapped decides the answer (hydrant and bus stop win over the block's signs)
+        const fs = (e.features || []).map((f) => f.properties), pick = fs.find((p) => p.hyd) || fs.find((p) => p.bus) || fs.sort((a, b) => (b.z || 0) - (a.z || 0))[0];
+        parkCheck([e.lngLat.lng, e.lngLat.lat], true, pick || null);
       });
       map.on("mouseenter", "curb-line", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "curb-line", () => (map.getCanvas().style.cursor = ""));
@@ -2696,7 +2696,7 @@ function snapCurbs(fc) {
       let onRight = sv && Math.abs(right[0] * sv[0] + right[1] * sv[1]) > 0.35 ? right[0] * sv[0] + right[1] * sv[1] > 0 : null;
       if (onRight === null) { const m = [(A[0] + B[0]) / 2 - a[0], (A[1] + B[1]) / 2 - a[1]]; onRight = ux * m[1] - uy * m[0] < 0; }
       if (!onRight) pts.reverse(); // line-offset draws on the right of the line's direction
-      out.push({ type: "Feature", properties: { s: P.s, why: P.why, cls: na.s.cls, z: 1 }, geometry: { type: "LineString", coordinates: pts.map(toLL) } });
+      out.push({ type: "Feature", properties: { s: P.s, why: P.why, k: P.k || "", cls: na.s.cls, z: 1 }, geometry: { type: "LineString", coordinates: pts.map(toLL) } });
     }
     // Bus stops (20 m each way) and fire hydrants (15 ft = 4.6 m each way): red on the curb they stand beside
     const curbs = out.map((f) => ({ f, pts: f.geometry.coordinates.map(toM) }));
@@ -2970,7 +2970,19 @@ function reportsAhead(pos, brg, R) {
 let checkMarker = null, signMarkers = [], parkedMarker = null, lastPark = null;
 const ICON_P = { green: "✓", yellow: "$", red: "✕", unknown: "?" };
 function clearCheck() { checkMarker?.remove(); checkMarker = null; signMarkers.forEach((m) => m.remove()); signMarkers = []; }
-async function parkCheck(at, fromTap) {
+// Plain-words reason for each kind of red curb
+function curbReason(c) {
+  if (c.hyd) return { h: "You can't park here: fire hydrant", d: "No parking within 15 feet of a hydrant, any time of day, even with no sign posted. The ticket is $115." };
+  if (c.bus) return { h: "You can't park here: bus stop", d: "No standing at a bus stop. Buses only, any time. Park past the bus stop sign." };
+  const why = String(c.why || ""), k = c.k || "";
+  const what = k === "stop" ? "No stopping means you can't stop here at all, even for a moment."
+    : k === "stand" ? "No standing means you can't wait or stand here, even with someone in the car. You may only quickly drop off or pick up passengers."
+    : k === "truck" ? "Only commercial vehicles that are loading or unloading may park here."
+    : /street cleaning/i.test(why) ? "The street sweeper comes through during these hours, so the car has to be moved."
+    : "No parking means you can't leave the car here. You may stop briefly to load or unload passengers or packages.";
+  return { h: `You can't park here: ${why.replace(/^Street cleaning: no parking/i, "street cleaning").replace(/^./, (x) => x.toLowerCase())}`, d: what };
+}
+async function parkCheck(at, fromTap, curb) {
   clearCheck();
   const el = document.createElement("div"); el.className = "checkPin";
   checkMarker = new maplibregl.Marker({ element: el }).setLngLat(at).addTo(map);
@@ -2980,12 +2992,20 @@ async function parkCheck(at, fromTap) {
     const r = await fetch(`/api/park?lat=${at[1]}&lng=${at[0]}`); const j = await r.json(); if (!r.ok) throw new Error(j.error);
     lastPark = { ...j, at };
     j.signs.forEach((sg) => { const d = document.createElement("div"); d.className = "signDot"; d.title = sg.text; signMarkers.push(new maplibregl.Marker({ element: d }).setLngLat([sg.lng, sg.lat]).addTo(map)); });
+    // Tapped a colored curb: answer for that exact stretch, so the words always match the color you tapped
+    if (curb && curb.s) {
+      if (curb.s === "red") { const r = curbReason(curb); j.status = "red"; j.headline = r.h; j.detail = r.d; j.moveBy = null; }
+      else if (curb.s === "yellow" && j.status !== "yellow") { j.status = "yellow"; j.headline = curb.why || "Metered parking now"; j.detail = "Pay at the muni-meter or with the ParkNYC app."; }
+      else if (curb.s === "green" && j.status !== "green") { j.status = "green"; j.headline = /^Park until/.test(curb.why || "") ? curb.why.replace(/^Park until/, "You can park until") : "You can park here"; j.detail = "This stretch of curb has no rule in force right now."; }
+    }
     const moveTxt = j.moveBy ? new Date(j.moveBy).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) : null;
     openSheet("Can I park here?", `
       <div class="verdict ${j.status}"><div class="ic">${ICON_P[j.status]}</div><div><div class="big2">${esc(j.headline)}</div><div class="muted" style="color:var(--ink);opacity:.85">${esc(j.detail)}</div></div></div>
       ${j.where ? `<div class="muted">📍 ${esc(j.where)}</div>` : ""}
-      ${j.rules.length ? `<div><b>At your spot</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-      ${j.rulesElse?.length ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${curb?.s === "red" ? `<div><b>Why</b></div><ul class="rules"><li>${esc(curb.hyd ? "Fire hydrant: no parking within 15 ft, anytime" : curb.bus ? "Bus stop: no standing, anytime" : curb.why || "")}</li></ul>` : ""}
+      ${j.rules.length && curb?.s !== "red" ? `<div><b>At your spot</b></div><ul class="rules">${j.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${curb?.s === "red" && (j.rules.length || j.rulesElse?.length) ? `<div class="muted" style="font-size:14px"><b>Other signs on this block</b></div><ul class="rules" style="opacity:.6">${[...j.rules, ...(j.rulesElse || [])].filter((x, i, a) => a.indexOf(x) === i).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${j.rulesElse?.length && curb?.s !== "red" ? `<div class="muted" style="font-size:14px"><b>Elsewhere on this block</b></div><ul class="rules" style="opacity:.6">${j.rulesElse.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${payBlock(j)}
       ${j.status !== "red" ? `<button class="btn primary" type="button" id="parkHere">${moveTxt ? `I parked here · remind me before ${esc(moveTxt)}` : "I parked here"}</button>` : ""}
       <p class="note">Based on the city's mapped signs for the nearest block. Always check the posted signs, hydrants (stay 15 ft away), driveways and bus stops. ${fromTap ? "" : "Press and hold anywhere on the map to drop a pin there."}</p>`, "park");

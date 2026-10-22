@@ -328,15 +328,15 @@ async function tileRows(tx, ty) {
 }
 
 function stateNow(rules, now) {
-  let red = null, yellow = null, next = null;
+  let red = null, redW = null, yellow = null, next = null;
   for (const r of rules) {
     if (r.noHours) continue;
     for (const w of schedule(r, now)) {
-      if (w.start <= 0 && w.end > 0) { if (r.kind === "meter") yellow = yellow || r; else red = red || r; }
+      if (w.start <= 0 && w.end > 0) { if (r.kind === "meter") yellow = yellow || r; else if (!red || w.end > redW.end) { red = r; redW = w; } }
       else if (w.start > 0 && r.kind !== "meter" && (!next || w.start < next.start)) next = { r, start: w.start, w };
     }
   }
-  if (red) return { s: "red", why: red.anytime ? `${red.label} anytime` : `${red.label} now` };
+  if (red) return { s: "red", why: red.anytime ? `${red.label} anytime` : `${red.label} until ${fmtWhen({ ...redW, s: redW.e, start: -1 }, now)}`, k: red.kind };
   if (yellow) return { s: "yellow", why: `${yellow.label} now` };
   return { s: "green", why: next && next.start <= 7 * 1440 ? `Park until ${fmtWhen(next.w, now)}` : "No rules on the signs right now" };
 }
@@ -418,7 +418,7 @@ async function curbs(w, s, e, n, at = new Date()) {
     const pt = (p) => { const [la, ln] = toLatLng(p * ux + q * -uy, p * uy + q * ux); return [+ln.toFixed(6), +la.toFixed(6)]; };
     let run = null; const mine = [];
     const props = { st: tc(face[0].on_street), fr: tc(face[0].from_street), to: tc(face[0].to_street), sd: face[0].side_of_street || "" };
-    const flush = () => { if (run && run.b - run.a > 8) mine.push({ type: "Feature", properties: { s: run.s, why: run.why, ...props }, geometry: { type: "LineString", coordinates: [pt(run.a), pt(run.b)] } }); };
+    const flush = () => { if (run && run.b - run.a > 8) mine.push({ type: "Feature", properties: { s: run.s, why: run.why, k: run.k || "", ...props }, geometry: { type: "LineString", coordinates: [pt(run.a), pt(run.b)] } }); };
     for (let i = 0; i < cuts.length - 1; i++) {
       const a = cuts[i], b = cuts[i + 1], m = (a + b) / 2;
       const rules = zones.filter((z) => z.iv.some(([p0, p1]) => m >= p0 - 1 && m <= p1 + 1)).map((z) => z.rule);
