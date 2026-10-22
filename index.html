@@ -874,6 +874,32 @@ function ensureMarker(pos) {
   meMarker = new maplibregl.Marker({ element: d, rotationAlignment: "map", pitchAlignment: "viewport", subpixelPositioning: true }).setLngLat(pos).addTo(map);
   anim.pos = pos.slice(); anim.spd = 0;
 }
+// Draw the car on the street it's on (display only: parking checks and alerts keep the true GPS spot).
+// GPS in the city is often 5–20 m off into buildings; this puts the car back on the nearest drivable road.
+let roadSegs = null, roadSegsAt = 0;
+function snapToRoad(pos) {
+  try {
+    if (!map.isStyleLoaded?.() || map.getZoom() < 13) return { pos };
+    if (!roadSegs || performance.now() - roadSegsAt > 3000) {
+      roadSegsAt = performance.now(); roadSegs = [];
+      for (const f of map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" })) {
+        if (/rail|path|track|ferry|aerialway|pier|service|transit|busway|bridge_?rail/.test(f.properties.class || "")) continue;
+        const g = f.geometry, lines = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
+        for (const L of lines) for (let i = 0; i < L.length - 1; i++) roadSegs.push([L[i], L[i + 1]]);
+      }
+    }
+    const kx = 111320 * Math.cos((pos[1] * Math.PI) / 180), ky = 110540;
+    let best = null;
+    for (const [a, b] of roadSegs) {
+      const ax = (a[0] - pos[0]) * kx, ay = (a[1] - pos[1]) * ky, bx = (b[0] - pos[0]) * kx, by = (b[1] - pos[1]) * ky;
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2));
+      const qx = ax + t * dx, qy = ay + t * dy, d = Math.hypot(qx, qy);
+      if (!best || d < best.d) best = { d, p: [pos[0] + qx / kx, pos[1] + qy / ky], brg: (Math.atan2(dx, dy) * 180) / Math.PI };
+    }
+    return best && best.d < 25 ? { pos: best.p, roadBrg: (best.brg + 360) % 360 } : { pos };
+  } catch { return { pos }; }
+}
+
 function onFix(f) {
   const pos = [f.lng, f.lat], now = performance.now();
   if (lastFix) {
@@ -887,8 +913,14 @@ function onFix(f) {
   lastFix = { pos, t: Date.now() }; me = pos;
   ensureMarker(pos);
   // Stopped: ignore GPS drift of a few meters so the car sits still instead of twitching
-  const drift = anim.fixPos ? dist(anim.fixPos, pos) : 99;
-  if (!(speedMps === 0 && drift < 8)) { anim.fixPos = pos; anim.fixT = now; }
+  const drift = anim.rawFix ? dist(anim.rawFix, pos) : 99;
+  if (!(speedMps === 0 && drift < 8 && anim.rawFix)) {
+    anim.rawFix = pos; anim.fixT = now;
+    const sn = nav.active ? { pos } : snapToRoad(pos); // during navigation the route itself keeps the car on the road
+    anim.fixPos = sn.pos;
+    // Stopped on a street: face along the street (whichever way is closer to the last heading) instead of a random angle
+    if (sn.roadBrg != null && speedMps < 2.5) { const b = sn.roadBrg, alt = (b + 180) % 360, cur = heading ?? anim.brg ?? b; heading = Math.abs(((b - cur) + 540) % 360 - 180) <= 90 ? b : alt; }
+  }
   paintVehicle();
   if (nav.active) navTick(pos); else freeDriveCams(pos);
   startAnim();
