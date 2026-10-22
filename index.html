@@ -2174,7 +2174,7 @@ function sunDown(lng, lat, d = new Date()) {
 }
 // Dark mode: Auto (night map after sunset, like Waze and Google), always on, or off. Only changes the Default map;
 // Satellite and Night stay as picked. Checked when the app opens, every minute, and during navigation.
-const darkPref = () => store.get("darkMode", "auto");
+function darkPref() { return store.get("darkMode", "auto"); } // a function (not const) so the layers panel can use it at start-up
 function wantDark() {
   const picked = store.get("mapType", "map"); if (picked !== "map") return picked === "dark";
   const d = darkPref(); if (d === "on") return true; if (d === "off") return false;
