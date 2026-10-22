@@ -504,10 +504,17 @@ async function selfCheck() {
   for (const l of top) console.log("PARKCHECK unread " + l);
   return { signs, faces, curbs: feats, longOnes, kinds, per, top };
 }
-if (process.env.RENDER) setTimeout(() => selfCheck().catch((e) => console.error("PARKCHECK failed", e.message)), 20000);
+// Runs only when asked (GET /api/park/selfcheck?key=ALERTS_KEY), never on start-up: on the free plan the server
+// wakes from sleep when a driver opens the app, and this check must not compete with their requests.
+let checking = false;
 
 function routes(url, res, sendJSON) {
   if (url.pathname === "/api/park/reminder.ics") { ics(url, res); return true; }
+  if (url.pathname === "/api/park/selfcheck") {
+    if (!process.env.ALERTS_KEY || url.searchParams.get("key") !== process.env.ALERTS_KEY) { sendJSON(res, 403, { error: "Forbidden" }); return true; }
+    if (!checking) { checking = true; selfCheck().catch((e) => console.error("PARKCHECK failed", e.message)).finally(() => (checking = false)); }
+    sendJSON(res, 200, { started: true, results: "in the server log (PARKCHECK)" }); return true;
+  }
   if (url.pathname === "/api/park/curbs") {
     const [w, s, e, n] = ["w", "s", "e", "n"].map((k) => +url.searchParams.get(k));
     if (![w, s, e, n].every(Number.isFinite) || s < 40.4 || n > 41 || w < -74.3 || e > -73.6 || (e - w) * (n - s) > 0.0004) { sendJSON(res, 200, { type: "FeatureCollection", features: [] }); return true; }
