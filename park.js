@@ -435,6 +435,53 @@ async function curbs(w, s, e, n, at = new Date()) {
   return { type: "FeatureCollection", features: feats, at: at.toISOString() };
 }
 
+// ---------- City-wide self check (runs once after each deploy, results in the server log) ----------
+// Samples blocks in all five boroughs and reports how the city's sign text is being read, so rules Rova
+// doesn't understand yet show up and get fixed instead of quietly showing green.
+const SAMPLES = [
+  ["Bed-Stuy", 40.6868, -73.9330], ["East New York", 40.6705, -73.8935], ["Park Slope", 40.6720, -73.9790], ["Williamsburg", 40.7140, -73.9570],
+  ["Flatbush", 40.6400, -73.9590], ["Bay Ridge", 40.6290, -74.0250], ["Downtown Brooklyn", 40.6920, -73.9870], ["Midtown", 40.7540, -73.9840],
+  ["Upper West Side", 40.7870, -73.9750], ["Harlem", 40.8110, -73.9460], ["Lower East Side", 40.7150, -73.9850], ["Washington Heights", 40.8460, -73.9380],
+  ["Astoria", 40.7640, -73.9230], ["Jackson Heights", 40.7500, -73.8830], ["Flushing", 40.7590, -73.8300], ["Jamaica", 40.7020, -73.7990],
+  ["Mott Haven", 40.8090, -73.9230], ["Fordham", 40.8610, -73.8900], ["St. George", 40.6430, -74.0770], ["New Dorp", 40.5730, -74.1170],
+];
+async function selfCheck() {
+  const kinds = {}, unread = new Map(), per = [];
+  let signs = 0, faces = 0, feats = 0, longOnes = 0;
+  for (const [name, lat, lng] of SAMPLES) {
+    try {
+      const d = 0.0025, fc = await curbs(lng - d, lat - d * 0.75, lng + d, lat + d * 0.75);
+      const lines = fc.features.filter((f) => f.geometry.type === "LineString");
+      const c = { red: 0, yellow: 0, green: 0 };
+      for (const f of lines) {
+        c[f.properties.s]++;
+        const [[x0, y0], [x1, y1]] = f.geometry.coordinates;
+        if (Math.hypot((x1 - x0) * 84000, (y1 - y0) * 111000) > 500) longOnes++;
+      }
+      feats += lines.length;
+      const [x, y] = toStatePlane(lat, lng);
+      const rows = await tileRows(Math.floor(x / TILE), Math.floor(y / TILE));
+      const fk = new Set();
+      for (const r of rows) {
+        signs++; fk.add(`${r.on_street}|${r.side_of_street}|${r.from_street}|${r.to_street}`);
+        const ps = parseSign(r.sign_description);
+        const k = ps ? ps.kind : /LOCATOR|INFORMATION|^OPEN STREETS|^SEE OTHER/i.test(r.sign_description || "") ? "info" : "UNREAD";
+        kinds[k] = (kinds[k] || 0) + 1;
+        if (k === "UNREAD") { const t = String(r.sign_description || "").toUpperCase().replace(/\s+/g, " ").replace(/\d{1,2}(:\d{2})?\s*(AM|PM)/g, "#").slice(0, 70); unread.set(t, (unread.get(t) || 0) + 1); }
+      }
+      faces += fk.size;
+      per.push(`${name}: ${lines.length} curbs (${c.red}r/${c.yellow}y/${c.green}g), ${fc.features.length - lines.length} hydrants`);
+    } catch (e) { per.push(`${name}: ERROR ${e.message}`); }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  const top = [...unread.entries()].sort((a, b) => b[1] - a[1]).slice(0, 45).map(([t, n]) => `${n}× ${t}`);
+  console.log("PARKCHECK summary " + JSON.stringify({ signs, faces, curbs: feats, longOnes, kinds }));
+  for (const l of per) console.log("PARKCHECK area " + l);
+  for (const l of top) console.log("PARKCHECK unread " + l);
+  return { signs, faces, curbs: feats, longOnes, kinds, per, top };
+}
+if (process.env.RENDER) setTimeout(() => selfCheck().catch((e) => console.error("PARKCHECK failed", e.message)), 20000);
+
 function routes(url, res, sendJSON) {
   if (url.pathname === "/api/park/reminder.ics") { ics(url, res); return true; }
   if (url.pathname === "/api/park/curbs") {
