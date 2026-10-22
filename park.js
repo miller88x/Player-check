@@ -49,17 +49,18 @@ function parseSign(desc) {
   if (/NO STOPPING/.test(d)) kind = "stop";
   else if (/NO STANDING/.test(d)) kind = "stand";
   else if (/NO PARKING/.test(d)) kind = "park";
-  // Curbs reserved for someone else: a regular car can't park there (bus stops, taxi stands, agency and permit spots)
+  // Curbs reserved for someone else: a regular car can't park there (taxi stands, agency and permit spots, markets...)
   let who = null;
   if (!kind) {
-    const R = [[/\bBUS STOP\b/, "Bus stop: no standing"], [/TAXI (RELIEF )?STAND|TAXI.*ONLY/, "Taxi stand"], [/SCHOOL BUS/, "School buses only"],
-      [/BUS LAYOVER|BUS LAY-?OVER|BUSES ONLY/, "Buses only"], [/FIRE ZONE|FIRE LANE/, "Fire zone"], [/HOTEL/, "Hotel loading zone"],
-      [/AMBULETTE|AMBULANCE/, "Ambulettes and ambulances only"], [/DIPLOMAT|CONSUL|\bD\/?P\b|UNITED NATIONS|\bUN\b MISSION/, "Diplomatic vehicles only"],
+    const R = [[/TAXI (RELIEF )?STAND|TAXI.*ONLY/, "Taxi stand"], [/SCHOOL BUS/, "School buses only"], [/SCHOOL FACULTY/, "School faculty permits only"],
+      [/BUS LAYOVER|BUS LAY-?OVER|BUSES ONLY/, "Buses only"], [/FIRE ZONE|FIRE LANE/, "Fire zone"], [/HOTEL/, "Hotel loading zone"], [/FARMERS MARKET/, "Farmers market only"],
+      [/AMBULETTE|AMBULANCE/, "Ambulettes and ambulances only"], [/DIPLOMAT|CONSUL|UNITED NATIONS/, "Diplomatic vehicles only"],
       [/CAR ?SHARE|ZIPCAR|CAR SHARING/, "Car share vehicles only"], [/\bNYPD\b|POLICE/, "Police vehicles only"], [/\bFDNY\b|FIRE DEP/, "Fire department vehicles only"],
       [/ACCESSIBLE|HANDICAP|DISABILIT|WHEELCHAIR/, "Accessible permit parking only"], [/ELECTRIC VEHICLE|EV CHARG/, "Electric vehicles charging only"],
-      [/AUTHORIZED VEHICLES|PERMIT PARKING|VEHICLES ONLY|PARKING ONLY|OFFICIAL|GOVERNMENT|\bDOT\b VEH|\bDEPT\b|DEPARTMENT|AGENCY|PRESS/, "Authorized vehicles only"]];
-    const hit = R.find(([re]) => re.test(d));
-    if (hit && !/^(\d+|ONE|TWO|THREE)\s*(HOUR|HR|HMP|HMCP)/.test(d)) { kind = "reserved"; who = hit[1]; }
+      [/MICROHUB|PERMIT ONLY|WITH PERMIT/, "Permit vehicles only"], [/DROP-?OFF ONLY|PICK-?UP.*ONLY/, "Drop-off only, no parking"],
+      [/\bAVO\b|AUTHORIZED VEHICLES|PERMIT PARKING|OFFICIAL VEHICLES|GOVERNMENT|\bDOT\b VEH|AGENCY/, "Authorized vehicles only"]];
+    const hit = !/^(\d+|ONE|TWO|THREE)\s*(HOUR|HR|HMP|HMCP)|ROUTE PANEL|DESTINATION PANEL|BUS STOP/.test(d) && R.find(([re]) => re.test(d));
+    if (hit) { kind = "reserved"; who = hit[1]; }
   }
   if (!kind && /TRUCK LOADING ONLY|COMMERCIAL VEHICLES ONLY|LOADING ZONE|LOADING ONLY/.test(d)) kind = "truck";
   if (!kind && (/(\d+|ONE|TWO|THREE|1\/2)\s*(HOUR|HR|MIN|HMP|HMCP)\b/.test(d) || /METER|MUNI|\bHMP\b/.test(d))) kind = "meter";
@@ -443,6 +444,16 @@ async function curbs(w, s, e, n, at = new Date()) {
     // The rule at each end of the block runs on to the corner: the app stretches these two to the cross streets
     if (mine.length) { mine[0].properties.first = 1; mine[mine.length - 1].properties.last = 1; feats.push(...mine); }
   }
+  // Bus stops from the city's own bus stop panels (one point per pole), marked red on their curb by the app
+  const busSeen = [];
+  for (const rows of await Promise.all(jobs)) for (const r of rows) {
+    const d = String(r.sign_description || "").toUpperCase();
+    if (!/ROUTE PANEL|DESTINATION PANEL|BUS STOP/.test(d) || /NO STANDING|NO PARKING|NO STOPPING/.test(d)) continue;
+    if (r.x < minX || r.x > maxX || r.y < minY || r.y > maxY || busSeen.some(([x, y]) => Math.hypot(x - r.x, y - r.y) < 60)) continue;
+    busSeen.push([r.x, r.y]);
+    const [la, ln] = toLatLng(r.x, r.y);
+    feats.push({ type: "Feature", properties: { busPt: 1 }, geometry: { type: "Point", coordinates: [+ln.toFixed(6), +la.toFixed(6)] } });
+  }
   // Hydrant points ride along; the app puts them on the right curb and marks 15 ft each way red
   for (const c of await hydrants(w, s, e, n).catch(() => [])) feats.push({ type: "Feature", properties: { hyd: 1 }, geometry: { type: "Point", coordinates: c } });
   return { type: "FeatureCollection", features: feats, at: at.toISOString() };
@@ -483,7 +494,7 @@ async function selfCheck() {
         if (k === "UNREAD") { const t = String(r.sign_description || "").toUpperCase().replace(/\s+/g, " ").replace(/\d{1,2}(:\d{2})?\s*(AM|PM)/g, "#").slice(0, 70); unread.set(t, (unread.get(t) || 0) + 1); }
       }
       faces += fk.size;
-      per.push(`${name}: ${lines.length} curbs (${c.red}r/${c.yellow}y/${c.green}g), ${fc.features.length - lines.length} hydrants`);
+      per.push(`${name}: ${lines.length} curbs (${c.red}r/${c.yellow}y/${c.green}g), ${fc.features.filter((f) => f.properties.hyd).length} hydrants, ${fc.features.filter((f) => f.properties.busPt).length} bus stops`);
     } catch (e) { per.push(`${name}: ERROR ${e.message}`); }
     await new Promise((r) => setTimeout(r, 300));
   }

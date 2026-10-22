@@ -2665,9 +2665,10 @@ function snapCurbs(fc) {
       }
       return bestPref || best; };
     const SIDE = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] };
-    const out = [], hyds = [];
+    const out = [], hyds = [], busPts = [];
     for (const f of fc.features) {
       if (f.properties.hyd) { hyds.push(f.geometry.coordinates); continue; }
+      if (f.properties.busPt) { busPts.push(f.geometry.coordinates); continue; }
       if (f.geometry.type !== "LineString") continue;
       const P = f.properties, list = byName.get(normSt(P.st));
       if (!list) continue; // street not in the map data here: better no line than a wrong one
@@ -2720,10 +2721,11 @@ function snapCurbs(fc) {
       if (slice.length >= 2) out.push({ type: "Feature", properties: { s: "red", z: 2, cls: best.c.f.properties.cls, ...props }, geometry: { type: "LineString", coordinates: slice.map(toLL) } });
     };
     const done = new Set();
-    for (const st of map.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "class"], "bus"] })) {
-      const key = toM(st.geometry.coordinates).map((v) => Math.round(v / 5)).join(",");
-      if (done.has(key)) continue; done.add(key);
-      mark(st.geometry.coordinates, 20, { why: "Bus stop: no standing", bus: 1 });
+    const busAll = busPts.concat(map.querySourceFeatures("openmaptiles", { sourceLayer: "poi", filter: ["==", ["get", "class"], "bus"] }).map((st) => st.geometry.coordinates));
+    const busM = [];
+    for (const ll of busAll) {
+      const m = toM(ll); if (busM.some((q) => Math.hypot(q[0] - m[0], q[1] - m[1]) < 25)) continue; // same stop from city data and map data
+      busM.push(m); mark(ll, 20, { why: "Bus stop: no standing", bus: 1 });
     }
     for (const h of hyds) mark(h, 4.6, { why: "Fire hydrant: no parking within 15 ft", hyd: 1 });
     return { type: "FeatureCollection", features: out };
