@@ -4,7 +4,7 @@ workflows:
   android-test:
     name: Rova Android (test APK)
     max_build_duration: 30
-    instance_type: linux_x2
+    instance_type: mac_mini_m2   # free plan: Mac machines only
     environment:
       node: 20
       java: 21
