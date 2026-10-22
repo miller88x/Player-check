@@ -174,6 +174,14 @@ async function place(rows, box, now) {
     }
     flush();
   }
+  // Divided streets: the city maps each roadway (and the median line) separately under one name. A side that faces
+  // another roadway of the same street isn't a curb, so it gets no gray line.
+  const mid = (b) => { const h = b.L / 2; let i = 0; while (i < b.cum.length - 2 && b.cum[i + 1] < h) i++; const l = b.cum[i + 1] - b.cum[i] || 1, t = (h - b.cum[i]) / l; return [b.pts[i][0] + (b.pts[i + 1][0] - b.pts[i][0]) * t, b.pts[i][1] + (b.pts[i + 1][1] - b.pts[i][1]) * t]; };
+  const facesOther = (b, side) => (byName.get(b.name) || []).some((o) => {
+    if (o === b) return false;
+    const l = locate(b, mid(o)); if (!l || l.d > 160 || l.side !== side || l.s < 5 || l.s > b.L - 5) return false;
+    const lo = locate(o, mid(o)); return lo && Math.abs(l.ux * lo.ux + l.uy * lo.uy) > 0.8; // runs alongside
+  });
   // Every other block side in view: no parking signs on record (shown gray, never green)
   for (const b of B) {
     if (b.L < 40 || b.lanes === 0 || !inView(b)) continue; // no parking lane on this street: no curb to color
@@ -181,6 +189,7 @@ async function place(rows, box, now) {
     for (const side of [-1, 1]) {
       stats.sides++;
       if (faces.has(`${b.id}|${side}`)) { stats.signed++; continue; }
+      if (facesOther(b, side)) { stats.median = (stats.median || 0) + 1; continue; }
       stats.none++;
       const near = rows.filter((r) => { if (!park.parseSign(r.sign_description)) return false; const l = locate(b, [r.x, r.y]); return l && l.side === side && l.d < 45 && l.s > 15 && l.s < b.L - 15; });
       if (near.length) { stats.grayWithSigns = (stats.grayWithSigns || 0) + 1; (stats.grayEx ||= []).length < 4 && stats.grayEx.push(`${b.full} (${b.crossA[0] || "?"}–${b.crossB[0] || "?"}): ${near.length} signs nearby filed as ${[...new Set(near.map((r) => `${r.on_street} ${r.side_of_street} ${r.from_street}→${r.to_street}`))].slice(0, 2).join(" / ")}`); }
