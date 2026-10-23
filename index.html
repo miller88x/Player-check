@@ -1940,6 +1940,32 @@ function routeSheet(to) {
 
 // ================= NAVIGATION =================
 const nav = { active: false, sim: null, along: 0, idx: 0, offCount: 0, spoken: {}, camWarned: {}, follow: true, lastReroute: 0 };
+// ---------- Keep the screen on while driving ----------
+// The phone cancels a "keep awake" request whenever something interrupts (notification, call, app switch, rotation),
+// and older iPhones ignore it in home-screen apps. So: ask again every time it's cancelled, and also loop a tiny
+// silent, invisible video, which keeps any iPhone awake. Both stop when the drive ends.
+const KA = { on: false, lock: null, vid: null };
+async function wakeOn() {
+  KA.on = true;
+  try {
+    if (!KA.vid) {
+      const v = document.createElement("video");
+      v.src = v.canPlayType("video/mp4; codecs=\"avc1.42E01E\"") ? "/keepawake.mp4" : "/keepawake.webm"; v.muted = true; v.loop = true; v.playsInline = true;
+      v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.setAttribute("aria-hidden", "true");
+      v.style.cssText = "position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:.01;pointer-events:none;z-index:-1";
+      document.body.appendChild(v); KA.vid = v;
+    }
+    KA.vid.play()?.catch?.(() => {});
+  } catch {}
+  try {
+    if (navigator.wakeLock && !KA.lock) {
+      KA.lock = await navigator.wakeLock.request("screen");
+      KA.lock.addEventListener?.("release", () => { KA.lock = null; if (KA.on && document.visibilityState === "visible") wakeOn(); });
+    }
+  } catch { KA.lock = null; }
+}
+function wakeOff() { KA.on = false; try { KA.lock?.release(); } catch {} KA.lock = null; try { KA.vid?.pause(); } catch {} }
+document.addEventListener("visibilitychange", () => { if (KA.on && document.visibilityState === "visible") wakeOn(); });
 function startNav(sim) {
   hideAdMob(); // never an ad while driving
   if (!route) return;
@@ -1954,7 +1980,7 @@ function startNav(sim) {
   routeAlts = [route]; drawRoute(); // only the chosen route while driving
   try { autoNight(); } catch {}
   document.body.classList.remove("routing"); routeBubbles.forEach((m) => m.remove()); routeBubbles = [];
-  try { navigator.wakeLock?.request("screen").then((l) => (nav.lock = l)).catch(() => {}); } catch {}
+  wakeOn(); // keep the screen on for the whole drive
   if (sim) {
     let d = 0; const v = 20; // about 45 mph; GPS-like updates once a second
     const p0 = pointAt(route, 0); onFix({ lng: p0[0], lat: p0[1], heading: bearing(p0, pointAt(route, 15)), speed: v });
@@ -1992,7 +2018,7 @@ function endNav() {
   if (truckTrip) { truckTrip = false; setTimeout(() => paintTruckLayer(), 0); }
   nav.active = false; clearInterval(nav.sim); nav.sim = null; nav.stop = null; nav.stopFor = null;
   try { nightOff(); } catch {}
-  try { nav.lock?.release(); } catch {}
+  wakeOff();
   document.body.classList.remove("navigating"); setPOI(true); $("#camAlert").style.display = "none"; $("#camAlert").style.background = ""; $("#camAlert").style.animation = ""; $("#recenter").classList.remove("on"); nav.northUp = false;
   stopVoice();
   clearRoute(); destMarker?.remove(); destMarker = null;

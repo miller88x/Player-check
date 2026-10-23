@@ -328,6 +328,9 @@ http
 
     // Serve the app
     // Home-screen app: icon + manifest so "Add to Home Screen" opens full screen like a real app
+    if (url.pathname === "/keepawake.mp4" || url.pathname === "/keepawake.webm") { // tiny silent clip that keeps the phone screen on while driving
+      return fs.readFile(path.join(__dirname, url.pathname.slice(1)), (err, b) => { if (err) return send(res, 404, "Not found", "text/plain"); res.writeHead(200, { "Content-Type": url.pathname.endsWith(".webm") ? "video/webm" : "video/mp4", "Content-Length": b.length, "Accept-Ranges": "bytes", "Cache-Control": "public, max-age=604800" }); res.end(b); });
+    }
     if (["/apple-touch-icon.png", "/icon-512.png", "/rova-logo.jpg"].includes(url.pathname)) {
       return fs.readFile(path.join(__dirname, url.pathname.slice(1)), (err, b) => {
         if (err) return send(res, 404, "Not found", "text/plain");
