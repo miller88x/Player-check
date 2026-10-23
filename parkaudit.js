@@ -73,7 +73,7 @@ async function facesNear(lat, lng, d) {
 async function audit() {
   const t0 = Date.now(), now = park.nyNow(new Date());
   const tot = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0, redFt: 0 }]));
-  const examples = { extra: new Map(), missing: new Map() }, per = [];
+  const examples = { extra: new Map(), missing: new Map() }, per = [], wrongEx = new Map();
   const cov = {}, covPer = [], unplaced = [];
   let faces = 0, poles = 0, signsN = 0, skipped = 0;
   for (const [name, lat, lng] of AREAS) {
@@ -112,7 +112,16 @@ async function audit() {
               if (missing.length) { a[v].missing++; tot[v].missing++; }
               // proven wrong: Rova applies a rule that would make one of this pole's own signs pointless
               const rr = (raw) => signs.find((s) => s.raw === raw).rule;
-              if (extra.some((x) => pole.signs.some((s) => park.dominates(rr(x), s.rule)))) { a[v].wrong++; tot[v].wrong++; }
+              const bad = extra.find((x) => pole.signs.some((s) => park.dominates(rr(x), s.rule)));
+              if (bad) {
+                a[v].wrong++; tot[v].wrong++;
+                if (v === "now") { // keep one full example per pattern: the whole block's signs in order, this pole marked
+                  const key = `${rr(bad).label}${rr(bad).anytime ? " anytime" : ""} over ${[...new Set(pole.signs.map((s) => s.rule.label))].join("+")}`;
+                  const seq = pl.map((q, j) => `${j === i ? "▶" : ""}${Math.round(q.p - pl[0].p)}:${q.signs.map((s) => `${short(s.raw).replace(/NO (PARKING|STANDING|STOPPING)/, (m) => m[3] === "P" ? "NP" : m[3] === "S" && m[4] === "T" && m[5] === "A" ? "NSt" : "NS").slice(0, 22)}${s.dir > 0 ? "→" : s.dir < 0 ? "←" : "↔"}`).join("+")}`).join(" | ");
+                  const e = wrongEx.get(key) || { n: 0, at: `${face[0].on_street} ${face[0].side_of_street} ${face[0].from_street}→${face[0].to_street} (${name}) d=${d > 0 ? "→" : "←"}`, seq };
+                  e.n++; wrongEx.set(key, e);
+                }
+              }
               if (v === "now") for (const [kind, list] of [["extra", extra], ["missing", missing]]) for (const r of list) {
                 const key = `${short(r)}`;
                 const e = examples[kind].get(key) || { n: 0, at: `${face[0].on_street} ${face[0].side_of_street} side, ${face[0].from_street}→${face[0].to_street} (${name})`, pole: pole.signs.map((s) => `${short(s.raw).slice(0, 28)}${s.dir > 0 ? "→" : s.dir < 0 ? "←" : "↔"}`).join(" + ") };
@@ -147,6 +156,7 @@ async function audit() {
   console.log("PARKAUDIT coverage " + JSON.stringify(cov));
   for (const l of covPer) console.log("PARKAUDIT cov " + l);
   for (const l of unplaced.slice(0, 90)) console.log("PARKAUDIT unplaced " + l);
+  for (const [k, e] of [...wrongEx.entries()].sort((m, n) => n[1].n - m[1].n).slice(0, 30)) console.log(`PARKAUDIT wrong ${e.n}× ${k} | ${e.at} | ${e.seq.slice(0, 700)}`);
   for (const kind of ["extra", "missing"]) for (const [k, e] of [...examples[kind].entries()].sort((m, n) => n[1].n - m[1].n).slice(0, 25))
     console.log(`PARKAUDIT ${kind} ${e.n}× ${k} | e.g. ${e.at} | pole: ${e.pole}`);
   return sum;
