@@ -30,6 +30,18 @@ const t = async (name, fn) => { try { await fn(); console.log("ok  ", name); } c
     const broom = park.zoneIntervals(g, -40, 300).find((z) => z.raw === "BROOM");
     assert.deepStrictEqual(broom.iv, [[0, 300]]);
   });
+  await t("sign times without AM/PM on the first number are read, never turned into 'anytime'", async () => {
+    const r1 = park.parseSign("NO PARKING (SANITATION BROOM SYMBOL) 8-9:30AM MON & THURS"), r2 = park.parseSign("NO PARKING (SANITATION BROOM SYMBOL) 11-12:30PM WED SAT");
+    assert.deepStrictEqual([r1.anytime, r1.windows], [false, [[480, 570]]]);
+    assert.deepStrictEqual([r2.anytime, r2.windows], [false, [[660, 750]]]);
+    assert.strictEqual(park.parseSign("NO PARKING 7-10AM EXCEPT SUNDAY").anytime, false);
+  });
+  await t("overnight rules (11PM-6AM) are red overnight and green in the day", async () => {
+    const r = park.parseSign("NO PARKING 11PM-6AM");
+    assert.strictEqual(park.stateNow([r], park.nyNow(new Date("2026-10-23T06:00:00Z"))).s, "red"); // 2 AM
+    assert.strictEqual(park.stateNow([r], park.nyNow(new Date("2026-10-24T03:30:00Z"))).s, "red"); // 11:30 PM
+    assert.strictEqual(park.stateNow([r], park.nyNow(new Date("2026-10-23T14:00:00Z"))).s, "green"); // 10 AM
+  });
   console.log(fails ? `${fails} FAILED` : "all passed");
   process.exit(fails ? 1 : 0);
 })();

@@ -75,6 +75,7 @@ async function audit() {
   const tot = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0, redFt: 0 }]));
   const examples = { extra: new Map(), missing: new Map() }, per = [], wrongEx = new Map();
   const cov = {}, covPer = [], unplaced = [];
+  const unreadT = new Map(); // signs with times we still can't read (treated as "check signs", never anytime)
   let faces = 0, poles = 0, signsN = 0, skipped = 0;
   for (const [name, lat, lng] of AREAS) {
     const a = Object.fromEntries(Object.keys(VARIANTS).map((v) => [v, { checks: 0, extra: 0, missing: 0, wrong: 0 }]));
@@ -86,6 +87,7 @@ async function audit() {
         const signs = [];
         for (const s of face) {
           const rule = park.parseSign(s.sign_description); if (!rule) continue;
+          if (rule.unreadTimes) { const k = String(s.sign_description).replace(/\s*\(SUPERSEDES[^)]*\)/g, "").slice(0, 80); unreadT.set(k, (unreadT.get(k) || 0) + 1); }
           const v = COMPASS[String(s.arrow_direction || "").toUpperCase()];
           signs.push({ raw: rule.raw, rule, p: s.x * ux + s.y * uy, dir: v ? Math.sign(v[0] * ux + v[1] * uy) : 0 });
         }
@@ -154,6 +156,7 @@ async function audit() {
   console.log("PARKAUDIT summary " + JSON.stringify({ areas: AREAS.length, faces, poles, signs: signsN, skippedOnePole: skipped, secs: Math.round((Date.now() - t0) / 1000), ...sum }));
   for (const l of per) console.log("PARKAUDIT area " + l);
   console.log("PARKAUDIT coverage " + JSON.stringify(cov));
+  console.log("PARKAUDIT unreadTimes " + [...unreadT.values()].reduce((x, y) => x + y, 0) + " signs :: " + [...unreadT.entries()].sort((m, n) => n[1] - m[1]).slice(0, 15).map(([k, n]) => `${n}× ${k}`).join(" | "));
   for (const l of covPer) console.log("PARKAUDIT cov " + l);
   for (const l of unplaced.slice(0, 90)) console.log("PARKAUDIT unplaced " + l);
   for (const [k, e] of [...wrongEx.entries()].sort((m, n) => n[1].n - m[1].n).slice(0, 30)) console.log(`PARKAUDIT wrong ${e.n}× ${k} | ${e.at} | ${e.seq.slice(0, 700)}`);

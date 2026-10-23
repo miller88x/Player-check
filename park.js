@@ -70,14 +70,25 @@ function parseSign(desc) {
 
   // Time windows like 8AM-9:30AM, 7:30AM-NOON, MIDNIGHT-3AM
   const windows = [];
-  const re = /(?:(\d{1,2})(?::(\d{2}))?\s*(AM|PM)|(NOON|MIDNIGHT))\s*(?:-|TO)\s*(?:(\d{1,2})(?::(\d{2}))?\s*(AM|PM)|(NOON|MIDNIGHT))/g;
+  // The first time may leave off AM/PM ("8-9:30AM", "11-12:30PM", "7-10AM"): it takes the second one's, or the
+  // other one when that would put the start after the end (11-12:30PM = 11 AM to 12:30 PM)
+  const re = /(?:(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?|(NOON|MIDNIGHT))\s*(?:-|TO)\s*(?:(\d{1,2})(?::(\d{2}))?\s*(AM|PM)|(NOON|MIDNIGHT))/g;
   let m;
   while ((m = re.exec(d))) {
-    const s = m[4] ? parseTime(0, 0, m[4]) : parseTime(m[1], m[2], m[3]);
     const e = m[8] ? parseTime(0, 0, m[8]) : parseTime(m[5], m[6], m[7]);
+    let s;
+    if (m[4]) s = parseTime(0, 0, m[4]);
+    else if (m[3]) s = parseTime(m[1], m[2], m[3]);
+    else {
+      const ap = m[7] || (m[8] === "NOON" ? "AM" : "PM");
+      s = parseTime(m[1], m[2], ap);
+      if (s >= (e === 0 ? 24 * 60 : e)) s = parseTime(m[1], m[2], ap === "AM" ? "PM" : "AM");
+    }
     windows.push([s === 24 * 60 ? 0 : s, e === 0 ? 24 * 60 : e]);
   }
-  const anytime = /ANYTIME/.test(d) || (!windows.length && kind !== "meter");
+  // "Anytime" only when the sign says so or shows no times at all: hours we couldn't read never turn a curb red all day
+  const hasTimes = /\d\s*(AM|PM)\b|NOON|MIDNIGHT/.test(d);
+  const anytime = /ANYTIME/.test(d) || (!windows.length && kind !== "meter" && !hasTimes);
 
   // Days
   let days = null;
@@ -111,6 +122,7 @@ function parseSign(desc) {
   const paid = kind === "meter" && (!n || /HMP|HMCP|METER|MUNI/.test(d));
   const raw = d.replace(/\s*<?-+>?\s*$/, "").replace(/<->|-->|<--/g, "").trim();
   // A meter sign with no hours printed doesn't say when it applies; don't invent "all day"
+  if (!windows.length && !anytime && kind !== "meter") return { kind, sweeping, commercial, anytime: false, days, months, windows: [], label, noHours: true, unreadTimes: true, paid, hours: n, raw };
   if (kind === "meter" && !windows.length) return { kind, sweeping, commercial, anytime: false, days, months, windows: [], label, noHours: true, paid, hours: n, raw };
   return { kind, sweeping, commercial, anytime, days, months, windows: anytime ? [[0, 24 * 60]] : windows.length ? windows : [[0, 24 * 60]], label, paid, hours: n, raw };
 }
@@ -136,17 +148,23 @@ function nyNow(at = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     .formatToParts(at).map((x) => [x.type, x.value]));
   const dates = Array.from({ length: 9 }, (_, k) => nyDate(new Date(at.getTime() + k * 864e5)));
-  return { day: DAYS.indexOf(p.weekday.toUpperCase()), min: (+p.hour % 24) * 60 + +p.minute, dates };
+  return { day: DAYS.indexOf(p.weekday.toUpperCase()), min: (+p.hour % 24) * 60 + +p.minute, dates, prev: nyDate(new Date(at.getTime() - 864e5)) };
 }
 // minutes from now until each start/end over the next 7 days
 function schedule(rule, now) {
   const out = [];
-  for (let k = 0; k <= 7; k++) {
-    const day = (now.day + k) % 7;
+  // k = -1: last night's overnight window (11PM-6AM) is still running this morning
+  for (let k = -1; k <= 7; k++) {
+    const day = (now.day + k + 7) % 7;
     if (!rule.days.includes(day)) continue;
-    if (rule.sweeping && now.dates && ASP_SUSPENDED[now.dates[k]]) continue; // street cleaning suspended that day
-    if (rule.months && now.dates && !rule.months.includes(+now.dates[k].slice(5, 7) - 1)) continue; // out of season
-    for (const [s, e] of rule.windows) out.push({ start: k * 1440 + s - now.min, end: k * 1440 + e - now.min, day, s, e });
+    const date = now.dates && (k >= 0 ? now.dates[k] : now.prev);
+    if (rule.sweeping && date && ASP_SUSPENDED[date]) continue; // street cleaning suspended that day
+    if (rule.months && date && !rule.months.includes(+date.slice(5, 7) - 1)) continue; // out of season
+    for (const [s, e0] of rule.windows) {
+      const e = e0 <= s ? e0 + 1440 : e0; // crosses midnight: ends the next morning
+      const w = { start: k * 1440 + s - now.min, end: k * 1440 + e - now.min, day, s, e: e0 };
+      if (w.end > 0 || k >= 0) out.push(w);
+    }
   }
   return out.sort((a, b) => a.start - b.start);
 }
