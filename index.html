@@ -754,6 +754,7 @@ const repGeo = () => ({ type: "FeatureCollection", features: reports.filter((r) 
 // ================= MAP =================
 const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 let mapType = store.get("mapType", "map");
+if (mapType === "dark" && document.body.classList.contains("s2030")) mapType = "map"; // 2030: open straight on the ink map
 // Open straight into the night map after sunset (no flash of the day map)
 if (mapType === "map" && !document.body.classList.contains("s2030")) { const d = store.get("darkMode", "auto"); try { if (d === "on" || (d === "auto" && sunDown(NYC[0], NYC[1]))) mapType = "dark"; } catch {} }
 const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: false });
@@ -2394,7 +2395,7 @@ function wantDark() {
 }
 function autoNight() {
   // Rova 2030: the regular map recolored to "ink" (dark, only curbs and route glow), day and night
-  const ink = document.body.classList.contains("s2030") && store.get("mapType", "map") === "map";
+  const ink = document.body.classList.contains("s2030") && store.get("mapType", "map") !== "sat"; // Default and Night are both the ink map in 2030
   const dark = ink || wantDark(), want = ink ? "map" : dark ? "dark" : store.get("mapType", "map");
   nav.night = dark && store.get("mapType", "map") === "map";
   document.body.classList.toggle("nightmode", dark);
@@ -3917,7 +3918,7 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
   map.on("styledata", () => { clearTimeout(colorT); colorT = setTimeout(() => { try { applyColors(); } catch {} }, 150); });
 
   // ---------- Ink map: the regular map recolored so only curbs, route and labels you need stand out ----------
-  const inkOn = () => isSkin() && store.get("mapType", "map") === "map" && mapType === "map";
+  const inkOn = () => isSkin() && store.get("mapType", "map") !== "sat" && mapType === "map";
   const INK = [
     [/^background$/, "background-color", "#070A0F"], [/^natural_earth$/, "raster-opacity", 0],
     [/^(park|landcover_(wood|grass|wetland))$/, "fill-color", "#0B1311"], [/^(landuse_|landcover_(ice|sand))/, "fill-color", "#0A0E14"],
@@ -3926,7 +3927,10 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
     [/_casing$/, "line-color", "#05080C"], [/path_pedestrian$/, "line-color", "#121820"],
     [/(^|_)motorway(_link)?$/, "line-color", "#2C3746"], [/trunk_primary$/, "line-color", "#263141"], [/secondary_tertiary$/, "line-color", "#202A36"],
     [/(minor|street|_link|service_track)$/, "line-color", "#19212B"], [/rail(_hatching)?$/, "line-color", "#161C24"],
-    [/^building$/, "fill-color", "#0C1219"], [/^building-3d$/, "fill-extrusion-color", "#0E141C"], [/^building-3d$/, "fill-extrusion-opacity", 0.35],
+    [/^building$/, "fill-color", "#111923"], [/^building$/, "fill-outline-color", "#111923"],
+    // 3D city: buildings shaded by height (taller = lighter, cool blue), lit from the side
+    [/^building-3d$/, "fill-extrusion-color", ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 0], 0, "#131B26", 15, "#17212E", 40, "#1C2938", 90, "#233348", 180, "#2C405B", 320, "#38527A"]],
+    [/^building-3d$/, "fill-extrusion-opacity", 0.86], [/^building-3d$/, "fill-extrusion-vertical-gradient", true],
     [/^boundary/, "line-color", "#26303C"], [/^road_one_way_arrow/, "icon-opacity", 0.3],
     [/^poi_z1[456]$/, "icon-opacity", 0], [/^poi_z1[456]$/, "text-opacity", 0], [/^poi_transit$/, "icon-opacity", 0.45], [/^poi_/, "text-color", "#7F8C9C"], [/^poi_/, "text-halo-color", "#070A0F"],
     [/^road_label$/, "text-color", "#5F6C7D"], [/^road_label$/, "text-halo-color", "#070A0F"], [/^road_shield$/, "icon-opacity", 0.6],
@@ -3936,7 +3940,17 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
   function inkify() {
     const ids = (map.getStyle()?.layers || []).map((l) => l.id);
     for (const id of ids) for (const [re, prop, val] of INK) if (re.test(id)) { try { map.setPaintProperty(id, prop, val); } catch {} }
+    try { map.setLight({ anchor: "viewport", color: "#BFE9FF", intensity: 0.42, position: [1.3, 200, 35] }); } catch {}
   }
+  // Open on a tilted 3D view close enough for the glowing curbs, once we know where the driver is
+  let tilted = false;
+  const tilt3D = () => {
+    if (tilted || !isSkin() || nav.active || !me) return;
+    tilted = true;
+    if (map.getPitch() < 20) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16.3), pitch: 55, duration: 1200 });
+  };
+  const tiltIv = setInterval(() => { tilt3D(); if (tilted) clearInterval(tiltIv); }, 1000); setTimeout(() => clearInterval(tiltIv), 30000);
+  $("#locBtn").addEventListener("click", () => { if (isSkin()) setTimeout(() => { try { if (me) map.easeTo({ center: me, zoom: 16.4, pitch: 55, duration: 800 }); } catch {} }, 900); });
   map.on("style.load", () => { if (inkOn()) inkify(); });
   if (map.isStyleLoaded?.() && inkOn()) inkify();
 
@@ -3956,11 +3970,19 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
       if (on && !map.getLayer("route-glow")) map.addLayer({ id: "route-glow", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": ["match", ["get", "t"], "slow", "#FFB020", "jam", "#FF5A52", "closed", "#FF5A52", "#5CE1E6"], "line-width": ["interpolate", ["linear"], ["zoom"], 10, 14, 16, 34], "line-blur": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 16], "line-opacity": 0.4 } }, "route-casing");
       if (!on && map.getLayer("route-glow")) map.removeLayer("route-glow");
+      // 3D: curbs sit under the buildings (buildings hide what's behind them); the route stays on top so it's never lost
+      if (on && map.getLayer("building-3d")) for (const id of ["curb-glow", "curb-none", "curb-line"]) if (map.getLayer(id)) { try { map.moveLayer(id, "building-3d"); } catch {} }
       if (on) { map.setPaintProperty("route-line", "line-width", ["interpolate", ["linear"], ["zoom"], 10, 5.5, 16, 13]); map.setPaintProperty("route-casing", "line-width", ["interpolate", ["linear"], ["zoom"], 10, 8, 16, 18]); }
     }
   }
+  function quietCams() {
+    if (!map.getLayer("cams")) return;
+    const on = isSkin();
+    map.setLayoutProperty("cams", "icon-size", on ? ["interpolate", ["linear"], ["zoom"], 12.5, 0.3, 15, 0.5, 17, 0.75] : ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1]);
+    map.setPaintProperty("cams", "icon-opacity", on ? 0.85 : 1);
+  }
   let glowT = null;
-  map.on("styledata", () => { clearTimeout(glowT); glowT = setTimeout(() => { try { ensureGlow(); } catch {} }, 200); });
+  map.on("styledata", () => { clearTimeout(glowT); glowT = setTimeout(() => { try { ensureGlow(); quietCams(); } catch {} }, 200); });
   map.on("zoomend", () => { try { if (map.getLayer("curb-glow") && map.getLayer("curb-line")) map.setLayoutProperty("curb-glow", "visibility", map.getLayoutProperty("curb-line", "visibility") || "visible"); } catch {} });
 
   function applySkin() {
@@ -3968,7 +3990,7 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
     document.body.classList.toggle("s2030", on);
     $("#q").placeholder = on ? "Where to, and why?" : "Search here";
     document.querySelectorAll("[data-skin]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.skin === (on ? "2030" : "classic"))));
-    try { applyColors(); ensureGlow(); } catch {}
+    try { applyColors(); ensureGlow(); quietCams(); } catch {}
     const before = mapType;
     try { autoNight(); } catch {}
     if (mapType === "map" && before === "map") { if (on) inkify(); else map.setStyle(STYLES.map, { diff: false }); } // same style: recolor in place / restore
