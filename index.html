@@ -488,6 +488,8 @@ body.s2030 .camAlert{align-self:flex-end;padding:8px 12px;gap:10px;font-size:15p
 body.s2030 .camAlert .lim{padding:1px 5px;font-size:8px;border-width:2px}body.s2030 .camAlert .lim b{font-size:16px}
 body.s2030 #trafChip:not([hidden]){align-self:flex-start}
 body.s2030 #navBottom .eta{font-size:32px;white-space:nowrap}body.s2030 #navBottom .sub{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+body.s2030 .me,body.s2030 .meDot{filter:drop-shadow(0 0 10px rgba(92,225,230,.75))}
 /* Door-to-door card on the route sheet */
 .door{border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);padding:14px;display:flex;flex-direction:column;gap:10px}
 .door .d-at{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
@@ -2855,6 +2857,7 @@ function paintCurbs(force) {
     const c = map.getCenter(), show = layerOn.curbs !== false && !nav.active && map.getZoom() >= 16 && inNYC(c.lng, c.lat);
     map.setLayoutProperty("curb-line", "visibility", show ? "visible" : "none");
     if (map.getLayer("curb-none")) map.setLayoutProperty("curb-none", "visibility", show ? "visible" : "none");
+    if (map.getLayer("curb-glow")) map.setLayoutProperty("curb-glow", "visibility", show ? "visible" : "none");
     $("#curbKey").classList.toggle("on", show);
     if (!show) return;
     clearTimeout(curbT);
@@ -3923,10 +3926,10 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
     [/_casing$/, "line-color", "#05080C"], [/path_pedestrian$/, "line-color", "#121820"],
     [/(^|_)motorway(_link)?$/, "line-color", "#2C3746"], [/trunk_primary$/, "line-color", "#263141"], [/secondary_tertiary$/, "line-color", "#202A36"],
     [/(minor|street|_link|service_track)$/, "line-color", "#19212B"], [/rail(_hatching)?$/, "line-color", "#161C24"],
-    [/^building$/, "fill-color", "#0F151D"], [/^building-3d$/, "fill-extrusion-color", "#131B24"], [/^building-3d$/, "fill-extrusion-opacity", 0.85],
+    [/^building$/, "fill-color", "#0C1219"], [/^building-3d$/, "fill-extrusion-color", "#0E141C"], [/^building-3d$/, "fill-extrusion-opacity", 0.35],
     [/^boundary/, "line-color", "#26303C"], [/^road_one_way_arrow/, "icon-opacity", 0.3],
-    [/^poi_/, "icon-opacity", 0.5], [/^poi_/, "text-color", "#8C99A8"], [/^poi_/, "text-halo-color", "#070A0F"],
-    [/^road_label$/, "text-color", "#76849A"], [/^road_label$/, "text-halo-color", "#070A0F"], [/^road_shield$/, "icon-opacity", 0.6],
+    [/^poi_z1[456]$/, "icon-opacity", 0], [/^poi_z1[456]$/, "text-opacity", 0], [/^poi_transit$/, "icon-opacity", 0.45], [/^poi_/, "text-color", "#7F8C9C"], [/^poi_/, "text-halo-color", "#070A0F"],
+    [/^road_label$/, "text-color", "#5F6C7D"], [/^road_label$/, "text-halo-color", "#070A0F"], [/^road_shield$/, "icon-opacity", 0.6],
     [/^(place_|state|country_|continent)/, "text-color", "#AEB9C6"], [/^(place_|state|country_|continent)/, "text-halo-color", "#070A0F"],
     [/^water_name/, "text-color", "#3E5A70"], [/^water_name/, "text-halo-color", "#070A0F"],
   ];
@@ -3937,12 +3940,35 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
   map.on("style.load", () => { if (inkOn()) inkify(); });
   if (map.isStyleLoaded?.() && inkOn()) inkify();
 
+  // ---------- Glow: thick neon curbs and route, like the design ----------
+  const GLOW_W = { 15: 8, 16: 12, 17: 16, 18: 22, 19: 26, 20: 30, 21: 34, 22: 38 };
+  function ensureGlow() {
+    const on = isSkin(), P = PAL.s2030;
+    const widthX = (k) => ["interpolate", ["exponential", 2], ["zoom"], ...Object.entries(CURB_W).flatMap(([z, w]) => [+z, w * k])];
+    if (map.getLayer("curb-line")) {
+      if (on && !map.getLayer("curb-glow")) map.addLayer({ id: "curb-glow", type: "line", source: "curbs", minzoom: 16, filter: ["!=", ["get", "s"], "none"], layout: { "line-cap": "round" },
+        paint: { "line-color": ["match", ["get", "s"], "red", P.red, "yellow", P.yellow, P.green], "line-width": ["interpolate", ["exponential", 2], ["zoom"], ...Object.entries(GLOW_W).flatMap(([z, w]) => [+z, w])], "line-blur": ["interpolate", ["linear"], ["zoom"], 16, 6, 20, 14], "line-opacity": 0.5, "line-offset": curbOffsetExpr() } }, map.getLayer("curb-none") ? "curb-none" : "curb-line");
+      if (!on && map.getLayer("curb-glow")) map.removeLayer("curb-glow");
+      map.setPaintProperty("curb-line", "line-width", widthX(on ? 1.7 : 1));
+      if (map.getLayer("curb-glow")) map.setLayoutProperty("curb-glow", "visibility", map.getLayoutProperty("curb-line", "visibility") || "visible");
+    }
+    if (map.getLayer("route-casing")) {
+      if (on && !map.getLayer("route-glow")) map.addLayer({ id: "route-glow", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": ["match", ["get", "t"], "slow", "#FFB020", "jam", "#FF5A52", "closed", "#FF5A52", "#5CE1E6"], "line-width": ["interpolate", ["linear"], ["zoom"], 10, 14, 16, 34], "line-blur": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 16], "line-opacity": 0.4 } }, "route-casing");
+      if (!on && map.getLayer("route-glow")) map.removeLayer("route-glow");
+      if (on) { map.setPaintProperty("route-line", "line-width", ["interpolate", ["linear"], ["zoom"], 10, 5.5, 16, 13]); map.setPaintProperty("route-casing", "line-width", ["interpolate", ["linear"], ["zoom"], 10, 8, 16, 18]); }
+    }
+  }
+  let glowT = null;
+  map.on("styledata", () => { clearTimeout(glowT); glowT = setTimeout(() => { try { ensureGlow(); } catch {} }, 200); });
+  map.on("zoomend", () => { try { if (map.getLayer("curb-glow") && map.getLayer("curb-line")) map.setLayoutProperty("curb-glow", "visibility", map.getLayoutProperty("curb-line", "visibility") || "visible"); } catch {} });
+
   function applySkin() {
     const on = isSkin();
     document.body.classList.toggle("s2030", on);
     $("#q").placeholder = on ? "Where to, and why?" : "Search here";
     document.querySelectorAll("[data-skin]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.skin === (on ? "2030" : "classic"))));
-    try { applyColors(); } catch {}
+    try { applyColors(); ensureGlow(); } catch {}
     const before = mapType;
     try { autoNight(); } catch {}
     if (mapType === "map" && before === "map") { if (on) inkify(); else map.setStyle(STYLES.map, { diff: false }); } // same style: recolor in place / restore
