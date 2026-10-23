@@ -461,6 +461,33 @@ body:not(.s2030) #timeBtn,body.navigating #timeBtn,body.routing #timeBtn,body.se
 #timeBar .tb-bar{height:8px;border-radius:4px;overflow:hidden;display:flex;background:rgba(255,255,255,.08)}
 #timeBar .tb-bar i{display:block;height:100%}
 body.timeOn #curbKey{display:none!important}
+
+/* --- 2030 layout: Shield alone at the top, search + suggestions + parked card stacked at the bottom (thumb reach) --- */
+body.s2030 .top{top:auto;bottom:calc(var(--safeB) + var(--tabH) + 12px);padding:0 12px;gap:10px}
+body.s2030.searching .top{top:0;bottom:0;padding-top:calc(var(--safeT) + 10px)}
+body.s2030 .pill{min-height:56px;border-radius:22px}
+body.s2030 #shieldPill:not([hidden]){position:fixed;top:calc(var(--safeT) + 12px);left:12px;z-index:10;max-width:calc(100vw - 96px)}
+body.s2030 #layersBtn{top:calc(var(--safeT) + 8px)}
+body.s2030 #timeBtn{top:calc(var(--safeT) + 76px)}
+body.s2030 .layers{top:calc(var(--safeT) + 72px);max-height:calc(100dvh - var(--safeT) - 72px - var(--safeB) - var(--tabH) - 16px)}
+body.s2030 #tixPill{display:none!important}
+body.s2030 #moment{bottom:calc(var(--safeB) + var(--tabH) + 130px);right:12px}
+body.s2030 #dirBtn{bottom:calc(var(--safeB) + var(--tabH) + 130px + var(--momH,0px));width:56px;height:56px;border-radius:18px}
+body.s2030 #locBtn{bottom:calc(var(--safeB) + var(--tabH) + 196px + var(--momH,0px))}
+body.s2030 #curbKey,body.s2030.hasMoment #curbKey{bottom:calc(var(--safeB) + var(--tabH) + 136px + var(--momH,0px))}
+body.s2030 .inAlert{top:calc(var(--safeT) + 70px)}
+/* --- 2030 driving: distance huge on top, street under it, alerts as small chips --- */
+body.s2030 .instr{flex-direction:column;align-items:flex-start;gap:6px;padding:18px 20px}
+body.s2030 .instr .ar{flex-direction:row;align-items:center;gap:14px}
+body.s2030 #navArrow{width:60px;height:60px}
+body.s2030 .instr .dist{font:700 54px/1 "Space Grotesk",var(--body)}
+body.s2030 .instr > div:last-child{display:flex;flex-direction:column-reverse;gap:4px}
+body.s2030 .instr .street{font:700 32px/1.1 "Space Grotesk",var(--body)}
+body.s2030 .instr .toward{font:500 16px var(--body)}
+body.s2030 .camAlert{align-self:flex-end;padding:8px 12px;gap:10px;font-size:15px;border-radius:14px}
+body.s2030 .camAlert .lim{padding:1px 5px;font-size:8px;border-width:2px}body.s2030 .camAlert .lim b{font-size:16px}
+body.s2030 #trafChip:not([hidden]){align-self:flex-start}
+body.s2030 #navBottom .eta{font-size:32px;white-space:nowrap}body.s2030 #navBottom .sub{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Door-to-door card on the route sheet */
 .door{border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);padding:14px;display:flex;flex-direction:column;gap:10px}
 .door .d-at{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
@@ -726,7 +753,7 @@ const repGeo = () => ({ type: "FeatureCollection", features: reports.filter((r) 
 const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 let mapType = store.get("mapType", "map");
 // Open straight into the night map after sunset (no flash of the day map)
-if (mapType === "map") { const d = store.get("darkMode", "auto"); try { if (d === "on" || (d === "auto" && sunDown(NYC[0], NYC[1]))) mapType = "dark"; } catch {} }
+if (mapType === "map" && !document.body.classList.contains("s2030")) { const d = store.get("darkMode", "auto"); try { if (d === "on" || (d === "auto" && sunDown(NYC[0], NYC[1]))) mapType = "dark"; } catch {} }
 const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: false });
 map.once("load", () => window.hideSplash?.()); map.once("error", () => window.hideSplash?.());
 let layerOn = store.get("layers", { tickets: true, speed: true, redlight: true });
@@ -2334,12 +2361,13 @@ function darkPref() { return store.get("darkMode", "auto"); } // a function (not
 function wantDark() {
   const picked = store.get("mapType", "map"); if (picked !== "map") return picked === "dark";
   const d = darkPref(); if (d === "on") return true; if (d === "off") return false;
-  if (document.body.classList.contains("s2030")) return true; // Rova 2030: night-glass map unless Dark mode is Off
   const p = me || route?.from || [map.getCenter().lng, map.getCenter().lat];
   return sunDown(p[0], p[1]);
 }
 function autoNight() {
-  const dark = wantDark(), want = dark ? "dark" : store.get("mapType", "map");
+  // Rova 2030: the regular map recolored to "ink" (dark, only curbs and route glow), day and night
+  const ink = document.body.classList.contains("s2030") && store.get("mapType", "map") === "map";
+  const dark = ink || wantDark(), want = ink ? "map" : dark ? "dark" : store.get("mapType", "map");
   nav.night = dark && store.get("mapType", "map") === "map";
   document.body.classList.toggle("nightmode", dark);
   if (want !== mapType) { mapType = want; map.setStyle(STYLES[want]); paintCredit(); paintLayerBtns(); }
@@ -3859,13 +3887,39 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
   let colorT = null;
   map.on("styledata", () => { clearTimeout(colorT); colorT = setTimeout(() => { try { applyColors(); } catch {} }, 150); });
 
+  // ---------- Ink map: the regular map recolored so only curbs, route and labels you need stand out ----------
+  const inkOn = () => isSkin() && store.get("mapType", "map") === "map" && mapType === "map";
+  const INK = [
+    [/^background$/, "background-color", "#070A0F"], [/^natural_earth$/, "raster-opacity", 0],
+    [/^(park|landcover_(wood|grass|wetland))$/, "fill-color", "#0B1311"], [/^(landuse_|landcover_(ice|sand))/, "fill-color", "#0A0E14"],
+    [/^park_outline$/, "line-opacity", 0], [/^water$/, "fill-color", "#08131D"], [/^waterway/, "line-color", "#0A1824"],
+    [/^aeroway_fill$/, "fill-color", "#0D121A"], [/^aeroway_(runway|taxiway)$/, "line-color", "#151C25"], [/^road_area_pattern$/, "fill-opacity", 0],
+    [/_casing$/, "line-color", "#05080C"], [/path_pedestrian$/, "line-color", "#121820"],
+    [/(^|_)motorway(_link)?$/, "line-color", "#2C3746"], [/trunk_primary$/, "line-color", "#263141"], [/secondary_tertiary$/, "line-color", "#202A36"],
+    [/(minor|street|_link|service_track)$/, "line-color", "#19212B"], [/rail(_hatching)?$/, "line-color", "#161C24"],
+    [/^building$/, "fill-color", "#0F151D"], [/^building-3d$/, "fill-extrusion-color", "#131B24"], [/^building-3d$/, "fill-extrusion-opacity", 0.85],
+    [/^boundary/, "line-color", "#26303C"], [/^road_one_way_arrow/, "icon-opacity", 0.3],
+    [/^poi_/, "icon-opacity", 0.5], [/^poi_/, "text-color", "#8C99A8"], [/^poi_/, "text-halo-color", "#070A0F"],
+    [/^road_label$/, "text-color", "#76849A"], [/^road_label$/, "text-halo-color", "#070A0F"], [/^road_shield$/, "icon-opacity", 0.6],
+    [/^(place_|state|country_|continent)/, "text-color", "#AEB9C6"], [/^(place_|state|country_|continent)/, "text-halo-color", "#070A0F"],
+    [/^water_name/, "text-color", "#3E5A70"], [/^water_name/, "text-halo-color", "#070A0F"],
+  ];
+  function inkify() {
+    const ids = (map.getStyle()?.layers || []).map((l) => l.id);
+    for (const id of ids) for (const [re, prop, val] of INK) if (re.test(id)) { try { map.setPaintProperty(id, prop, val); } catch {} }
+  }
+  map.on("style.load", () => { if (inkOn()) inkify(); });
+  if (map.isStyleLoaded?.() && inkOn()) inkify();
+
   function applySkin() {
     const on = isSkin();
     document.body.classList.toggle("s2030", on);
     $("#q").placeholder = on ? "Where to, and why?" : "Search here";
     document.querySelectorAll("[data-skin]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.skin === (on ? "2030" : "classic"))));
     try { applyColors(); } catch {}
+    const before = mapType;
     try { autoNight(); } catch {}
+    if (mapType === "map" && before === "map") { if (on) inkify(); else map.setStyle(STYLES.map, { diff: false }); } // same style: recolor in place / restore
     paintShield(); paintMoment(); paintTimeBtn();
     if (!on && window.curbAt) closeTime();
   }
@@ -3916,7 +3970,8 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
     const car = store.get("parked", null);
     const show = isSkin() && !!car;
     document.body.classList.toggle("hasMoment", show);
-    if (!show) { el.hidden = true; return; }
+    const setH = () => document.body.style.setProperty("--momH", show && !el.hidden ? `${el.offsetHeight + 10}px` : "0px");
+    if (!show) { el.hidden = true; setH(); return; }
     const mins = car.moveBy ? Math.round((new Date(car.moveBy) - Date.now()) / 60000) : null;
     const left = mins == null ? "No move-by time" : mins <= 0 ? "Now" : mins < 60 ? `${mins} min left` : mins < 1440 ? `${Math.floor(mins / 60)}h ${mins % 60}m left` : `${Math.floor(mins / 1440)}d left`;
     const tone = mins == null ? "good" : mins <= 30 ? "bad" : mins < 720 ? "warn" : "good";
@@ -3926,7 +3981,7 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
       <div class="mo-head">${esc(head)}</div>
       ${mins != null ? `<div class="mo-sub" id="moSub">Finding a free spot nearby for then…</div>` : ""}
       <div class="mo-row">${mins != null ? `<button type="button" class="mo-go" id="moSpot">Find a free spot</button>` : ""}<button type="button" class="mo-alt" id="moCar">My car</button></div>`;
-    el.hidden = false;
+    el.hidden = false; setH();
     $("#moCar").onclick = () => parkedSheet();
     if (mins != null) {
       const go = async () => {
@@ -3942,6 +3997,8 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
     }
   }
   window.paintMoment = paintMoment;
+  // Buttons above the card follow its real height (it grows when the free-spot line loads)
+  try { new ResizeObserver(() => { const el = $("#moment"); document.body.style.setProperty("--momH", el && !el.hidden && document.body.classList.contains("hasMoment") ? `${el.offsetHeight + 10}px` : "0px"); }).observe($("#moment")); } catch {}
 
   // ---------- Routes that end at a legal spot: at-the-door time ----------
   window.doorSpot = null;
@@ -3993,7 +4050,10 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
       chip.innerHTML = `<div><small>${s.t === "closed" ? "Road closed ahead" : s.t === "jam" ? "Jam ahead" : "Slow ahead"}</small>${ahead < 30 ? "You're in it" : `In ${fmtDist(ahead)}`}${mins >= 1 ? ` · +${mins} min` : ""}</div>`;
       chip.hidden = false;
     } else chip.hidden = true;
-    if (nav.dest?.door) { const w = walkSecs(dist(nav.dest.at, nav.dest.door.at)); $("#navSub").textContent += ` · then ${fmtMin(w)} walk`; }
+    // Arrival time is the big number (at the door when the route ends at a parking spot)
+    const walk = nav.dest?.door ? walkSecs(dist(nav.dest.at, nav.dest.door.at)) : 0, left = Math.max(0, R.total - nav.along);
+    $("#navEta").textContent = clock(secs + walk + (walk ? 120 : 0));
+    $("#navSub").textContent = `${walk ? "at the door" : "arrive"} · ${fmtMin(secs)} · ${fmtDist(left)}`;
   };
 
   // ---------- Curb time machine ----------
