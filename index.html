@@ -754,7 +754,7 @@ const repGeo = () => ({ type: "FeatureCollection", features: reports.filter((r) 
 // ================= MAP =================
 const STYLES = { map: "https://tiles.openfreemap.org/styles/liberty", sat: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 let mapType = store.get("mapType", "map");
-if (mapType === "dark" && document.body.classList.contains("s2030")) mapType = "map"; // 2030: open straight on the ink map
+if (mapType === "dark" && document.body.classList.contains("s2030") && store.get("darkMode", "auto") !== "off") mapType = "map"; // 2030: open straight on the ink map
 // Open straight into the night map after sunset (no flash of the day map)
 if (mapType === "map" && !document.body.classList.contains("s2030")) { const d = store.get("darkMode", "auto"); try { if (d === "on" || (d === "auto" && sunDown(NYC[0], NYC[1]))) mapType = "dark"; } catch {} }
 const map = new maplibregl.Map({ container: "map", style: STYLES[mapType], center: NYC, zoom: 11, attributionControl: false });
@@ -2395,7 +2395,8 @@ function wantDark() {
 }
 function autoNight() {
   // Rova 2030: the regular map recolored to "ink" (dark, only curbs and route glow), day and night
-  const ink = document.body.classList.contains("s2030") && store.get("mapType", "map") !== "sat"; // Default and Night are both the ink map in 2030
+  // 2030: the ink map unless Dark mode is Off (then the regular light map with the 2030 look on top)
+  const ink = document.body.classList.contains("s2030") && store.get("mapType", "map") !== "sat" && darkPref() !== "off";
   const dark = ink || wantDark(), want = ink ? "map" : dark ? "dark" : store.get("mapType", "map");
   nav.night = dark && store.get("mapType", "map") === "map";
   document.body.classList.toggle("nightmode", dark);
@@ -3918,7 +3919,7 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
   map.on("styledata", () => { clearTimeout(colorT); colorT = setTimeout(() => { try { applyColors(); } catch {} }, 150); });
 
   // ---------- Ink map: the regular map recolored so only curbs, route and labels you need stand out ----------
-  const inkOn = () => isSkin() && store.get("mapType", "map") !== "sat" && mapType === "map";
+  const inkOn = () => isSkin() && store.get("mapType", "map") !== "sat" && darkPref() !== "off" && mapType === "map";
   const INK = [
     [/^background$/, "background-color", "#070A0F"], [/^natural_earth$/, "raster-opacity", 0],
     [/^(park|landcover_(wood|grass|wetland))$/, "fill-color", "#0B1311"], [/^(landuse_|landcover_(ice|sand))/, "fill-color", "#0A0E14"],
@@ -3998,6 +3999,16 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
     if (!on && window.curbAt) closeTime();
   }
   document.querySelectorAll("[data-skin]").forEach((b) => (b.onclick = () => { store.set("skin", b.dataset.skin); applySkin(); }));
+  // Dark mode On/Auto/Off and Default/Night also switch between the ink map and the regular map (same style file)
+  let wasInk = inkOn();
+  const reInk = () => setTimeout(() => {
+    if (!isSkin() || mapType !== "map") { wasInk = inkOn(); return; }
+    const now = inkOn();
+    if (now && !wasInk) inkify(); else if (!now && wasInk) map.setStyle(STYLES.map, { diff: false });
+    wasInk = now;
+  }, 50);
+  document.querySelectorAll("[data-dark],[data-style]").forEach((b) => b.addEventListener("click", reInk));
+  map.on("style.load", () => { wasInk = inkOn(); });
 
   // ---------- Ticket Shield ----------
   function paintShield() {
