@@ -18,7 +18,7 @@
 <link rel="preconnect" href="https://unpkg.com">
 <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 <link rel="preconnect" href="https://router.project-osrm.org" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Figtree:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Space+Grotesk:wght@500;600;700&family=Figtree:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <style>
@@ -376,9 +376,107 @@ body.navigating #navBottom{display:grid}
 body.navigating .sheet{z-index:20}
 body.navigating #recenter.on{display:grid!important}
 @media (prefers-reduced-motion:reduce){.sheet{transition:none}.camAlert{animation:none}}
+/* ================= Rova 2030 look ("night glass"): the default. Classic = the look before it (Layers → Look). =================
+   Everything is muted except the curb colors and Rova teal, so what matters glows. */
+body.s2030{--ui:#121922;--ui2:#1b2430;--ink:#EEF3F8;--muted:#93A1B2;--blue:#5CE1E6;--go:#2BD67B;--stop:#FF5A52;--warn:#FFB020;--teal:#5CE1E6;--fab:#0E141C;--nav:#0B1016;--display:"Space Grotesk","Figtree",sans-serif;background:#070A0F}
+body.s2030 .pill{background:rgba(14,20,28,.94);border:1px solid rgba(92,225,230,.38);box-shadow:0 8px 28px rgba(0,0,0,.45)}
+body.s2030 .pill input{font-family:"Space Grotesk",var(--body);font-weight:500}
+body.s2030 .chip{background:rgba(14,20,28,.92);border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 14px rgba(0,0,0,.35)}
+body.s2030 .chip svg path,body.s2030 .chip svg circle{fill:#5CE1E6;stroke:#5CE1E6}
+body.s2030 #nearbyChip svg circle{fill:none}
+body.s2030 .fab{background:rgba(14,20,28,.92);border:1px solid rgba(255,255,255,.1);box-shadow:0 6px 20px rgba(0,0,0,.45)}
+body.s2030 #layersBtn{background:rgba(14,20,28,.92)}body.s2030 #layersBtn path{fill:#5CE1E6}
+body.s2030 #dirBtn{background:#5CE1E6;border:0}body.s2030 #dirBtn path{fill:#04161A}
+body.s2030 #locBtn{background:rgba(14,20,28,.92)}
+body.s2030 .tabs{background:rgba(7,10,15,.97);box-shadow:0 -1px 0 rgba(255,255,255,.07)}
+body.s2030 .tab{color:#93A1B2}body.s2030 .tab[aria-current="page"]{color:#EEF3F8}body.s2030 .tab[aria-current="page"] i{background:rgba(92,225,230,.16);color:#5CE1E6}
+body.s2030 .sheet{background:#0E141C;box-shadow:0 -10px 40px rgba(0,0,0,.6);border-top:1px solid rgba(255,255,255,.07)}
+body.s2030 .sheet-head h2{font-family:"Space Grotesk",var(--body);font-weight:700;letter-spacing:-.01em}
+body.s2030 .layers,body.s2030 .results,body.s2030 #dirTop{background:#0E141C;border:1px solid rgba(255,255,255,.09)}
+body.s2030.searching .top{background:#070A0F}
+body.s2030 .layers .ltog{background:#16202b}body.s2030 .layers .ltog[aria-pressed="true"]{background:rgba(92,225,230,.14);color:#EEF3F8;box-shadow:inset 0 0 0 1px rgba(92,225,230,.6)}
+body.s2030 .tchip{border-color:rgba(255,255,255,.16)}body.s2030 .tchip[aria-pressed="true"]{background:rgba(92,225,230,.16);border-color:#5CE1E6;color:#EEF3F8}
+body.s2030 .startbtn{background:#5CE1E6;color:#04161A;font-family:"Space Grotesk",var(--body)}
+body.s2030 .rl[aria-pressed="true"]{background:rgba(92,225,230,.1);box-shadow:inset 0 0 0 1px rgba(92,225,230,.35)}
+body.s2030 .rl .tm{color:#5CE1E6;font-family:"Space Grotesk",var(--body);font-weight:700}
+body.s2030 #curbKey,body.s2030 #tixPill{background:rgba(14,20,28,.92);border:1px solid rgba(255,255,255,.1)}
+body.s2030 .verdict.huge.green{background:#11683c}body.s2030 .verdict.huge .big2{font-family:"Space Grotesk",var(--body)}
+/* Glance driving */
+body.s2030 .instr{background:rgba(9,13,18,.95);border:1px solid rgba(92,225,230,.35);box-shadow:0 10px 30px rgba(0,0,0,.5);padding:20px 20px 18px}
+body.s2030 .instr .dist{font:700 34px/1 "Space Grotesk",var(--body);color:#EEF3F8}
+body.s2030 .instr .street{font:700 30px/1.1 "Space Grotesk",var(--body)}
+body.s2030 .instr .toward{color:#93A1B2;opacity:1}
+body.s2030 #navArrow{color:#5CE1E6}body.s2030 #navArrow path{fill:#5CE1E6}
+body.s2030 #navBottom{background:#0E141C!important;color:#EEF3F8;border-top:1px solid rgba(255,255,255,.08)}
+body.s2030 #navBottom::before{background:rgba(255,255,255,.2)!important}
+body.s2030 #navBottom .eta{color:#5CE1E6!important;font-family:"Space Grotesk",var(--body);font-weight:700}
+body.s2030 #navBottom .sub{color:#93A1B2!important}
+body.s2030 #navShare{background:rgba(92,225,230,.14);color:#5CE1E6}
+body.s2030.navigating #navSide .fab,body.s2030.navigating #recenter{background:rgba(14,20,28,.94);color:#EEF3F8;border:1px solid rgba(255,255,255,.12)}
+body.s2030 #speedo{background:#0E141C;color:#EEF3F8;border:1px solid rgba(255,255,255,.14)}
+body.s2030 #navRoad{background:#0E141C;color:#5CE1E6;border:1px solid rgba(92,225,230,.35)}
+body.s2030 .camAlert{background:rgba(14,20,28,.96);border:1px solid #FFB020;animation:none;color:#EEF3F8}
+#trafChip{display:none}
+body.s2030 #trafChip:not([hidden]){display:flex;align-self:flex-start;gap:10px;align-items:center;background:rgba(14,20,28,.95);border:1px solid rgba(255,90,82,.55);border-radius:14px;padding:10px 14px;font:700 16px "Space Grotesk",var(--body);color:#EEF3F8;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+body.s2030 #trafChip small{display:block;font:600 11px var(--body);letter-spacing:.06em;text-transform:uppercase;color:#FF8A84}
+body.s2030 #trafChip.slow{border-color:rgba(255,176,32,.6)}body.s2030 #trafChip.slow small{color:#FFB020}
+/* Ticket Shield */
+#shieldPill{display:none}
+body.s2030 #shieldPill:not([hidden]){display:flex;align-self:flex-start;align-items:center;gap:8px;min-height:44px;padding:8px 14px 8px 10px;border-radius:999px;border:1px solid rgba(43,214,123,.4);background:rgba(10,16,22,.88);color:#EEF3F8;font:600 13.5px var(--body);box-shadow:0 4px 14px rgba(0,0,0,.35);max-width:100%}
+#shieldPill span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#shieldPill svg{color:#2BD67B;flex:0 0 auto}
+#shieldPill[data-tone="warn"]{border-color:rgba(255,176,32,.5)}#shieldPill[data-tone="warn"] svg{color:#FFB020}
+#shieldPill[data-tone="bad"]{border-color:rgba(255,90,82,.6)}#shieldPill[data-tone="bad"] svg{color:#FF5A52}
+#shieldPill[data-tone="off"]{border-color:rgba(255,255,255,.18)}#shieldPill[data-tone="off"] svg{color:#93A1B2}
+body.searching #shieldPill,body.routing #shieldPill{display:none!important}
+/* Moment card: the one thing that matters right now (your parked car) */
+#moment{position:fixed;left:12px;right:84px;bottom:calc(var(--safeB) + var(--tabH) + 16px);z-index:9;max-width:520px;border-radius:22px;background:rgba(14,20,28,.95);border:1px solid rgba(43,214,123,.4);padding:14px 14px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+#moment[data-tone="warn"]{border-color:rgba(255,176,32,.55)}#moment[data-tone="bad"]{border-color:rgba(255,90,82,.65)}
+#moment .mo-top{display:flex;justify-content:space-between;gap:8px;font:600 11.5px var(--body);letter-spacing:.07em;text-transform:uppercase;color:#93A1B2}
+#moment[data-tone="warn"] .mo-left{color:#FFB020}#moment[data-tone="bad"] .mo-left{color:#FF8A84}#moment .mo-left{color:#2BD67B}
+#moment .mo-head{font:700 19px/1.2 "Space Grotesk",var(--body);color:#EEF3F8}
+#moment .mo-sub{font:500 13.5px var(--body);color:#C9D3DE}
+#moment .mo-row{display:flex;gap:8px}
+#moment button{min-height:44px;border-radius:13px;font:600 14px var(--body);padding:0 14px}
+#moment .mo-go{flex:1;border:0;background:#2BD67B;color:#04160C}
+#moment .mo-alt{border:1px solid rgba(255,255,255,.16);background:transparent;color:#EEF3F8}
+body:not(.s2030) #moment,body.navigating #moment,body.routing #moment,body.searching #moment,body.timeOn #moment{display:none!important}
+body.s2030.hasMoment #tixPill,body.s2030.hasMoment #parkedPill{display:none!important}
+body.s2030.hasMoment #curbKey{bottom:calc(var(--safeB) + var(--tabH) + 196px)}
+/* Curb time machine */
+#timeBtn{top:calc(var(--safeT) + 212px)}#timeBtn svg{color:#5CE1E6}
+body:not(.s2030) #timeBtn,body.navigating #timeBtn,body.routing #timeBtn,body.searching #timeBtn{display:none!important}
+#timeBar{position:fixed;left:0;right:0;bottom:calc(var(--safeB) + var(--tabH));z-index:12;max-width:600px;margin:0 auto;background:#0E141C;border-radius:26px 26px 0 0;border-top:1px solid rgba(255,255,255,.08);box-shadow:0 -10px 34px rgba(0,0,0,.55);padding:16px 16px 14px;display:flex;flex-direction:column;gap:12px}
+#timeBar .tb-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#timeBar .tb-tag{font:600 11.5px var(--body);letter-spacing:.08em;text-transform:uppercase;color:#5CE1E6}
+#timeBar .tb-when{font:700 24px/1.15 "Space Grotesk",var(--body);color:#EEF3F8}
+#timeBar .tb-sum{font:500 14px var(--body);color:#93A1B2;min-height:20px}
+#timeBar .tb-x{width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.07);color:#EEF3F8;flex:0 0 auto;font-size:18px}
+#timeBar .tb-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#timeBar .tb-opts button{min-height:46px;border-radius:13px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#EEF3F8;font:600 14px var(--body)}
+#timeBar .tb-opts button[aria-pressed="true"]{border-color:#5CE1E6;background:rgba(92,225,230,.14)}
+#timeBar label{display:flex;flex-direction:column;gap:4px;font:600 12px var(--body);color:#93A1B2}
+#timeBar input{font:500 16px var(--body);background:#16202b;color:#EEF3F8;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px 12px;color-scheme:dark}
+#timeBar .tb-bar{height:8px;border-radius:4px;overflow:hidden;display:flex;background:rgba(255,255,255,.08)}
+#timeBar .tb-bar i{display:block;height:100%}
+body.timeOn #curbKey{display:none!important}
+/* Door-to-door card on the route sheet */
+.door{border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);padding:14px;display:flex;flex-direction:column;gap:10px}
+.door .d-at{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.door .d-time{font:700 32px/1 "Space Grotesk",var(--body);color:#EEF3F8}.door .d-time small{font:500 15px var(--body);color:#93A1B2;margin-left:6px}
+.door .d-tot{font:500 13.5px var(--body);color:#93A1B2}
+.door .d-bar{display:flex;gap:4px;height:9px}.door .d-bar i{border-radius:5px;display:block}
+.door .d-legs{display:flex;justify-content:space-between;font:500 12.5px var(--body);color:#93A1B2}
+.door .d-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.door .d-tiles div{border-radius:13px;background:rgba(255,255,255,.04);padding:9px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.door .d-tiles span{font:600 10.5px var(--body);letter-spacing:.06em;text-transform:uppercase;color:#93A1B2}
+.door .d-tiles b{font:700 18px "Space Grotesk",var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.door .d-spot{font:500 13.5px var(--body);color:#C9D3DE}
+.door .d-go{min-height:48px;border-radius:14px;border:0;background:#2BD67B;color:#04160C;font:700 15px "Space Grotesk",var(--body)}
 </style>
 </head>
 <body>
+<script>try{var __sk=JSON.parse(localStorage.getItem("skin"));document.body.classList.toggle("s2030",(__sk||"2030")==="2030")}catch(e){document.body.classList.add("s2030")}</script>
 <div id="welcome" hidden role="dialog" aria-label="Welcome to Rova">
   <button type="button" class="wc-skip" id="wcSkip">Skip</button>
   <div class="wc-track" id="wcTrack">
@@ -473,10 +571,13 @@ body.navigating #recenter.on{display:grid!important}
     <button class="chip" type="button" data-saved="work"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4z" fill="#8ab4f8"/></svg><span>Work</span></button>
     <button class="chip" type="button" id="nearbyChip"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#8ab4f8" stroke-width="2.4"/><path d="m15.5 15.5 5 5" stroke="#8ab4f8" stroke-width="2.4" stroke-linecap="round"/></svg><span>Nearby</span></button>
   </div>
+  <button id="shieldPill" type="button" hidden><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span></span></button>
 </div>
 
 <button class="fab" id="layersBtn" type="button" aria-label="Map type"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8.5l10 5.5 10-5.5L12 3zm0 13.2L4.2 12 2 13.2l10 5.5 10-5.5-2.2-1.2L12 16.2z" fill="#c8eef4"/></svg></button>
 <div class="layers" id="layers" hidden>
+  <div class="lhead">Look</div>
+  <div class="tchips" style="padding:0 2px 6px"><button type="button" class="tchip" data-skin="2030">Rova 2030</button><button type="button" class="tchip" data-skin="classic">Classic</button></div>
   <div class="lhead">Map type</div>
   <div class="lrow">
   <button type="button" data-style="map"><span style="background:linear-gradient(135deg,#f2efe9 40%,#aad3df 40% 55%,#f2efe9 55%)"></span>Default</button>
@@ -502,6 +603,9 @@ body.navigating #recenter.on{display:grid!important}
 <button class="fab" id="dirBtn" type="button" aria-label="Directions"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 11.3 12.7 2.3a1 1 0 0 0-1.4 0l-9 9a1 1 0 0 0 0 1.4l9 9a1 1 0 0 0 1.4 0l9-9a1 1 0 0 0 0-1.4zM14 14.5V12h-4v3H8v-4a1 1 0 0 1 1-1h5V7.5l3.5 3.5-3.5 3.5z" fill="#00363f"/></svg></button>
 <button class="fab" id="recenter" type="button"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
+<section id="moment" aria-live="polite" hidden></section>
+<button class="fab" id="timeBtn" type="button" aria-label="Curb time machine: see parking at another time" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
+<section id="timeBar" aria-label="Curb time machine" hidden></section>
 <div id="curbKey" aria-label="Curb colors"><span><b style="background:#1e8e3e"></b>Park</span><span><b style="background:#f29900"></b>Meter / limit</span><span><b style="background:#d93025"></b>No parking</span><span><b style="background:#9aa0a6"></b>Check signs</span></div>
 <div class="inAlert" id="inAlert" role="alert" hidden></div>
 <div id="dirTop"><div class="pts"><div><span class="dot"></span>Your location</div><div id="dirTo"><svg width="14" height="18" viewBox="0 0 30 40" aria-hidden="true" style="flex:0 0 auto"><path d="M15 1C7.3 1 1.5 6.8 1.5 14.3 1.5 24 15 39 15 39s13.5-15 13.5-24.7C28.5 6.8 22.7 1 15 1z" fill="#ea4335"/></svg><span></span></div></div><button class="x" id="dirX" type="button" aria-label="Close directions">✕</button></div>
@@ -533,6 +637,7 @@ body.navigating #recenter.on{display:grid!important}
     <div><div id="camText">Speed camera ahead</div><div id="camDist" style="font-weight:500;font-size:14px"></div></div>
     <div class="lim" id="camLim">SPEED<br>LIMIT<b></b></div>
   </div>
+  <div id="trafChip" hidden></div>
 </div>
 <div id="limitSign" hidden><small>SPEED<br>LIMIT</small><b id="limitNum"></b></div>
 <div id="speedo"><span id="speedNum">0</span><small>mph</small></div>
@@ -1245,6 +1350,7 @@ function paintPill() {
   pill.querySelector("span").textContent = s.openCount ? `${data.plate} · ${s.openCount} open · ${money(s.totalDue)}` : `${data.plate} · Nothing due`;
   $("#plateBtn").classList.toggle("alert", s.openCount > 0);
   $("#badge").textContent = s.openCount || "";
+  try { window.paintShield?.(); } catch {}
 }
 async function checkPlate(plate, st, fit = true) {
   const r = await fetch(`/api/tickets?plate=${encodeURIComponent(plate)}&state=${st}`);
@@ -1735,7 +1841,7 @@ async function planRoute(to) {
   try { from = await getMe(); }
   catch { $("#sheetBody").innerHTML = '<div class="alert stop"><b>Location needed</b>Allow location for this site to get directions. On iPhone: Settings → Privacy & Security → Location Services → Safari Websites → While Using.</div>'; return; }
   if (nav.stopFor !== to) { nav.stop = null; nav.stopFor = null; }
-  try { routeAlts = await fetchRoutes(from, to.at, true, nav.stop?.at); route = routeAlts[0]; camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
+  try { routeAlts = await fetchRoutes(from, to.at, true, nav.stop?.at); route = routeAlts[0]; try { window.findDoorSpot?.(to); } catch {} camsForRoute(route).then(() => { routeAlts.forEach((R) => (R.camsOnRoute = camsAlong(R))); if (sheetMode === "route" && route) routeSheet(to); }); }
   catch (e) { $("#sheetBody").innerHTML = `<div class="alert stop"><b>No route</b>${truckOn() ? esc(e.message || "Couldn't find a truck route there.") : "Couldn't find a driving route there. Try another place."}</div>`; return; }
   drawRoute();
   const b = new maplibregl.LngLatBounds(); routeAlts.forEach((R) => R.coords.forEach((c) => b.extend(c)));
@@ -1773,6 +1879,7 @@ function routeSheet(to) {
     ${nav.stop ? `<div class="note" style="display:flex;align-items:center;gap:10px">Stop on the way: <b>${esc(nav.stop.name)}</b><button type="button" class="tchip" id="rmStop" style="margin-left:auto">Remove</button></div>`
       : `<div class="tchips"><span class="muted" style="align-self:center;font-size:14px">Add a stop:</span>${STOP_CATS.map((c) => `<button type="button" class="tchip" data-stop="${c}">${CATS[c][2]}</button>`).join("")}</div>`}
     ${route.avoidFailed ? '<div class="note">Couldn\'t avoid that on this trip, so this is the best route available.</div>' : ""}
+    ${window.doorCard ? window.doorCard(route, to) : ""}
     <div class="rlist">${routeAlts.map((R, i) => { const extra = Math.round((R.duration - best) / 60);
       return `<button type="button" class="rl" data-ro="${i}" aria-pressed="${R === route}"><span class="tm">${fmtMin(R.duration).replace(/ min$/, "")}<small>${/hr/.test(fmtMin(R.duration)) ? "" : "min"}</small></span><span class="a">Arrive ${clock(R.duration)} · ${R.weightSafe ? "🛡️ Restriction-safe · " : ""}${extra <= 0 ? "Fastest route" : `+${extra} min`}</span><span class="b">${fmtDist(R.distance)}${R.via ? " · via " + esc(R.via) : ""}</span></button>`; }).join("")}</div>
     <div class="camline"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#f08a24"/><path d="M6.5 9.5h2l1-1.5h5l1 1.5h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" fill="#fff"/></svg>
@@ -1973,6 +2080,7 @@ function navTickInner(pos) {
   const left = Math.max(0, R.total - nav.along), secs = tripEta(R);
   $("#navEta").textContent = fmtMin(secs);
   $("#navSub").textContent = `${fmtDist(left)} · ${clock(secs)}`;
+  try { window.navExtra?.(R, secs); } catch {}
   const ahead = R.camsOnRoute.find((c) => c.along > nav.along - 10 && c.along - nav.along < 500);
   if (ahead) showCam({ ...ahead, meters: ahead.along - nav.along });
   else {
@@ -2225,6 +2333,7 @@ function darkPref() { return store.get("darkMode", "auto"); } // a function (not
 function wantDark() {
   const picked = store.get("mapType", "map"); if (picked !== "map") return picked === "dark";
   const d = darkPref(); if (d === "on") return true; if (d === "off") return false;
+  if (document.body.classList.contains("s2030")) return true; // Rova 2030: night-glass map unless Dark mode is Off
   const p = me || route?.from || [map.getCenter().lng, map.getCenter().lat];
   return sunDown(p[0], p[1]);
 }
@@ -2695,14 +2804,14 @@ function paintCurbs(force) {
     if (!show) return;
     clearTimeout(curbT);
     curbT = setTimeout(async () => {
-      const b = map.getBounds(), k = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(3)).join(",") + "|" + Math.floor(Date.now() / 300000);
+      const b = map.getBounds(), k = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(3)).join(",") + "|" + Math.floor(Date.now() / 300000) + (window.curbAt ? "|" + window.curbAt.toISOString() : "");
       if (k === curbKey && !force) return; // same area within 5 min: colors already current
       curbKey = k;
       try {
-        const r = await fetch(`/api/park/curbs?w=${b.getWest().toFixed(5)}&s=${b.getSouth().toFixed(5)}&e=${b.getEast().toFixed(5)}&n=${b.getNorth().toFixed(5)}`);
+        const r = await fetch(`/api/park/curbs?w=${b.getWest().toFixed(5)}&s=${b.getSouth().toFixed(5)}&e=${b.getEast().toFixed(5)}&n=${b.getNorth().toFixed(5)}${window.curbAt ? `&t=${encodeURIComponent(window.curbAt.toISOString())}` : ""}`);
         if (r.ok) {
           const fc = await r.json();
-          map.getSource("curbs")?.setData(snapCurbs(fc));
+          map.getSource("curbs")?.setData(snapCurbs(fc)); try { window.onCurbs?.(fc); } catch {}
           map.once("idle", () => { if (lastCurbFC === fc) map.getSource("curbs")?.setData(snapCurbs(fc)); }); // again once every street tile has loaded
         }
       } catch {}
@@ -3215,7 +3324,7 @@ async function parkCheck(at, fromTap, curb) {
   openSheet("Can I park here?", '<p class="muted" style="margin:0">Reading the parking signs on this block…</p>', "park");
   try {
     let j;
-    try { const r = await fetch(`/api/park?lat=${at[1]}&lng=${at[0]}`); j = await r.json(); if (!r.ok) throw new Error(j.error); }
+    try { const r = await fetch(`/api/park?lat=${at[1]}&lng=${at[0]}${window.curbAt ? `&t=${encodeURIComponent(window.curbAt.toISOString())}` : ""}`); j = await r.json(); if (!r.ok) throw new Error(j.error); if (window.curbAt && j.headline) j.headline = j.headline.replace(/right now/i, `at ${window.curbAtLabel || "that time"}`); }
     catch (e) { if (!curb?.s) throw e; j = { status: "", headline: "", detail: "", rules: [], rulesElse: [], signs: [], where: [curb.st, curb.fr && curb.to ? `${curb.fr} to ${curb.to}` : ""].filter(Boolean).join(" · ") }; } // the tapped curb already knows its answer
     lastPark = { ...j, at };
     j.signs.forEach((sg) => { const d = document.createElement("div"); d.className = "signDot"; d.title = sg.text; signMarkers.push(new maplibregl.Marker({ element: d }).setLngLat([sg.lng, sg.lat]).addTo(map)); });
@@ -3269,6 +3378,7 @@ function saveParked(j, at) {
 function drawParked() {
   parkedMarker?.remove(); parkedMarker = null;
   const car = store.get("parked", null), pill = $("#parkedPill");
+  try { window.paintMoment?.(); } catch {}
   if (!car) { pill.hidden = true; return; }
   const el = document.createElement("div"); el.className = "carPin"; el.textContent = "P";
   el.onclick = (e) => { e.stopPropagation(); parkedSheet(); };
@@ -3285,6 +3395,7 @@ function tickParked() {
   pill.innerHTML = `${parkBadge(18).replace("#1a73e8", "rgba(255,255,255,.25)")}${esc(left)}`;
   const warnAt = car.meterEnd && car.moveBy === car.meterEnd ? 10 : 30;
   pill.classList.toggle("soon", mins <= warnAt);
+  try { window.paintMoment?.(); } catch {}
   if (mins <= warnAt && !car.warned) {
     car.warned = true; store.set("parked", car);
     const box = $("#inAlert"); box.classList.remove("navok");
@@ -3728,6 +3839,221 @@ if (savedPlate) checkPlate(savedPlate.p, savedPlate.s, true).catch(() => {});
 afterCheckout();
 if (tok()) api("/api/me").then((j) => { account = j.user; paintMe(); mergeIn(account.data); pushSync(); resumeUpgrade(); setupPush(); }).catch((e) => { if (e.status === 401) { store.set("tok", null); } });
 if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocation" }).then((p) => { if (p.state === "granted") startWatch(); }).catch(() => {});
+</script>
+<script>
+// ================= Rova 2030 =================
+// The new look and its features: Ticket Shield, the moment card (your parked car), routes that end at a legal spot
+// with an at-the-door time, glance driving extras, and the curb time machine. Layers → Look → Classic switches back.
+(function () {
+  const isSkin = () => store.get("skin", "2030") === "2030";
+  const when = (d) => new Date(d).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+  const PAL = { s2030: { red: "#FF5A52", yellow: "#FFB020", green: "#2BD67B", route: "#5CE1E6", casing: "#0F6F73" }, classic: { red: "#d93025", yellow: "#f29900", green: "#1e8e3e", route: "#4a63ff", casing: "#1b2db5" } };
+
+  function applyColors() {
+    const P = isSkin() ? PAL.s2030 : PAL.classic;
+    if (map.getLayer("curb-line")) map.setPaintProperty("curb-line", "line-color", ["match", ["get", "s"], "red", P.red, "yellow", P.yellow, P.green]);
+    if (map.getLayer("route-line")) map.setPaintProperty("route-line", "line-color", ["match", ["get", "t"], "slow", "#f29900", "jam", "#d93025", "closed", "#7a0d0d", P.route]);
+    if (map.getLayer("route-casing")) map.setPaintProperty("route-casing", "line-color", ["match", ["get", "t"], "slow", "#b06f00", "jam", "#8f1d16", "closed", "#3d0606", P.casing]);
+  }
+  let colorT = null;
+  map.on("styledata", () => { clearTimeout(colorT); colorT = setTimeout(() => { try { applyColors(); } catch {} }, 150); });
+
+  function applySkin() {
+    const on = isSkin();
+    document.body.classList.toggle("s2030", on);
+    $("#q").placeholder = on ? "Where to, and why?" : "Search here";
+    document.querySelectorAll("[data-skin]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.skin === (on ? "2030" : "classic"))));
+    try { applyColors(); } catch {}
+    try { autoNight(); } catch {}
+    paintShield(); paintMoment(); paintTimeBtn();
+    if (!on && window.curbAt) closeTime();
+  }
+  document.querySelectorAll("[data-skin]").forEach((b) => (b.onclick = () => { store.set("skin", b.dataset.skin); applySkin(); }));
+
+  // ---------- Ticket Shield ----------
+  function paintShield() {
+    const el = $("#shieldPill"); if (!el) return;
+    if (!isSkin()) { el.hidden = true; return; }
+    el.hidden = false;
+    let txt, tone;
+    if (!data) { txt = "Ticket Shield: add your plate"; tone = "off"; }
+    else {
+      const s = data.summary || {};
+      if (s.openCount) { txt = `Shield · ${s.openCount} open ticket${s.openCount > 1 ? "s" : ""} · ${money(s.totalDue)}`; tone = s.bootRisk || s.penaltiesAdded ? "bad" : "warn"; }
+      else {
+        const last = (data.tickets || []).map((t) => Date.parse(t.issued)).filter(Number.isFinite).sort((a, b) => b - a)[0];
+        const days = last ? Math.max(0, Math.floor((Date.now() - last) / 864e5)) : null;
+        txt = days != null ? `Shield on · ${days} day${days === 1 ? "" : "s"} ticket-free` : "Shield on · no tickets on record"; tone = "good";
+      }
+    }
+    el.dataset.tone = tone; el.querySelector("span").textContent = txt;
+  }
+  window.paintShield = paintShield;
+  $("#shieldPill").onclick = () => $("#plateBtn").click();
+
+  // ---------- Free legal spot near a point, at a given time (from the city-placed curbs) ----------
+  async function freeSpotNear(at, t) {
+    const [lng, lat] = at, d = 0.0028;
+    const u = `/api/park/curbs?w=${(lng - d).toFixed(5)}&s=${(lat - d * 0.75).toFixed(5)}&e=${(lng + d).toFixed(5)}&n=${(lat + d * 0.75).toFixed(5)}${t ? `&t=${encodeURIComponent(new Date(t).toISOString())}` : ""}`;
+    const fc = await (await fetch(u)).json();
+    let best = null;
+    for (const f of fc.features || []) {
+      if (f.geometry.type !== "LineString" || f.properties.s !== "green") continue;
+      const c = f.geometry.coordinates;
+      for (let i = 0; i < c.length - 1; i++) for (let k = 0; k <= 4; k++) {
+        const q = [c[i][0] + ((c[i + 1][0] - c[i][0]) * k) / 4, c[i][1] + ((c[i + 1][1] - c[i][1]) * k) / 4], m = dist(at, q);
+        if (!best || m < best.m) best = { m, at: q, why: f.properties.why || "", free: !!f.properties.free, st: f.properties.st || "" };
+      }
+    }
+    return best;
+  }
+  const walkSecs = (m) => Math.round((m * 1.3) / 1.35); // straight line × 1.3 for real sidewalks, ~3 mph
+
+  // ---------- Moment card: your parked car ----------
+  function paintMoment() {
+    const el = $("#moment"); if (!el) return;
+    const car = store.get("parked", null);
+    const show = isSkin() && !!car;
+    document.body.classList.toggle("hasMoment", show);
+    if (!show) { el.hidden = true; return; }
+    const mins = car.moveBy ? Math.round((new Date(car.moveBy) - Date.now()) / 60000) : null;
+    const left = mins == null ? "No move-by time" : mins <= 0 ? "Now" : mins < 60 ? `${mins} min left` : mins < 1440 ? `${Math.floor(mins / 60)}h ${mins % 60}m left` : `${Math.floor(mins / 1440)}d left`;
+    const tone = mins == null ? "good" : mins <= 30 ? "bad" : mins < 720 ? "warn" : "good";
+    const head = mins == null ? "Parked. No rules on the signs right now." : mins <= 0 ? "Move your car now" : `Move by ${when(car.moveBy)}`;
+    el.dataset.tone = tone;
+    el.innerHTML = `<div class="mo-top"><span>Parked${car.where ? ` · ${esc(car.where)}` : ""}</span><span class="mo-left">${esc(left)}</span></div>
+      <div class="mo-head">${esc(head)}</div>
+      ${mins != null ? `<div class="mo-sub" id="moSub">Finding a free spot nearby for then…</div>` : ""}
+      <div class="mo-row">${mins != null ? `<button type="button" class="mo-go" id="moSpot">Find a free spot</button>` : ""}<button type="button" class="mo-alt" id="moCar">My car</button></div>`;
+    el.hidden = false;
+    $("#moCar").onclick = () => parkedSheet();
+    if (mins != null) {
+      const go = async () => {
+        const t = new Date(Math.max(Date.now(), new Date(car.moveBy) - 0) + 5 * 60000);
+        const s = await freeSpotNear(car.at, t).catch(() => null);
+        if (!s) { $("#moSub") && ($("#moSub").textContent = "No free spot found nearby for then. Check the Park tab."); return null; }
+        if ($("#moSub")) $("#moSub").textContent = `Free spot ${fmtDist(s.m)} away${s.st ? ` on ${s.st}` : ""}${s.why ? ` · ${s.why}` : ""}`;
+        return s;
+      };
+      const key = `${car.at.join(",")}|${car.moveBy}`;
+      if (paintMoment.key !== key) { paintMoment.key = key; paintMoment.spot = go(); } else paintMoment.spot.then((s) => s && $("#moSub") && ($("#moSub").textContent = `Free spot ${fmtDist(s.m)} away${s.st ? ` on ${s.st}` : ""}${s.why ? ` · ${s.why}` : ""}`));
+      $("#moSpot").onclick = async () => { const s = await paintMoment.spot; if (!s) return; dest = { name: `Free spot${s.st ? ` on ${s.st}` : ""}`, line: s.why, at: s.at, isSpot: true }; planRoute(dest); };
+    }
+  }
+  window.paintMoment = paintMoment;
+
+  // ---------- Routes that end at a legal spot: at-the-door time ----------
+  window.doorSpot = null;
+  window.findDoorSpot = async (to) => {
+    window.doorSpot = null;
+    if (!isSkin() || !to?.at || to.isSpot || truckOn() || !inNYC(to.at[0], to.at[1])) return;
+    const key = to.at.join(",");
+    try {
+      const arrive = new Date(Date.now() + (route?.duration || 0) * 1000);
+      const s = await freeSpotNear(to.at, arrive);
+      if (s && s.m < 450) { window.doorSpot = { ...s, key }; if (sheetMode === "route" && route && nav.dest?.at?.join(",") === key) routeSheet(nav.dest); }
+      else window.doorSpot = { none: true, key };
+      if (!s || s.m >= 450) { if (sheetMode === "route" && route && nav.dest?.at?.join(",") === key) routeSheet(nav.dest); }
+    } catch {}
+  };
+  window.doorCard = (R, to) => {
+    if (!isSkin() || truckOn() || !R) return "";
+    const key = to?.at?.join(","), ds = window.doorSpot && window.doorSpot.key === key ? window.doorSpot : null;
+    const spot = ds && !ds.none ? ds : null, walk = spot ? walkSecs(spot.m) : to?.door ? walkSecs(dist(to.at, to.door.at)) : 0, park = spot || to?.isSpot ? 120 : 0;
+    const drive = R.duration, total = drive + park + walk, pct = (x) => Math.max(4, Math.round((x / total) * 100));
+    const cams = (R.camsOnRoute || []).length;
+    const parkTile = to?.isSpot || spot ? "Free" : inNYC(to?.at?.[0] || 0, to?.at?.[1] || 0) ? (ds?.none ? "Check signs" : "Looking…") : "—";
+    const risk = to?.isSpot || spot ? `<b style="color:#2BD67B">None</b>` : ds?.none ? `<b style="color:#FFB020">Check</b>` : `<b>—</b>`;
+    return `<div class="door">
+      <div class="d-at"><div class="d-time">${clock(total)}<small>at the door</small></div><div class="d-tot">${fmtMin(total)} total</div></div>
+      <div class="d-bar"><i style="flex:${pct(drive)};background:#5CE1E6"></i>${park ? `<i style="flex:${pct(park)};background:#2BD67B"></i>` : ""}${walk ? `<i style="flex:${pct(walk)};background:#EEF3F8"></i>` : ""}</div>
+      <div class="d-legs"><span>Drive ${fmtMin(drive)}</span>${park ? `<span>Park ${fmtMin(park)}</span>` : ""}${walk ? `<span>Walk ${fmtMin(walk)}</span>` : ""}</div>
+      <div class="d-tiles"><div><span>Parking</span><b>${parkTile}</b></div><div><span>Ticket risk</span>${risk}</div><div><span>Cameras</span><b style="color:${cams ? "#FFB020" : "#EEF3F8"}">${cams}</b></div></div>
+      ${spot ? `<div class="d-spot">Free legal spot ${fmtDist(spot.m)} from the door${spot.st ? ` on ${esc(spot.st)}` : ""}${spot.why ? ` · ${esc(spot.why)}` : ""}</div><button type="button" class="d-go" id="doorGo">End the route at this spot</button>`
+        : to?.door ? `<div class="d-spot">Ending at a free legal spot, ${fmtDist(dist(to.at, to.door.at))} from ${esc(to.door.name || "your destination")}</div>`
+        : ds?.none ? `<div class="d-spot">No free curb found near there for when you arrive. Check the signs or use a garage.</div>` : ""}
+    </div>`;
+  };
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#doorGo")) return;
+    const s = window.doorSpot, to = nav.dest; if (!s || s.none || !to) return;
+    dest = { name: `Parking near ${to.name || "destination"}`, line: s.why, at: s.at, isSpot: true, door: { name: to.name, at: to.at } };
+    planRoute(dest);
+  });
+
+  // ---------- Glance driving: traffic ahead + walk to the door ----------
+  window.navExtra = (R, secs) => {
+    const chip = $("#trafChip"); if (!chip) return;
+    if (!isSkin()) { chip.hidden = true; return; }
+    const s = (R.traffic || []).find((x) => R.cum[Math.min(x.b, R.cum.length - 1)] > nav.along && R.cum[x.a] - nav.along < 3000 && (x.t !== "slow" || x.delay >= 60));
+    if (s) {
+      const ahead = Math.max(0, R.cum[s.a] - nav.along), mins = Math.round((s.delay || 0) / 60);
+      chip.className = s.t === "slow" ? "slow" : "";
+      chip.innerHTML = `<div><small>${s.t === "closed" ? "Road closed ahead" : s.t === "jam" ? "Jam ahead" : "Slow ahead"}</small>${ahead < 30 ? "You're in it" : `In ${fmtDist(ahead)}`}${mins >= 1 ? ` · +${mins} min` : ""}</div>`;
+      chip.hidden = false;
+    } else chip.hidden = true;
+    if (nav.dest?.door) { const w = walkSecs(dist(nav.dest.at, nav.dest.door.at)); $("#navSub").textContent += ` · then ${fmtMin(w)} walk`; }
+  };
+
+  // ---------- Curb time machine ----------
+  window.curbAt = null; window.curbAtLabel = "";
+  function opts() {
+    const now = new Date(), at = (d, h, m) => { const x = new Date(now); x.setDate(x.getDate() + d); x.setHours(h, m, 0, 0); return x; };
+    return [
+      { id: "now", label: "Now", at: null },
+      { id: "tonight", label: now.getHours() >= 23 ? "Tomorrow 11 PM" : "Tonight 11 PM", at: at(now.getHours() >= 23 ? 1 : 0, 23, 0) },
+      { id: "am", label: "Tomorrow 8:30 AM", at: at(1, 8, 30) },
+      { id: "noon", label: "Tomorrow noon", at: at(1, 12, 0) },
+    ];
+  }
+  let pickedId = "now";
+  function paintTimeBtn() { const b = $("#timeBtn"); if (b) b.hidden = !isSkin(); }
+  function paintTime(sum) {
+    const bar = $("#timeBar"); if (bar.hidden) return;
+    const O = opts(), cur = O.find((o) => o.id === pickedId);
+    const label = window.curbAt ? (cur ? cur.label : when(window.curbAt)) : "Now";
+    const max = new Date(Date.now() + 7 * 864e5 - 3600e3), pad = (n) => String(n).padStart(2, "0"), loc = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    bar.innerHTML = `<div class="tb-top"><div><div class="tb-tag">Curb time machine</div><div class="tb-when">${esc(label)}</div></div><button type="button" class="tb-x" id="tbX" aria-label="Close the time machine and show curbs now">✕</button></div>
+      <div class="tb-sum" id="tbSum">${sum || (map.getZoom() < 16 ? "Zoom in to see the curbs." : "Reading the signs for that time…")}</div>
+      <div class="tb-bar" id="tbBar"></div>
+      <div class="tb-opts">${O.map((o) => `<button type="button" data-tm="${o.id}" aria-pressed="${o.id === pickedId}">${esc(o.label)}</button>`).join("")}</div>
+      <label for="tbPick">Or pick any time this week<input id="tbPick" type="datetime-local" min="${loc(new Date())}" max="${loc(max)}" value="${window.curbAt ? loc(window.curbAt) : ""}"></label>`;
+    $("#tbX").onclick = closeTime;
+    bar.querySelectorAll("[data-tm]").forEach((b) => (b.onclick = () => { const o = O.find((x) => x.id === b.dataset.tm); pickedId = o.id; setTime(o.at, o.label); }));
+    $("#tbPick").onchange = (e) => { const d = new Date(e.target.value); if (!isNaN(d)) { pickedId = "custom"; setTime(d, when(d)); } };
+    if (lastSum) drawSum(lastSum);
+  }
+  let lastSum = null;
+  function drawSum(c) {
+    const tot = c.green + c.yellow + c.red; if (!tot || !$("#tbBar")) return;
+    $("#tbBar").innerHTML = `<i style="width:${(c.green / tot) * 100}%;background:#2BD67B"></i><i style="width:${(c.yellow / tot) * 100}%;background:#FFB020"></i><i style="width:${(c.red / tot) * 100}%;background:#FF5A52"></i>`;
+    $("#tbSum").textContent = `${Math.round((c.green / tot) * 100)}% of curbs in view are free to park · ${Math.round((c.red / tot) * 100)}% no parking`;
+  }
+  window.onCurbs = (fc) => {
+    const c = { green: 0, yellow: 0, red: 0 };
+    for (const f of fc.features || []) if (f.geometry.type === "LineString" && c[f.properties.s] != null) {
+      const g = f.geometry.coordinates; let m = 0; for (let i = 1; i < g.length; i++) m += dist(g[i - 1], g[i]); c[f.properties.s] += m;
+    }
+    lastSum = c; if (!$("#timeBar").hidden) drawSum(c);
+  };
+  function setTime(at, label) {
+    window.curbAt = at; window.curbAtLabel = label;
+    lastSum = null; paintTime(); paintCurbs(true);
+  }
+  function openTime() {
+    closeSheet?.();
+    $("#timeBar").hidden = false; document.body.classList.add("timeOn");
+    if (map.getZoom() < 16.2) map.easeTo({ zoom: 16.6, duration: 600 });
+    paintTime();
+  }
+  function closeTime() {
+    $("#timeBar").hidden = true; document.body.classList.remove("timeOn");
+    pickedId = "now"; if (window.curbAt) { window.curbAt = null; window.curbAtLabel = ""; paintCurbs(true); }
+  }
+  $("#timeBtn").onclick = () => ($("#timeBar").hidden ? openTime() : closeTime());
+
+  applySkin();
+})();
 </script>
 </body>
 </html>

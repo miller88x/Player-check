@@ -558,6 +558,11 @@ async function selfCheck() {
 // wakes from sleep when a driver opens the app, and this check must not compete with their requests.
 let checking = false;
 
+// Curb time machine: ?t=<ISO time> asks "what will the curbs be then?" (from now up to 7 days ahead)
+function whenOf(url) {
+  const t = Date.parse(url.searchParams.get("t") || "");
+  return Number.isFinite(t) && t > Date.now() - 60e3 && t < Date.now() + 7 * 864e5 ? new Date(t) : new Date();
+}
 function routes(url, res, sendJSON) {
   if (url.pathname === "/api/park/reminder.ics") { ics(url, res); return true; }
   if (url.pathname === "/api/park/selfcheck") {
@@ -572,13 +577,13 @@ function routes(url, res, sendJSON) {
   if (url.pathname === "/api/park/curbs") {
     const [w, s, e, n] = ["w", "s", "e", "n"].map((k) => +url.searchParams.get(k));
     if (![w, s, e, n].every(Number.isFinite) || s < 40.4 || n > 41 || w < -74.3 || e > -73.6 || (e - w) * (n - s) > 0.0004) { sendJSON(res, 200, { type: "FeatureCollection", features: [] }); return true; }
-    curbs(w, s, e, n).then((fc) => sendJSON(res, 200, fc)).catch((err) => { console.error("curbs:", err.message); sendJSON(res, 502, { error: "Couldn't reach the city's sign data." }); });
+    curbs(w, s, e, n, whenOf(url)).then((fc) => sendJSON(res, 200, fc)).catch((err) => { console.error("curbs:", err.message); sendJSON(res, 502, { error: "Couldn't reach the city's sign data." }); });
     return true;
   }
   if (url.pathname !== "/api/park") return false;
   const lat = +url.searchParams.get("lat"), lng = +url.searchParams.get("lng");
   if (!(lat > 40.4 && lat < 41) || !(lng > -74.3 && lng < -73.6)) { sendJSON(res, 400, { error: "Parking sign checks cover New York City for now. More cities are coming." }); return true; }
-  check(lat, lng).then((r) => sendJSON(res, 200, r)).catch((e) => { console.error("park:", e.message); sendJSON(res, 502, { error: "Couldn't reach the city's sign data. Try again." }); });
+  check(lat, lng, whenOf(url)).then((r) => sendJSON(res, 200, r)).catch((e) => { console.error("park:", e.message); sendJSON(res, 502, { error: "Couldn't reach the city's sign data. Try again." }); });
   return true;
 }
 
