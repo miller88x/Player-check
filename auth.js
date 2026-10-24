@@ -10,6 +10,8 @@ const ready = () => !!(SB_URL && SB_KEY);
 const PLANS = ["free", "bronze", "silver", "gold", "fleet"];
 // Free Gold for listed accounts (store reviewers, your own testing): COMP_GOLD on Render = comma-separated emails
 const COMP = new Set((process.env.COMP_GOLD || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean));
+const TRUCK_ON = new Set(["active", "trialing", "past_due"]);
+const isComp = (u) => !!u && COMP.has(String(u.email).toLowerCase());
 const comp = (u) => { if (u && COMP.has(String(u.email).toLowerCase()) && (!u.plan || u.plan === "free")) u.plan = "gold"; return u; };
 const SESSION_DAYS = 365;
 const MAX_DATA = 200000; // ~200 KB of synced app data per account
@@ -49,7 +51,8 @@ const pub = (u) => {
   const all = u.data || {}, b = all._billing;
   const data = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith("_"))); // _billing, _push: server-owned
   return { email: u.email, plan: PLANS.includes(u.plan) ? u.plan : "free", data, since: u.created_at,
-    billing: b ? { status: b.status || null, ends: b.ends || null, cars: b.cars || null } : null };
+    billing: b ? { status: b.status || null, ends: b.ends || null, cars: b.cars || null } : null,
+    truck: !!(TRUCK_ON.has(all._truck?.status) || isComp(u)), truckEnds: all._truck?.ends || null };
 };
 
 // Who's calling? Used by other features later (plan limits).
@@ -162,4 +165,4 @@ function routes(url, res, send, req) {
   return true;
 }
 
-module.exports = { routes, userFromReq, ready };
+module.exports = { isComp, routes, userFromReq, ready };

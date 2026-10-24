@@ -859,6 +859,7 @@ async function truckRoute(stops, veh = {}, out = {}) {
   return best;
 }
 
+const TRUCK_TRIALS = 3, truckTrials = new Map(); // free truck trips per device before Pro Truck
 function routes(url, res, send, readBody, req) {
   if (url.pathname === "/api/truck/tt") { // probe: one TomTom request, summary only
     const pts = [url.searchParams.get("from"), url.searchParams.get("to")].map((x) => (x || "").split(",").map(Number));
@@ -981,21 +982,34 @@ function routes(url, res, send, readBody, req) {
     return true;
   }
   if (url.pathname === "/api/truck/route") {
-    const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
-    if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
-    const hzc = Math.min(9, Math.max(0, Math.round(+url.searchParams.get("hzc") || 0))), hzOld = +url.searchParams.get("hz") || 0;
-    const veh = { h: Math.min(20, Math.max(0, +url.searchParams.get("h") || 0)), w: Math.min(250000, Math.max(0, +url.searchParams.get("w") || 0)), l: Math.min(150, Math.max(0, +url.searchParams.get("l") || 0)),
-      axles: Math.min(12, Math.max(0, Math.round(+url.searchParams.get("ax") || 0))),
-      hzc: hzc || (hzOld === 2 ? 1 : hzOld === 1 ? 3 : 0) };
-    veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
-    const out = {};
-    const timer = new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), budgetFor(pts) + 3000));
-    const job = truckRoute(pts, veh, out);
-    const t0 = Date.now();
-    job.then((r) => logRun(pts, veh, r, out, t0), (e) => logRun(pts, veh, null, out, t0, e));
-    Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", routes: [r.route, ...(out.heavyAlt ? [out.heavyAlt.route] : [])], compliance: { ...r.compliance, ...(out.unchecked ? { verdict: "unchecked", reason: "NYC truck map still loading, try again in a minute" } : {}), engine: r.route.engine || "basic", asOf: state.asOf },
-      altCompliance: out.heavyAlt ? { ...out.heavyAlt.compliance, engine: "tomtom", asOf: state.asOf, weightSafe: true } : undefined }))
-      .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
+    // Pro Truck (paid add-on) or a few free tries per device; the server checks, so the TomTom quota can't be drained
+    const go = (trialLeft) => {
+      const pts = (url.searchParams.get("pts") || "").split(";").map((x) => x.split(",").map(Number)).filter((p) => p.length === 2 && p.every(isFinite));
+      if (pts.length < 2 || pts.length > 4) { send(res, 400, { error: "bad points" }); return true; }
+      const hzc = Math.min(9, Math.max(0, Math.round(+url.searchParams.get("hzc") || 0))), hzOld = +url.searchParams.get("hz") || 0;
+      const veh = { h: Math.min(20, Math.max(0, +url.searchParams.get("h") || 0)), w: Math.min(250000, Math.max(0, +url.searchParams.get("w") || 0)), l: Math.min(150, Math.max(0, +url.searchParams.get("l") || 0)),
+        axles: Math.min(12, Math.max(0, Math.round(+url.searchParams.get("ax") || 0))),
+        hzc: hzc || (hzOld === 2 ? 1 : hzOld === 1 ? 3 : 0) };
+      veh.hz = veh.hzc === 1 ? 2 : veh.hzc ? 1 : 0;
+      const out = {};
+      const timer = new Promise((ok) => setTimeout(() => ok(out.best ? { ...out.best, partial: true } : null), budgetFor(pts) + 3000));
+      const job = truckRoute(pts, veh, out);
+      const t0 = Date.now();
+      job.then((r) => logRun(pts, veh, r, out, t0), (e) => logRun(pts, veh, null, out, t0, e));
+      Promise.race([job, timer]).then((r) => r || job).then((r) => send(res, 200, { code: "Ok", trialLeft, routes: [r.route, ...(out.heavyAlt ? [out.heavyAlt.route] : [])], compliance: { ...r.compliance, ...(out.unchecked ? { verdict: "unchecked", reason: "NYC truck map still loading, try again in a minute" } : {}), engine: r.route.engine || "basic", asOf: state.asOf },
+        altCompliance: out.heavyAlt ? { ...out.heavyAlt.compliance, engine: "tomtom", asOf: state.asOf, weightSafe: true } : undefined }))
+        .catch((e) => send(res, e.code || 502, { error: e.message || "No truck route found" }));
+    
+    };
+    const dev = String(url.searchParams.get("dev") || "");
+    require("./auth").userFromReq(req).catch(() => null).then((u) => {
+      if (require("./billing").hasTruck(u)) return go(null);
+      // a "trip" is a destination: reroutes and re-plans to the same place don't use up a free try
+      const to = (url.searchParams.get("pts") || "").split(";").pop().split(",").map((x) => (+x).toFixed(3)).join(",");
+      const trips = truckTrials.get(dev) || new Set();
+      if (/^[a-z0-9]{12,24}$/.test(dev) && (trips.has(to) || trips.size < TRUCK_TRIALS)) { trips.add(to); truckTrials.set(dev, trips); if (truckTrials.size > 50000) truckTrials.clear(); return go(TRUCK_TRIALS - trips.size); }
+      send(res, 402, { error: "Truck routes are part of Rova Pro Truck.", upgrade: "protruck" });
+    });
     return true;
   }
   return false;

@@ -17,12 +17,17 @@ const STRIPE = {
       silver: { id: "plink_1UT7qHAYUDQyHhyYWZzpBcCJ", url: "https://buy.stripe.com/test_5kQ4gy0Dk6S70VTbhKd3i01" },
       gold:   { id: "plink_1UT7qIAYUDQyHhyYAdMdDSoP", url: "https://buy.stripe.com/test_7sY9AS5XE6S75c9dpSd3i02" },
       fleet:  { id: "plink_1UT7qJAYUDQyHhyYUN9e43Ty", url: "https://buy.stripe.com/test_5kQ5kC3Pw3FVeMJadGd3i03" },
+      // Pro Truck is an add-on (its own subscription): it never changes the driver's main plan
+      protruck:    { id: "plink_1UTthKAYUDQyHhyY7RM5ime9", url: "https://buy.stripe.com/test_4gMaEW0Dk1xN0VTclOd3i04" },
+      protruck_yr: { id: "plink_1UTthLAYUDQyHhyYwOBDggGY", url: "https://buy.stripe.com/test_28EcN44TAa4j6gdgC4d3i05" },
     },
     prices: {
       price_1UT7q1AYUDQyHhyY71A2AQq2: "bronze",
       price_1UT7q7AYUDQyHhyY7xLBB0GQ: "silver",
       price_1UT7q8AYUDQyHhyY78MymaCN: "gold",
       price_1UT7q9AYUDQyHhyY0RMayx2q: "fleet",
+      price_1UTtfiAYUDQyHhyYzv1IqJw5: "protruck",
+      price_1UTtflAYUDQyHhyYjwsCgfkN: "protruck",
     },
     portal: "https://billing.stripe.com/p/login/test_28E5kC0Dk0tJ8ol71ud3i00",
   },
@@ -46,6 +51,14 @@ async function sb(path, opts = {}) {
 }
 const getUser = async (id) => (await sb(`pc_users?id=eq.${encodeURIComponent(id)}&select=id,email,plan,data`))?.[0] || null;
 const userBySub = async (sub) => (await sb(`pc_users?data->_billing->>sub=eq.${encodeURIComponent(sub)}&select=id,email,plan,data`))?.[0] || null;
+const userByTruckSub = async (sub) => (await sb(`pc_users?data->_truck->>sub=eq.${encodeURIComponent(sub)}&select=id,email,plan,data`))?.[0] || null;
+const isTruck = (plan) => plan === "protruck" || plan === "protruck_yr";
+// Pro Truck lives in data._truck { cus, sub, status, ends } next to the main plan
+async function setTruck(u, truck) {
+  const data = { ...(u.data || {}), _truck: { ...((u.data || {})._truck || {}), ...truck, at: new Date().toISOString() } };
+  await sb(`pc_users?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ data, updated_at: new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
+  console.log(`billing: ${u.email} pro truck -> ${truck.status}`);
+}
 async function setPlan(u, plan, billing) {
   const data = { ...(u.data || {}), _billing: { ...((u.data || {})._billing || {}), ...billing, at: new Date().toISOString() } };
   await sb(`pc_users?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ plan, data, updated_at: new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
@@ -70,10 +83,16 @@ async function handle(ev) {
     const plan = PLAN_BY_LINK[o.payment_link];
     const u = plan && (await getUser(o.client_reference_id));
     if (!u) return console.warn("billing: checkout with no matching account/plan", o.id);
+    if (isTruck(plan)) return setTruck(u, { cus: o.customer, sub: o.subscription, status: "active", ends: null });
     await setPlan(u, plan, { cus: o.customer, sub: o.subscription, plan, status: "active" });
     return;
   }
   if (ev.type === "customer.subscription.updated" || ev.type === "customer.subscription.deleted") {
+    if (CFG.prices[o.items?.data?.[0]?.price?.id] === "protruck") {
+      const t = await userByTruckSub(o.id); if (!t) return;
+      const on = ev.type === "customer.subscription.updated" && ON.has(o.status);
+      return setTruck(t, { status: on ? o.status : ev.type.endsWith("deleted") ? "canceled" : o.status, ends: o.cancel_at_period_end ? o.current_period_end || o.items?.data?.[0]?.current_period_end || null : null });
+    }
     const u = await userBySub(o.id);
     if (!u) return; // checkout event hasn't landed yet; it sets the plan itself
     const item = o.items?.data?.[0];
@@ -114,8 +133,9 @@ function routes(url, res, send, req) {
     if (!link) { send(res, 400, { error: "Pick a plan." }); return true; }
     auth.userFromReq(req).then((u) => {
       if (!u) return send(res, 401, { error: "Sign in first." });
-      const b = u.data?._billing;
-      if (u.plan !== "free" && b?.sub && ON.has(b.status)) return send(res, 409, { error: "You already have a plan. Change it from Manage plan.", portal: manageUrl(u) });
+      const b = u.data?._billing, tr = u.data?._truck;
+      if (isTruck(plan)) { if (tr?.sub && ON.has(tr.status)) return send(res, 409, { error: "You already have Pro Truck. Manage it from Manage plan.", portal: manageUrl(u) }); }
+      else if (u.plan !== "free" && b?.sub && ON.has(b.status)) return send(res, 409, { error: "You already have a plan. Change it from Manage plan.", portal: manageUrl(u) });
       const q = new URLSearchParams({ client_reference_id: u.id, prefilled_email: u.email });
       send(res, 200, { url: `${link.url}?${q}` });
     }).catch((e) => { console.error("billing link:", e.message); send(res, 500, { error: "Try again." }); });
@@ -133,4 +153,6 @@ function routes(url, res, send, req) {
 }
 const manageUrl = (u) => `${CFG.portal}?${new URLSearchParams({ prefilled_email: u.email })}`;
 
-module.exports = { routes, verify, handle, ready: () => !!WH_SECRET };
+// Does this account have Pro Truck right now? (paid add-on, or comped test/reviewer accounts)
+const hasTruck = (u) => !!u && (ON.has(u.data?._truck?.status) || auth.isComp?.(u));
+module.exports = { routes, verify, handle, hasTruck, ready: () => !!WH_SECRET };

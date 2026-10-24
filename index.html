@@ -1611,6 +1611,7 @@ async function askRova(q) {
     const p = await findPlace(a.place); if (!p) return missing(a.place);
     if (a.avoid?.length) { const v = avoid(); for (const k of a.avoid) if (k in v) v[k] = true; store.set("avoid", v); }
     dest = p;
+    if (a.mode === "truck" && !truckAllowed()) return proTruckSheet(() => planRoute(p));
     if (a.mode === "truck") { if (truckSaved()) { truckTrip = true; paintTruckLayer(); } else return truckSheet(() => planRoute(p)); }
     else if (truckTrip) { truckTrip = false; paintTruckLayer(); }
     return planRoute(p);
@@ -2122,6 +2123,7 @@ function routeSheet(to) {
     const wantTruck = b.dataset.mode === "truck";
     if (wantTruck === truckOn()) return;
     if (!wantTruck) { truckTrip = false; paintTruckLayer(); return planRoute(to); }
+    if (!truckAllowed()) return proTruckSheet(() => planRoute(to));
     if (truckSaved()) { truckTrip = true; paintTruckLayer(); return planRoute(to); }
     truckSheet(() => planRoute(to)); // first time: enter truck details once
   }));
@@ -2964,10 +2966,16 @@ async function fetchTruckRoutes(from, to, via) {
   const pts = [from, via, to].filter(Boolean).map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join(";");
   try {
     const t = truck(), hzc = t.hazmat ? +t.hzc || 3 : 0;
-    const r = await fetch(`/api/truck/route?pts=${pts}&h=${t.h}&w=${t.w}&l=${t.l}&ax=${t.ax || 2}&hzc=${hzc}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
+    const r = await fetch(`/api/truck/route?pts=${pts}&h=${t.h}&w=${t.w}&l=${t.l}&ax=${t.ax || 2}&hzc=${hzc}&dev=${roverId}`, { headers: tok() ? { Authorization: `Bearer ${tok()}` } : {}, signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
     const j = await r.json();
+    if (r.status === 402) { // free truck trips used up: car route now, and offer Pro Truck
+      store.set("truckTrialLeft", 0); truckTrip = false; paintTruckLayer();
+      setTimeout(() => proTruckSheet(), 700);
+      return fetchCarRoutes(from, to, true, via);
+    }
+    if (j.trialLeft != null) store.set("truckTrialLeft", j.trialLeft); else store.set("truckTrialLeft", null);
     if (!r.ok || !j.routes?.[0]) throw new Error(j.error || "No truck route");
-    const R = buildRoute(j.routes[0], from); R.truck = j.compliance; R.avoidFailed = false;
+    const R = buildRoute(j.routes[0], from); R.truck = { ...j.compliance, trialLeft: j.trialLeft }; R.avoidFailed = false;
     const out = [R];
     if (j.routes[1] && j.altCompliance) { const R2 = buildRoute(j.routes[1], from); R2.truck = j.altCompliance; R2.avoidFailed = false; R2.weightSafe = true; out.push(R2); }
     return out;
@@ -2996,6 +3004,8 @@ function truckCard(R) {
     if (t.w > 80000) head = `<div class="alert warn"><b>Over 80,000 lb</b>Needs an NYC DOT overweight permit.</div>` + head;
   }
   if (t.h > 13.5) head = `<div class="alert stop"><b>⚠️ Your truck is set to ${ftIn(t.h)} tall</b>That's over the 13'6" legal limit, so the route avoids every lower bridge and can go far out of the way. If that's a typo, tap Edit below and fix the height.</div>` + head;
+  if (c.trialLeft != null && !hasTruckPlan()) head += `<div class="note">🎁 Free truck trip · ${c.trialLeft} left. <a href="#" id="ptGet">Get Pro Truck</a></div>`;
+  setTimeout(() => { const a = document.getElementById("ptGet"); if (a) a.onclick = (e) => { e.preventDefault(); proTruckSheet(); }; }, 0);
   return `<div class="truckbox">${head}
     ${c.hazmat?.on ? `<div class="alert ${c.blocked?.length ? "stop" : "go"}"><b>☣️ Hazmat ${c.blocked?.length ? "check failed" : "check passed"}${c.hazmat.explosives ? " (explosives)" : ""}</b>${c.hazmat.avoided?.length ? `Avoids: ${c.hazmat.avoided.map(esc).join(", ")}.<br>` : ""}${(c.hazmat.notes || []).map(esc).join("<br>")}</div>` : ""}
     ${c.notes?.length ? `<div class="note">${c.notes.map(esc).join("<br>")}</div>` : ""}
@@ -3766,7 +3776,7 @@ function signedOut() {
   for (const k of SYNC) try { localStorage.removeItem(k); } catch {}
   location.reload();
 }
-const PLAN_NAME = { free: "Free", bronze: "Bronze", silver: "Silver", gold: "Gold", fleet: "Fleet" };
+const PLAN_NAME = { free: "Free", bronze: "Bronze", silver: "Silver", gold: "Gold", fleet: "Fleet", protruck: "Pro Truck", protruck_yr: "Pro Truck (yearly)" };
 function acctRow() {
   return account
     ? `<button class="acct" type="button" id="acctBtn"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0;flex:1"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>${PLAN_NAME[account.plan]} plan · synced</small></span></button>`
@@ -3994,7 +4004,7 @@ const hasTicketPlan = () => PAID_TICKETS.includes(myPlan());
 const plateLimit = () => (myPlan() === "fleet" ? Math.max(3, account?.billing?.cars || 3) : { free: 1, bronze: 1, silver: 1, gold: 3 }[myPlan()]);
 const PLANS_UI = [
   { k: "silver", name: "Silver", price: "$8.99", what: "Ticket alerts with early penalty warnings, 2 AI disputes a month" },
-  { k: "gold", name: "Gold", price: "$14.99", what: "Up to 3 plates, unlimited AI disputes, truck mode" },
+  { k: "gold", name: "Gold", price: "$14.99", what: "Up to 3 plates, unlimited AI disputes" },
 ];
 // Pops once per new ticket for free drivers
 function maybeUpsell(list) {
@@ -4043,7 +4053,28 @@ const PLANS_ALL = [
   { k: "bronze", name: "Bronze", price: "$4.99", what: "No ads, AI voices, AI parking-sign photo reading" },
   ...PLANS_UI,
   { k: "fleet", name: "Fleet", price: "$12", per: "/car/mo", what: "Gold for every car you run, 3-car minimum" },
+  { k: "protruck", name: "Pro Truck", price: "$12.99", what: "Truck routes: NYC truck network, no parkways or low tunnels, height/weight/hazmat. Add it to any plan" },
 ];
+// ---------- Pro Truck (its own add-on, works with any plan) ----------
+const hasTruckPlan = () => !!account?.truck;
+const truckAllowed = () => hasTruckPlan() || store.get("truckTrialLeft", null) !== 0; // never tried, or free trips left
+function proTruckSheet(after) {
+  const left = store.get("truckTrialLeft", null);
+  openSheet("Rova Pro Truck", `
+    <div class="alert ${left === 0 ? "warn" : "go"}"><b>${left === 0 ? "Your 3 free truck trips are used" : "Truck routes you can trust"}</b>Built on NYC's official Truck Route Network and truck-safe routing nationwide.</div>
+    <ul style="margin:4px 0 0;padding-left:18px;line-height:1.6">
+      <li>Never parkways or tunnels too low for your truck</li>
+      <li>Through routes across boroughs, Local routes near your stop</li>
+      <li>Height, weight, length, axles and hazmat class</li>
+      <li>NYC size and permit warnings, live traffic outside NYC</li>
+    </ul>
+    <button type="button" class="planpick best" data-pt="protruck"><span><b>Monthly</b><small>Cancel anytime</small></span><em>$12.99<small>/mo</small></em></button>
+    <button type="button" class="planpick" data-pt="protruck_yr"><span><b>Yearly</b><small>2 months free</small></span><em>$129.99<small>/yr</small></em></button>
+    <p class="note">Pro Truck adds to any plan, including Free. Routes are guidance: posted signs and permits always win. ${LEGAL_LINKS}</p>
+    <button class="btn" type="button" id="ptLater">${after ? "Drive as a car instead" : "Not now"}</button>`, "upgrade");
+  document.querySelectorAll("[data-pt]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.pt, null)));
+  $("#ptLater").onclick = () => { closeSheet(); if (after) { truckTrip = false; paintTruckLayer(); after(); } };
+}
 function plansSheet() {
   openSheet("Rova plans", `
     <p class="note">Free stays free: navigation, cameras, parking colors and 1 plate checked daily.</p>
@@ -4051,7 +4082,7 @@ function plansSheet() {
     <p class="note">Plans renew monthly until you cancel. Cancel anytime from Manage plan. ${LEGAL_LINKS}</p>
     <button class="btn" type="button" id="upLater">Not now</button>`, "upgrade");
   $("#upLater").onclick = () => closeSheet();
-  document.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.up, null)));
+  document.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => (b.dataset.up === "protruck" ? proTruckSheet() : startUpgrade(b.dataset.up, null))));
 }
 // Stripe's customer page: switch plans, update card, cancel (sign-in there is by email code)
 function managePlan() {
@@ -4067,8 +4098,8 @@ function afterCheckout() {
   let n = 0;
   const poll = () => api("/api/me").then((j) => {
     account = j.user; paintMe();
-    if (account.plan !== "free") {
-      openSheet(`${PLAN_NAME[account.plan]} is on`, `<div class="alert go"><b>You're all set</b>Thanks for supporting Rova. Your plan works on every phone you sign in on.</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
+    if (want.startsWith("protruck") ? account.truck : account.plan !== "free") {
+      openSheet(`${want.startsWith("protruck") ? "Pro Truck" : PLAN_NAME[account.plan]} is on`, `<div class="alert go"><b>You're all set</b>Thanks for supporting Rova. Your plan works on every phone you sign in on.</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
       $("#ok").onclick = () => { closeSheet(); resumeUpgrade(); };
     } else if (++n < 15) setTimeout(poll, 2000);
     else { openSheet("Almost there", `<div class="alert warn"><b>Still confirming your payment</b>Your plan will switch on by itself shortly. Pull down to refresh in a minute.</div><button class="btn primary" type="button" id="ok">OK</button>`, "upgrade"); $("#ok").onclick = () => closeSheet(); }
