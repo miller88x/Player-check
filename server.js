@@ -21,6 +21,8 @@ const legal = require("./legal");
 const push = require("./push");
 const parkwatch = require("./parkwatch");
 const signphoto = require("./signphoto");
+const traffic = require("./traffic");
+const ask = require("./ask");
 
 const zlib = require("zlib");
 const crypto = require("crypto");
@@ -296,6 +298,8 @@ http
     if (url.pathname.startsWith("/api/billing/") && billing.routes(url, res, send, req)) return;
     if (url.pathname.startsWith("/api/rovers") && rovers.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/truck/") && truck.routes(url, res, send, readBody, req)) return;
+    if (url.pathname.startsWith("/api/traffic/") && traffic.routes(url, res, send)) return;
+    if (url.pathname === "/api/ask" && ask.routes(url, res, send, readBody, req)) return;
     if (url.pathname.startsWith("/api/trip") && trips.routes(url, res, send, readBody, req)) return;
     if (/^\/t\/[a-z0-9]{8}$/.test(url.pathname)) return send(res, 200, trips.page(url.pathname.slice(3)), "text/html; charset=utf-8");
     if (url.pathname.startsWith("/api/tts") && tts.routes(url, res, send, req)) return;
