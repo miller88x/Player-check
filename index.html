@@ -1374,6 +1374,7 @@ const LEGAL_LINKS = '<a href="/terms" target="_blank" rel="noopener">Terms</a> �
 const LEGAL_NOTE = `<p class="note">Routes are guidance only. Always follow posted signs and traffic laws. ${LEGAL_LINKS}</p>`;
 function closeSheet() {
   const sh = $("#sheet"); sh.classList.remove("show"); if (sh.classList.contains("peek")) sh.classList.remove("peek"); hideAdMob();
+  if (sheetMode === "team") { try { clearTeam(); } catch {} }
   if (sheetMode === "route" && !nav.active) clearRoute();
   if ((sheetMode === "place" || sheetMode === "route") && !nav.active) { destMarker?.remove(); destMarker = null; }
   if (sheetMode === "cat") clearCats();
@@ -3804,6 +3805,10 @@ function accountSheet(mode) {
       ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button><button class="btn" type="button" id="plansBtn">Compare plans</button>'}
       ${account.truckFleet ? `<button class="btn" type="button" id="tfBtn">🚚 My truck fleet · ${account.truckFleet.used} of ${account.truckFleet.seats} drivers</button>` : ""}
       ${account.truckCompany ? `<button class="btn" type="button" id="tcBtn">🚚 Pro Truck from ${esc(account.truckCompany.company || "your company")}${account.truckCompany.on ? "" : " (paused)"}</button>` : ""}
+      ${account.carCompany ? `<button class="btn" type="button" id="ccBtn">🚗 Driving for ${esc(account.carCompany.company || "your company")}</button>` : ""}
+      ${myCompany() ? `<button class="btn" type="button" id="dutyBtn">${onDuty() ? "🟢 On duty · sharing location" : "⚪ Off duty · not sharing"}</button>` : ""}
+      ${account.plan === "fleet" ? `<button class="btn" type="button" id="cfBtn">🚗 My drivers · codes and live map</button>` : ""}
+      ${!myCompany() ? `<button class="btn" type="button" id="joinCo">I drive for a company: enter its code</button>` : ""}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
@@ -3815,6 +3820,10 @@ function accountSheet(mode) {
     if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
     if ($("#tfBtn")) $("#tfBtn").onclick = () => truckFleetSheet();
     if ($("#tcBtn")) $("#tcBtn").onclick = () => truckCompanySheet();
+    if ($("#ccBtn")) $("#ccBtn").onclick = () => truckCompanySheet();
+    if ($("#dutyBtn")) $("#dutyBtn").onclick = () => setDuty(!onDuty());
+    if ($("#cfBtn")) $("#cfBtn").onclick = () => carFleetSheet();
+    if ($("#joinCo")) $("#joinCo").onclick = () => joinTruckCompany();
     $("#delBtn").onclick = deleteSheet;
     if ($("#pushTest")) $("#pushTest").onclick = testPush;
     $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
@@ -4083,6 +4092,27 @@ function proTruckSheet(after) {
   $("#ptLater").onclick = () => { closeSheet(); if (after) { truckTrip = false; paintTruckLayer(); after(); } };
   $("#ptJoin").onclick = () => joinTruckCompany(after);
 }
+// ---------- Company drivers: on duty = share location with the company (every 15 s while Rova is open) ----------
+const myCompany = () => account?.truckCompany || account?.carCompany || null;
+const onDuty = () => store.get("onDuty", true) !== false;
+let lastTeamPing = 0;
+async function setDuty(on) {
+  store.set("onDuty", on);
+  const c = myCompany();
+  if (on && c && !c.consent) { try { await api("/api/team/consent", { method: "POST", body: JSON.stringify({ on: true }) }); c.consent = true; } catch {} }
+  if (!on) api("/api/team/ping", { method: "POST", body: JSON.stringify({ off: true }) }).catch(() => {});
+  else teamPing(true);
+  popMsg(on ? "On duty" : "Off duty", on ? "Your company sees your location." : "Location sharing is off.", on ? "🟢" : "⚪", on ? "#1e8e3e" : "#5f6368", 2500);
+  if (sheetMode === "account") accountSheet?.();
+}
+function teamPing(force) {
+  const c = myCompany();
+  if (!c || !c.consent || !onDuty() || !me || document.hidden) return;
+  if (!force && Date.now() - lastTeamPing < 14000) return;
+  lastTeamPing = Date.now();
+  api("/api/team/ping", { method: "POST", body: JSON.stringify({ lat: me[1], lng: me[0], heading: heading ?? null, mph: Math.round(speedMps * 2.237), nav: !!nav.active, to: nav.active ? nav.dest?.name || "" : "" }) }).catch(() => {});
+}
+setInterval(() => teamPing(false), 15000);
 // A driver joins their company's Pro Truck with the 8-letter code
 function joinTruckCompany(after) {
   if (!account) {
@@ -4090,24 +4120,104 @@ function joinTruckCompany(after) {
     $("#upAcct").onclick = () => accountSheet(); return;
   }
   openSheet("Join your company", `
-    <p class="muted" style="margin:0">Enter the code your company gave you. You get truck routes on your own phone, and your company pays.</p>
+    <p class="muted" style="margin:0">Enter the code your company gave you. Your company pays, and with Pro Truck companies you get truck routes on your own phone.</p>
     <input class="inp" id="tcCode" maxlength="9" autocapitalize="characters" autocomplete="off" placeholder="8-letter code, e.g. K7TR4QXM" style="text-transform:uppercase;letter-spacing:2px;font-weight:700">
+    <label style="display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45"><input type="checkbox" id="tcOk" style="margin-top:3px"> <span><b>Notice of location sharing:</b> while you're <b>on duty</b>, Rova shares your location, speed and today's route with this company. You can go off duty anytime from your account; nothing is shared off duty.</span></label>
     <div id="tcMsg"></div>
     <button class="btn primary" type="button" id="tcGo">Join</button>`, "upgrade");
   $("#tcGo").onclick = () => {
+    if (!$("#tcOk").checked) { $("#tcMsg").innerHTML = '<div class="alert warn"><b>One more step</b>Check the box to agree to location sharing while on duty.</div>'; return; }
     $("#tcGo").disabled = true;
-    api("/api/billing/truckfleet/join", { method: "POST", body: JSON.stringify({ code: $("#tcCode").value }) }).then((j) => api("/api/me").then((m) => {
-      account = m.user; paintMe?.(); store.set("truckTrialLeft", null);
-      openSheet("You're in", `<div class="alert go"><b>Truck routes are on</b>Pro Truck from ${esc(j.company || "your company")}. Pick Truck when you get directions.</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
+    api("/api/billing/truckfleet/join", { method: "POST", body: JSON.stringify({ code: $("#tcCode").value, consent: true }) }).then((j) => api("/api/me").then((m) => {
+      account = m.user; paintMe?.(); store.set("truckTrialLeft", null); store.set("onDuty", true); teamPing(true);
+      openSheet("You're in", `<div class="alert go"><b>${j.kind === "car" ? "You're on your company's team" : "Truck routes are on"}</b>${j.kind === "car" ? `${esc(j.company || "Your company")} sees your location while you're on duty.` : `Pro Truck from ${esc(j.company || "your company")}. Pick Truck when you get directions.`}</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
       $("#ok").onclick = () => { closeSheet(); if (after) { truckTrip = true; paintTruckLayer(); after(); } };
     })).catch((e) => { $("#tcGo").disabled = false; $("#tcMsg").innerHTML = `<div class="alert stop"><b>Couldn't join</b>${esc(e.message)}</div>`; });
   };
 }
+// Car Fleet owner: drivers' code, who joined, live map
+function carFleetSheet(opts = {}) {
+  openSheet("My drivers", '<p class="muted" style="margin:0">Loading…</p>', "account");
+  api("/api/billing/carfleet", { method: "POST", body: JSON.stringify(opts) }).then((f) => {
+    const msg = `Join my company on Rova: open Rova, tap You, then "I drive for a company" and enter code ${f.code}. ${location.origin}`;
+    openSheet("My drivers", `
+      <div class="alert go"><b>${f.members.length} of ${f.seats} drivers joined</b>Drivers share their location with you while they're on duty.</div>
+      <div class="muted">Your drivers' code</div>
+      <div style="display:flex;gap:10px;align-items:center"><span style="font:800 28px/1 var(--body);letter-spacing:4px">${esc(f.code)}</span><button class="btn" type="button" id="cfShare" style="margin:0">Share</button></div>
+      <div class="muted" style="margin-top:6px">Drivers</div>
+      ${f.members.length ? f.members.map((m) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(m.email)}</span><button class="btn" type="button" data-cfrm="${esc(m.id)}" style="margin:0;padding:6px 12px">Remove</button></div>`).join("") : '<p class="note" style="margin:0">No drivers yet. Share the code above.</p>'}
+      <button class="btn primary" type="button" id="cfLive">📍 Live map of my drivers</button>
+      <button class="btn" type="button" id="cfCode">Make a new code</button>`, "account");
+    $("#cfShare").onclick = () => { if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else navigator.clipboard?.writeText(msg).then(() => popMsg("Code copied", "Paste it to your drivers.", "📋")); };
+    $("#cfLive").onclick = () => teamMap();
+    $("#cfCode").onclick = () => carFleetSheet({ newCode: true });
+    document.querySelectorAll("[data-cfrm]").forEach((b) => (b.onclick = () => carFleetSheet({ remove: b.dataset.cfrm })));
+  }).catch((e) => openSheet("My drivers", `<div class="alert stop"><b>Couldn't load</b>${esc(e.message)}</div>`, "account"));
+}
+// ---------- Owner: live map of on-duty drivers (refreshes every 15 s while open) ----------
+let teamMarkers = new Map(), teamTimer = null, teamFitted = false;
+const agoShort = (t) => { if (!t) return "never"; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} hr ago`; };
+function clearTeam() {
+  clearInterval(teamTimer); teamTimer = null; teamFitted = false;
+  teamMarkers.forEach((m) => m.remove()); teamMarkers.clear();
+  map.getSource("team-trail")?.setData({ type: "FeatureCollection", features: [] });
+}
+function teamMarkerEl(d) {
+  const el = document.createElement("div");
+  el.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer";
+  el.innerHTML = `<div style="width:34px;height:34px;border-radius:50%;background:${d.kind === "truck" ? "#f08a24" : "#2f6bff"};border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.45);display:grid;place-items:center;font-size:17px">${d.kind === "truck" ? "🚚" : "🚗"}</div><div style="background:rgba(14,20,28,.9);color:#fff;font:600 11px var(--body);padding:2px 6px;border-radius:8px;white-space:nowrap">${esc(d.email.split("@")[0])}${d.mph ? ` · ${d.mph} mph` : ""}</div>`;
+  return el;
+}
+async function teamMap() {
+  clearTeam();
+  openSheet("Live map", '<p class="muted" style="margin:0">Finding your drivers…</p>', "team");
+  const draw = async () => {
+    if (sheetMode !== "team") return clearTeam();
+    let j; try { j = await api("/api/team/live"); } catch (e) { return openSheet("Live map", `<div class="alert stop"><b>Couldn't load</b>${esc(e.message)}</div>`, "team"); }
+    const on = j.drivers.filter((d) => d.on), off = j.drivers.filter((d) => !d.on);
+    for (const [id, m] of teamMarkers) if (!on.some((d) => d.id === id)) { m.remove(); teamMarkers.delete(id); }
+    for (const d of on) {
+      const old = teamMarkers.get(d.id); if (old) old.remove();
+      const el = teamMarkerEl(d); el.onclick = (e) => { e.stopPropagation(); teamTrail(d); };
+      teamMarkers.set(d.id, new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([d.lng, d.lat]).addTo(map));
+    }
+    if (!teamFitted && on.length) {
+      teamFitted = true; const b = new maplibregl.LngLatBounds(); on.forEach((d) => b.extend([d.lng, d.lat]));
+      map.fitBounds(b, { padding: { top: 120, bottom: Math.round(innerHeight * 0.45), left: 60, right: 60 }, maxZoom: 15, duration: 700 });
+    }
+    const row = (d) => `<button type="button" class="rrow" data-tm="${esc(d.id)}" style="width:100%"><span class="ic">${d.kind === "truck" ? "🚚" : "🚗"}</span><span class="tx"><div class="t">${esc(d.email)}</div><div class="s">${d.on ? `${d.mph != null ? `${d.mph} mph · ` : ""}${d.nav && d.to ? `driving to ${esc(d.to)} · ` : ""}${agoShort(d.at)}` : `Off duty · last seen ${agoShort(d.at)}`}</div></span></button>`;
+    openSheet("Live map", `
+      <div class="alert ${on.length ? "go" : "warn"}"><b>${on.length} of ${j.drivers.length} drivers on duty</b>${j.drivers.length ? "Tap a driver to see today's route. Updates every 15 seconds." : "No drivers yet: share your company code."}</div>
+      ${on.map(row).join("")}${off.length ? `<div class="muted" style="margin-top:6px">Off duty or not sharing</div>${off.map(row).join("")}` : ""}
+      <p class="note">Drivers agreed to share their location while on duty when they joined. Routes are kept for the day.</p>`, "team");
+    document.querySelectorAll("[data-tm]").forEach((b) => (b.onclick = () => { const d = j.drivers.find((x) => x.id === b.dataset.tm); if (d) teamTrail(d); }));
+  };
+  await draw();
+  teamTimer = setInterval(draw, 15000);
+}
+async function teamTrail(d) {
+  try {
+    const j = await api(`/api/team/trail?id=${encodeURIComponent(d.id)}`);
+    if (!map.getSource("team-trail")) {
+      map.addSource("team-trail", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "team-trail", type: "line", source: "team-trail", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": d.kind === "truck" ? "#f08a24" : "#2f6bff", "line-width": 5, "line-opacity": 0.85 } });
+    } else map.setPaintProperty("team-trail", "line-color", d.kind === "truck" ? "#f08a24" : "#2f6bff");
+    const c = j.trail.map((p) => [p[0], p[1]]);
+    map.getSource("team-trail").setData({ type: "FeatureCollection", features: c.length > 1 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: c } }] : [] });
+    if (c.length > 1) { const b = new maplibregl.LngLatBounds(); c.forEach((p) => b.extend(p)); map.fitBounds(b, { padding: { top: 120, bottom: Math.round(innerHeight * 0.45), left: 50, right: 50 }, maxZoom: 16, duration: 700 }); }
+    else if (d.on) map.flyTo({ center: [d.lng, d.lat], zoom: 15, duration: 700 });
+    popMsg(d.email.split("@")[0], c.length > 1 ? `Today's route · ${c.length} points since ${new Date(j.trail[0][2]).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "No route yet today.", d.kind === "truck" ? "🚚" : "🚗", "#1a73e8", 3500);
+  } catch (e) { popMsg("Couldn't load route", e.message, "⚠️", "#d93025"); }
+}
 // Driver: which company covers them; leave
 function truckCompanySheet() {
-  const c = account?.truckCompany; if (!c) return;
-  openSheet("Pro Truck from your company", `<div class="alert ${c.on ? "go" : "warn"}"><b>${esc(c.company || "Your company")}</b>${c.on ? "Pays for your truck routes." : "Their plan is paused, so truck routes are off for now."}</div>
+  const c = account?.truckCompany || account?.carCompany; if (!c) return;
+  const truckCo = !!account?.truckCompany;
+  openSheet("Your company", `<div class="alert ${!truckCo || c.on ? "go" : "warn"}"><b>${esc(c.company || "Your company")}</b>${truckCo ? (c.on ? "Pays for your truck routes." : "Their plan is paused, so truck routes are off for now.") : "You're on their Fleet team."}</div>
+    <button class="btn" type="button" id="tcDuty">${onDuty() ? "🟢 On duty: sharing location. Go off duty" : "⚪ Off duty: not sharing. Go on duty"}</button>
+    <p class="note">On duty, your company sees your location, speed and today's route. Off duty, nothing is shared.</p>
     <button class="btn" type="button" id="tcLeave">Leave this company</button>`, "account");
+  $("#tcDuty").onclick = () => { setDuty(!onDuty()); truckCompanySheet(); };
   $("#tcLeave").onclick = () => api("/api/billing/truckfleet/leave", { method: "POST", body: "{}" }).then(() => api("/api/me")).then((m) => { account = m.user; paintMe?.(); closeSheet(); }).catch((e) => alert2(e.message));
 }
 // Owner: share the code, see who joined, remove drivers, add trucks
@@ -4121,11 +4231,13 @@ function truckFleetSheet() {
       <div style="display:flex;gap:10px;align-items:center"><span style="font:800 28px/1 var(--body);letter-spacing:4px">${esc(f.code)}</span><button class="btn" type="button" id="tfShare" style="margin:0">Share</button></div>
       <div class="muted" style="margin-top:6px">Drivers</div>
       ${f.members.length ? f.members.map((m) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(m.email)}</span><button class="btn" type="button" data-rm="${esc(m.id)}" style="margin:0;padding:6px 12px">Remove</button></div>`).join("") : '<p class="note" style="margin:0">No drivers yet. Share the code above.</p>'}
+      <button class="btn primary" type="button" id="tfLive">📍 Live map of my drivers</button>
       <button class="btn" type="button" id="tfManage">Manage plan · add or remove trucks</button>
       <button class="btn" type="button" id="tfCode">Make a new code</button>
       <p class="note">A new code stops the old one from working. Drivers who already joined stay. You have truck routes too.</p>`, "account");
     $("#tfShare").onclick = () => { if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else navigator.clipboard?.writeText(msg).then(() => popMsg("Code copied", "Paste it to your drivers.", "📋")); };
     $("#tfManage").onclick = () => managePlan();
+    $("#tfLive").onclick = () => teamMap();
     $("#tfCode").onclick = () => api("/api/billing/truckfleet/newcode", { method: "POST", body: "{}" }).then(() => truckFleetSheet()).catch((e) => alert2(e.message));
     document.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => api("/api/billing/truckfleet/remove", { method: "POST", body: JSON.stringify({ id: b.dataset.rm }) }).then(() => truckFleetSheet()).catch((e) => alert2(e.message))));
   }).catch((e) => openSheet("My truck fleet", `<div class="alert stop"><b>Couldn't load</b>${esc(e.message)}</div>`, "account"));

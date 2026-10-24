@@ -57,6 +57,7 @@ const userBySub = async (sub) => (await sb(`pc_users?data->_billing->>sub=eq.${e
 const userByTruckSub = async (sub) => (await sb(`pc_users?data->_truck->>sub=eq.${encodeURIComponent(sub)}&select=id,email,plan,data`))?.[0] || null;
 const isTruck = (plan) => plan === "protruck" || plan === "protruck_yr";
 const userByTFleetSub = async (sub) => (await sb(`pc_users?data->_tfleet->>sub=eq.${encodeURIComponent(sub)}&select=id,email,plan,data`))?.[0] || null;
+const userByCFleetCode = async (code) => (await sb(`pc_users?data->_cfleet->>code=eq.${encodeURIComponent(code)}&select=id,email,plan,data`))?.[0] || null;
 const userByTFleetCode = async (code) => (await sb(`pc_users?data->_tfleet->>code=eq.${encodeURIComponent(code)}&select=id,email,plan,data`))?.[0] || null;
 const newCode = () => Array.from({ length: 8 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[crypto.randomInt(32)]).join("");
 // Trucks paid for, from the checkout total: volume price $12.99 each under 10, $10.99 each at 10+
@@ -172,11 +173,21 @@ function routes(url, res, send, req) {
   }
 
   // ---------- Pro Truck for companies: invite codes ----------
-  if (p.startsWith("/api/billing/truckfleet")) {
+  if (p.startsWith("/api/billing/truckfleet") || p === "/api/billing/carfleet") {
     const body = () => (req.method === "POST" ? readRaw(req, 2e4).then((r) => JSON.parse(r || "{}")) : Promise.resolve({}));
     Promise.all([auth.userFromReq(req), body()]).then(async ([u, b]) => {
       if (!u) return send(res, 401, { error: "Sign in first." });
       const f = u.data?._tfleet;
+      if (p === "/api/billing/carfleet" && req.method === "POST") { // car Fleet owner: get (or make) the drivers' join code
+        if (u.plan !== "fleet" || !ON.has(u.data?._billing?.status)) return send(res, 403, { error: "Driver codes come with the Fleet plan." });
+        const cf = u.data?._cfleet || { code: newCode(), members: [] };
+        if (b.newCode) cf.code = newCode();
+        if (b.remove) cf.members = (cf.members || []).filter((x) => x !== b.remove);
+        await patchData(u, { _cfleet: cf });
+        if (b.remove) { const m = await getUser(b.remove).catch(() => null); if (m && m.data?._cmember?.owner === u.id) await patchData(m, { _cmember: null }); }
+        const members = []; for (const id of cf.members || []) { const m = await getUser(id).catch(() => null); if (m) members.push({ id: m.id, email: m.email }); }
+        return send(res, 200, { code: cf.code, seats: Math.max(3, u.data?._billing?.cars || 3), members });
+      }
       if (p === "/api/billing/truckfleet" && req.method === "GET") { // owner's view
         if (!f) return send(res, 404, { error: "No company plan." });
         const members = [];
@@ -186,21 +197,34 @@ function routes(url, res, send, req) {
       if (p === "/api/billing/truckfleet/join" && req.method === "POST") {
         const code = String(b.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
         if (code.length !== 8) return send(res, 400, { error: "Enter the 8-letter code from your company." });
+        const consent = b.consent ? new Date().toISOString() : null;
         const o = await userByTFleetCode(code);
-        if (!o || !ON.has(o.data?._tfleet?.status)) return send(res, 404, { error: "That code isn't active. Check it with your company." });
+        if (!o) { // a car Fleet company code: joins for live location (and ticket checks), no truck routes
+          const c = await userByCFleetCode(code);
+          if (!c || c.plan !== "fleet" || !ON.has(c.data?._billing?.status)) return send(res, 404, { error: "That code isn't active. Check it with your company." });
+          if (c.id === u.id) return send(res, 400, { error: "That's your own company code. Share it with your drivers." });
+          if (!consent) return send(res, 400, { error: "Agree to share your location while on duty to join." });
+          const cf = c.data._cfleet, mem = cf.members || [], seats = Math.max(3, c.data._billing?.cars || 3);
+          if (!mem.includes(u.id)) { if (mem.length >= seats) return send(res, 409, { error: `All ${seats} driver spots are taken. Ask your company to add cars.` }); await patchData(c, { _cfleet: { ...cf, members: [...mem, u.id] } }); }
+          await patchData(u, { _cmember: { owner: c.id, company: c.email, consent } });
+          return send(res, 200, { ok: true, company: c.email, kind: "car" });
+        }
+        if (!ON.has(o.data?._tfleet?.status)) return send(res, 404, { error: "That code isn't active. Check it with your company." });
         const of = o.data._tfleet, members = of.members || [];
         if (o.id === u.id) return send(res, 400, { error: "That's your own company code: you already have truck routes. Share it with your drivers." });
         if (!members.includes(u.id)) {
           if (members.length >= (of.seats || 0)) return send(res, 409, { error: `All ${of.seats} driver spots are taken. Ask your company to add trucks.` });
           await setTFleet(o, { members: [...members, u.id] });
         }
-        await patchData(u, { _tmember: { owner: o.id, status: of.status, company: o.email } });
-        return send(res, 200, { ok: true, company: o.email });
+        await patchData(u, { _tmember: { owner: o.id, status: of.status, company: o.email, consent } });
+        return send(res, 200, { ok: true, company: o.email, kind: "truck" });
       }
       if (p === "/api/billing/truckfleet/leave" && req.method === "POST") {
         const m = u.data?._tmember;
         if (m?.owner) { const o = await getUser(m.owner).catch(() => null); if (o?.data?._tfleet) await patchData(o, { _tfleet: { ...o.data._tfleet, members: (o.data._tfleet.members || []).filter((x) => x !== u.id) } }); }
-        await patchData(u, { _tmember: null });
+        const cm = u.data?._cmember;
+        if (cm?.owner) { const o = await getUser(cm.owner).catch(() => null); if (o?.data?._cfleet) await patchData(o, { _cfleet: { ...o.data._cfleet, members: (o.data._cfleet.members || []).filter((x) => x !== u.id) } }); }
+        await patchData(u, { _tmember: null, _cmember: null });
         return send(res, 200, { ok: true });
       }
       if (!f) return send(res, 404, { error: "No company plan." });
@@ -233,4 +257,4 @@ const manageUrl = (u) => `${CFG.portal}?${new URLSearchParams({ prefilled_email:
 
 // Does this account have Pro Truck right now? (paid add-on, or comped test/reviewer accounts)
 const hasTruck = (u) => !!u && (ON.has(u.data?._truck?.status) || ON.has(u.data?._tfleet?.status) || ON.has(u.data?._tmember?.status) || auth.isComp?.(u));
-module.exports = { routes, verify, handle, hasTruck, ready: () => !!WH_SECRET };
+module.exports = { routes, verify, handle, hasTruck, getUser, patchData, ON, ready: () => !!WH_SECRET };

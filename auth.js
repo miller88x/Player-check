@@ -54,7 +54,9 @@ const pub = (u) => {
     billing: b ? { status: b.status || null, ends: b.ends || null, cars: b.cars || null } : null,
     truck: !!(TRUCK_ON.has(all._truck?.status) || TRUCK_ON.has(all._tfleet?.status) || TRUCK_ON.has(all._tmember?.status) || isComp(u)), truckEnds: all._truck?.ends || null,
     truckFleet: all._tfleet ? { seats: all._tfleet.seats || 0, used: (all._tfleet.members || []).length, status: all._tfleet.status } : null,
-    truckCompany: all._tmember?.owner ? { company: all._tmember.company || null, on: TRUCK_ON.has(all._tmember.status) } : null };
+    truckCompany: all._tmember?.owner ? { company: all._tmember.company || null, on: TRUCK_ON.has(all._tmember.status), consent: !!all._tmember.consent } : null,
+    carCompany: all._cmember?.owner ? { company: all._cmember.company || null, consent: !!all._cmember.consent } : null,
+    carFleet: all._cfleet ? { used: (all._cfleet.members || []).length } : null };
 };
 
 // Who's calling? Used by other features later (plan limits).
