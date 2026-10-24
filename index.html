@@ -764,15 +764,59 @@ if (layerOn.curbs === undefined) { layerOn.curbs = true; store.set("layers", lay
 let cams = [];
 
 function camIcon(color, kind) {
-  const s = 56, c = document.createElement("canvas"); c.width = c.height = s; const g = c.getContext("2d");
-  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); };
-  g.fillStyle = "#fff"; g.beginPath(); g.arc(28, 28, 27, 0, 7); g.fill();
-  g.fillStyle = color; g.beginPath(); g.arc(28, 28, 23, 0, 7); g.fill();
-  g.fillStyle = "#fff";
-  if (kind === "speed") { rr(13, 21, 30, 19, 3); g.fillRect(22, 17, 12, 6); g.fillStyle = color; g.beginPath(); g.arc(28, 30.5, 5.5, 0, 7); g.fill(); }
-  else { rr(20, 12, 16, 32, 5); [[18, "#d93025"], [28, "#9aa0a6"], [38, "#9aa0a6"]].forEach(([y, col]) => { g.fillStyle = col; g.beginPath(); g.arc(28, y, 4, 0, 7); g.fill(); }); }
+  // Glossy badge: rounded tile in the camera's color, white camera body with a lens, small corner tag (MPH dial or traffic light)
+  const s = 112, c = document.createElement("canvas"); c.width = c.height = s; const g = c.getContext("2d");
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+  const dark = shadeHex(color, -0.35), light = shadeHex(color, 0.25);
+  // shadow + white rim
+  g.save(); g.shadowColor = "rgba(0,0,0,.45)"; g.shadowBlur = 8; g.shadowOffsetY = 3; g.fillStyle = "#fff"; rr(16, 14, 80, 80, 22); g.fill(); g.restore();
+  // colored tile with a top-light gradient
+  const gr = g.createLinearGradient(0, 18, 0, 90); gr.addColorStop(0, light); gr.addColorStop(1, dark);
+  g.fillStyle = gr; rr(21, 19, 70, 70, 18); g.fill();
+  // gloss
+  g.fillStyle = "rgba(255,255,255,.18)"; rr(24, 22, 64, 26, 14); g.fill();
+  // camera body
+  g.fillStyle = "#fff"; rr(32, 42, 48, 32, 8); g.fill(); rr(44, 36, 20, 9, 3); g.fill();
+  // lens
+  g.fillStyle = "#1f2937"; g.beginPath(); g.arc(56, 58, 11.5, 0, 7); g.fill();
+  const lg = g.createRadialGradient(53, 55, 1, 56, 58, 9); lg.addColorStop(0, "#9fd7ff"); lg.addColorStop(0.5, "#2b6cb0"); lg.addColorStop(1, "#0b1a33");
+  g.fillStyle = lg; g.beginPath(); g.arc(56, 58, 8.5, 0, 7); g.fill();
+  g.fillStyle = "rgba(255,255,255,.85)"; g.beginPath(); g.arc(52.5, 54.5, 2.4, 0, 7); g.fill();
+  g.fillStyle = color; g.beginPath(); g.arc(73, 48, 2.6, 0, 7); g.fill(); // record light
+  // corner tag
+  g.save(); g.shadowColor = "rgba(0,0,0,.35)"; g.shadowBlur = 4; g.fillStyle = "#fff"; g.beginPath(); g.arc(86, 84, 17, 0, 7); g.fill(); g.restore();
+  g.fillStyle = "#111827"; g.beginPath(); g.arc(86, 84, 14, 0, 7); g.fill();
+  if (kind === "speed") { // little speedometer
+    g.strokeStyle = "#fff"; g.lineWidth = 3; g.lineCap = "round"; g.beginPath(); g.arc(86, 87, 8.5, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    g.strokeStyle = color; g.lineWidth = 3; g.beginPath(); g.moveTo(86, 87); g.lineTo(92, 80); g.stroke();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(86, 87, 2.2, 0, 7); g.fill();
+  } else { // little traffic light
+    g.fillStyle = "#374151"; rr(81, 72, 10, 24, 4); g.fill();
+    [[77.5, "#ef4444"], [84, "#f59e0b"], [90.5, "#22c55e"]].forEach(([y, col], i) => { g.fillStyle = i === 0 ? col : "rgba(255,255,255,.25)"; g.beginPath(); g.arc(86, y, 2.6, 0, 7); g.fill(); });
+  }
   return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
 }
+// Radiating rings under each camera: an animated map image (redrawn each frame by the map, very light)
+function pulseIcon(color) {
+  const size = 160;
+  return {
+    width: size, height: size, data: new Uint8Array(size * size * 4),
+    onAdd() { const c = document.createElement("canvas"); c.width = c.height = size; this.ctx = c.getContext("2d", { willReadFrequently: true }); },
+    render() {
+      const g = this.ctx, t = (performance.now() % 1800) / 1800;
+      g.clearRect(0, 0, size, size);
+      for (const ph of [0, 0.5]) {
+        const k = (t + ph) % 1, r = 26 + k * 52, a = (1 - k) * 0.85;
+        g.beginPath(); g.arc(size / 2, size / 2, r, 0, 7);
+        g.fillStyle = hexA(color, a * 0.35); g.fill();
+        g.lineWidth = 4; g.strokeStyle = hexA(color, a); g.stroke();
+      }
+      this.data = g.getImageData(0, 0, size, size).data;
+      map.triggerRepaint(); return true;
+    },
+  };
+}
+const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a.toFixed(3)})`; };
 const camFilter = () => ["in", ["get", "type"], ["literal", ["speed", "redlight"].filter((t) => layerOn[t])]];
 const camGeo = () => ({ type: "FeatureCollection", features: cams.map((c, i) => ({ type: "Feature", properties: { i, type: c.type }, geometry: { type: "Point", coordinates: [c.lng, c.lat] } })) });
 
@@ -800,7 +844,9 @@ function addOverlaysInner() {
     map.getStyle().layers.forEach((l) => { if (/^(building|road_area|road_(minor|service|path|link)|tunnel_|bridge_(street|service|path|link))/.test(l.id) || /casing/.test(l.id)) map.setLayoutProperty(l.id, "visibility", "none"); });
   }
   if (!map.hasImage("cam-speed")) map.addImage("cam-speed", camIcon("#f08a24", "speed"), { pixelRatio: 2 });
-  if (!map.hasImage("cam-red")) map.addImage("cam-red", camIcon("#d93025", "red"), { pixelRatio: 2 });
+  if (!map.hasImage("cam-red")) map.addImage("cam-red", camIcon("#e5484d", "red"), { pixelRatio: 2 });
+  if (!map.hasImage("pulse-speed")) map.addImage("pulse-speed", pulseIcon("#22d3ee"), { pixelRatio: 2 });
+  if (!map.hasImage("pulse-red")) map.addImage("pulse-red", pulseIcon("#ff5a5f"), { pixelRatio: 2 });
   if (!map.getSource("route")) map.addSource("route", { type: "geojson", data: routeGeo() });
   if (!map.getSource("done")) map.addSource("done", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   if (!map.getSource("alts")) map.addSource("alts", { type: "geojson", data: altGeo() });
@@ -813,8 +859,10 @@ function addOverlaysInner() {
   if (!map.getLayer("reports")) map.addLayer({ id: "reports", type: "symbol", source: "reports", minzoom: 10,
     layout: { "icon-image": ["concat", "rep-", ["get", "type"]], "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 0.85], "icon-allow-overlap": true, "icon-anchor": "bottom" } });
   if (!map.getSource("cams")) map.addSource("cams", { type: "geojson", data: camGeo() });
+  if (!map.getLayer("cams-pulse")) map.addLayer({ id: "cams-pulse", type: "symbol", source: "cams", minzoom: 13, filter: camFilter(),
+    layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "pulse-speed", "pulse-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 13, 0.55, 16, 0.95, 18, 1.15], "icon-allow-overlap": true, "icon-ignore-placement": true } });
   if (!map.getLayer("cams")) map.addLayer({ id: "cams", type: "symbol", source: "cams", minzoom: 12.5, filter: camFilter(),
-    layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "cam-speed", "cam-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1], "icon-allow-overlap": true } });
+    layout: { "icon-image": ["case", ["==", ["get", "type"], "speed"], "cam-speed", "cam-red"], "icon-size": ["interpolate", ["linear"], ["zoom"], 12.5, 0.42, 15, 0.62, 18, 0.8], "icon-allow-overlap": true } });
 }
 map.on("style.load", addOverlays);
 // Crisp, Google-like look for the default map: soft gray ground, white streets, yellow highways, see-through 3D buildings
@@ -974,7 +1022,7 @@ function paintChips() { document.querySelectorAll("[data-layer]").forEach((b) =>
 paintChips();
 document.querySelectorAll("[data-layer]").forEach((b) => (b.onclick = () => {
   const k = b.dataset.layer; layerOn[k] = !layerOn[k]; store.set("layers", layerOn); paintChips(); if (k === "rovers") loadRovers?.(); if (k === "curbs") paintCurbs(true);
-  if (k === "tickets") drawPins(false); else if (map.getLayer("cams")) map.setFilter("cams", camFilter());
+  if (k === "tickets") drawPins(false); else if (map.getLayer("cams")) { map.setFilter("cams", camFilter()); if (map.getLayer("cams-pulse")) map.setFilter("cams-pulse", camFilter()); }
 }));
 
 // ================= LOCATION =================
@@ -3979,8 +4027,9 @@ if (navigator.permissions?.query) navigator.permissions.query({ name: "geolocati
   function quietCams() {
     if (!map.getLayer("cams")) return;
     const on = isSkin();
-    map.setLayoutProperty("cams", "icon-size", on ? ["interpolate", ["linear"], ["zoom"], 12.5, 0.3, 15, 0.5, 17, 0.75] : ["interpolate", ["linear"], ["zoom"], 10.5, 0.45, 14, 0.8, 17, 1]);
-    map.setPaintProperty("cams", "icon-opacity", on ? 0.85 : 1);
+    // camera badges with pulsing rings stand out in both looks (like Waze), sized for a glance
+    map.setLayoutProperty("cams", "icon-size", ["interpolate", ["linear"], ["zoom"], 12.5, 0.42, 15, 0.62, 18, 0.8]);
+    map.setPaintProperty("cams", "icon-opacity", 1);
   }
   let glowT = null;
   map.on("styledata", () => { clearTimeout(glowT); glowT = setTimeout(() => { try { ensureGlow(); quietCams(); } catch {} }, 200); });
