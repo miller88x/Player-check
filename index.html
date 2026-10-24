@@ -554,6 +554,17 @@ body.s2030 .me,body.s2030 .meDot{filter:drop-shadow(0 0 10px rgba(92,225,230,.75
 #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
   background:radial-gradient(120% 80% at 50% 40%,#061528 0%,#030b18 50%,#01050e 100%);transition:opacity .45s ease,visibility .45s;padding:24px}
 #splash.out{opacity:0;visibility:hidden}
+#tour{position:fixed;inset:0;z-index:100000}
+#tour .hole{position:fixed;border-radius:18px;box-shadow:0 0 0 9999px rgba(2,6,12,.72),0 0 0 3px #5CE1E6,0 0 24px 4px rgba(92,225,230,.55);transition:all .35s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+#tour .hole.none{width:0!important;height:0!important;left:50%!important;top:45%!important;box-shadow:0 0 0 9999px rgba(2,6,12,.72)}
+#tour .tip{position:fixed;left:14px;right:14px;max-width:420px;margin:0 auto;background:#0E141C;color:#EEF3F8;border:1px solid rgba(92,225,230,.45);border-radius:18px;padding:16px 16px 12px;box-shadow:0 12px 40px rgba(0,0,0,.6);transition:top .35s cubic-bezier(.2,.8,.2,1),opacity .2s;font:15px/1.45 var(--body)}
+#tour .tip h3{margin:0 0 6px;font:700 18px/1.25 "Space Grotesk",var(--body);display:flex;gap:8px;align-items:center}
+#tour .tip p{margin:0;color:#c9d4e0}
+#tour .tip .row{display:flex;align-items:center;gap:8px;margin-top:12px}
+#tour .tip .n{color:#93A1B2;font-size:13px;margin-right:auto}
+#tour .tip button{border:0;border-radius:12px;padding:9px 14px;font:600 14px var(--body);background:#1b2430;color:#EEF3F8}
+#tour .tip button.go{background:#5CE1E6;color:#00363f}
+#tour .tip .skip{background:none;color:#93A1B2;padding:9px 6px}
 #splash .sp-logo{width:min(64vw,300px);animation:spIn .9s cubic-bezier(.2,.8,.2,1) both}
 #splash .sp-logo img{width:100%;height:auto;display:block;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent),linear-gradient(180deg,transparent,#000 5%,#000 95%,transparent);-webkit-mask-composite:source-in;
@@ -578,7 +589,7 @@ body.s2030 .me,body.s2030 .meDot{filter:drop-shadow(0 0 10px rgba(92,225,230,.75
     const tr = document.getElementById("wcTrack"), dots = [...document.querySelectorAll("#wcDots i")], next = document.getElementById("wcNext");
     const idx = () => Math.round(tr.scrollLeft / tr.clientWidth);
     const paint = () => { const i = idx(); dots.forEach((d, k) => d.classList.toggle("on", k === i)); next.textContent = i === dots.length - 1 ? "Get started" : "Next"; };
-    const done = () => { try { localStorage.setItem("welcomed", "1"); } catch {} w.hidden = true; };
+    const done = () => { try { localStorage.setItem("welcomed", "1"); } catch {} w.hidden = true; setTimeout(() => window.startTour?.(), 500); };
     tr.addEventListener("scroll", paint, { passive: true }); paint();
     next.onclick = () => { const i = idx(); if (i >= dots.length - 1) done(); else tr.scrollTo({ left: (i + 1) * tr.clientWidth, behavior: "smooth" }); };
     document.getElementById("wcSkip").onclick = done;
@@ -712,6 +723,7 @@ const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (m) => m.toU
 // Saved on the phone; when signed in, these also sync to the account so they follow the driver to any phone
 const SYNC = ["plate", "plates", "known", "seenAlerts", "parked", "voice", "name", "alertEmail", "alerts", "vehicle", "voiceName", "saved", "recents", "renewals", "renewSeen", "roverLook", "upsold", "afterUpgrade", "points", "voted", "darkMode"];
 let account = null, syncT = null;
+try { localStorage.setItem("skin", JSON.stringify("2030")); } catch {} // every launch opens in Rova 2030 (Classic lasts until the app is closed)
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} if (account && SYNC.includes(k)) queueSync(); },
@@ -3792,7 +3804,7 @@ function paintMe() {
 }
 $("#meBtn").onclick = () => accountSheet();
 $("#youBtn").onclick = () => accountSheet();
-document.addEventListener("click", (e) => { if (e.target.closest("[data-mycar]")) carSheet(); if (e.target.closest("[data-myrover]")) { $("#layers").hidden = true; roverSheet(); } if (e.target.closest("[data-truckmode]")) { $("#layers").hidden = true; truckSheet(); } });
+document.addEventListener("click", (e) => { if (e.target.closest("[data-mycar]")) carSheet(); if (e.target.closest("[data-myrover]")) { $("#layers").hidden = true; roverSheet(); } if (e.target.closest("[data-truckmode]")) { $("#layers").hidden = true; truckSheet(); } if (e.target.closest("[data-tour]")) window.startTour(true); });
 function accountSheet(mode) {
   if (account) {
     openSheet("Your account", `
@@ -3814,8 +3826,10 @@ function accountSheet(mode) {
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
       ${isNative() ? '<button class="btn" type="button" id="pushTest">🔔 Send a test notification</button>' : ""}
       <button class="btn" type="button" id="delBtn" style="color:#ff8a8d">Delete account</button>
+      <button class="btn" type="button" id="tourBtn">👋 Show me around (tour)</button>
       <p class="note">${LEGAL_LINKS}</p>`, "account");
     wireAcct();
+    if ($("#tourBtn")) $("#tourBtn").onclick = () => window.startTour(true);
     if ($("#plansBtn")) $("#plansBtn").onclick = () => plansSheet();
     if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
     if ($("#tfBtn")) $("#tfBtn").onclick = () => truckFleetSheet();
@@ -3842,7 +3856,8 @@ function accountSheet(mode) {
     <p class="note">${signup ? `Free forever. Your plates, tickets and parked car follow you to any phone. By creating an account you agree to the ${LEGAL_LINKS}.` : "Forgot your password? Password reset by email is coming soon."}</p>
     ${vehRow()}
     <button class="btn" type="button" data-mycar>${ico("car")}My car · renewals & tow help</button>
-    <button class="btn" type="button" data-myrover>${ico("palette")}My Rover</button>`, "account");
+    <button class="btn" type="button" data-myrover>${ico("palette")}My Rover</button>
+    <button class="btn" type="button" data-tour>👋 Show me around (tour)</button>`, "account");
   wireAcct();
   document.querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => accountSheet(b.dataset.m)));
   $("#authF").onsubmit = async (e) => {
@@ -4282,6 +4297,74 @@ function resumeUpgrade() {
   const open = () => { const t = data?.tickets.find((x) => x.summons === w.summons); if (t) disputeSheet(t); };
   data ? open() : setTimeout(open, 2500);
 }
+
+// ================= GUIDED TOUR (first run, and You → Show me around) =================
+// Highlights each part of the screen and says what it does. Opens the layers panel on its step so drivers see the switches.
+(function () {
+  const STEPS = [
+    { t: "Welcome to Rova 2030", e: "👋", x: "A quick tour of every button. It takes about a minute. Tap Next to go on, or Skip anytime." },
+    { s: ".pill", e: "🔎", t: "Search or ask", x: "Type a place or address, or ask a question: “Can I park near Barclays for 2 hours?”, “Truck route to Hunts Point avoiding tolls”, “Gas near me”." },
+    { s: "#qMic", e: "🎤", t: "Say it", x: "Tap the mic and say a place or a question instead of typing." },
+    { s: "#meBtn", e: "👤", t: "Your account", x: "Sign in so your plates, parked car and plan follow you to any phone." },
+    { s: '[data-saved="home"]', e: "🏠", t: "Home and Work", x: "Save them once, then one tap gives you directions, with the drive time shown right on the button." },
+    { s: "#nearbyChip", e: "📍", t: "Nearby", x: "Gas, parking garages, coffee, food, EV charging and car washes around you." },
+    { s: "#wxChip", e: "🌦️", t: "Weather and air", x: "The temperature and air quality where you are. Tap it for rain chances and wind." },
+    { s: "#shieldPill", e: "🛡️", t: "Ticket Shield", x: "Add your plate and Rova watches for new tickets, warns you before late fees, booting or towing, and helps you dispute." },
+    { s: "#layers", open: "#layersBtn", e: "🗺️", t: "Map layers", x: "Turn on and off: live traffic, parking curbs, speed and red-light cameras, tickets, Rovers (other drivers), dark mode, the Rova 2030 or Classic look, and your truck." },
+    { s: "#timeBtn", e: "🕒", t: "Curb time machine", x: "See which curbs will be legal later: tonight, tomorrow morning, before street cleaning." },
+    { s: "#curbKey", e: "🟩", t: "Curb colors", x: "Green: park. Yellow: meter or time limit. Red: no parking. Gray: check the signs. Tap any curb for the exact rules and until when." },
+    { s: "#locBtn", e: "🎯", t: "Find me", x: "Jumps back to where you are. Tap your car on the map to change its look." },
+    { s: "#dirBtn", e: "🧭", t: "Directions", x: "Turn-by-turn voice directions with live traffic, camera alerts and road reports. Pick Car or Truck, or try a Test drive first." },
+    { s: "#tabExplore", e: "🧭", t: "Explore", x: "The map. Press and hold anywhere on it to drop a pin and get directions or check parking there." },
+    { s: "#plateBtn", e: "🧾", t: "Tickets", x: "Every ticket on your plate, what's owed, the pay-by date before late fees, and an AI dispute letter." },
+    { s: "#parkBtn", e: "🅿️", t: "Park", x: "Can I park here? Rova reads the signs on your block, starts a meter timer, links to pay with ParkNYC, and remembers where you parked." },
+    { s: "#reportBtn", e: "⚠️", t: "Report", x: "Warn other drivers: police, ticket agents, tow trucks, street sweepers, accidents, hazards, closures and open spots." },
+    { s: "#youBtn", e: "⭐", t: "You", x: "Your account, plans, your car and renewals, voices, My Rover, Pro Truck and company tools. Replay this tour here anytime." },
+    { t: "You're all set", e: "✅", x: "Tip: tap a camera, a report or a curb on the map for details. Drive safe, and posted signs always win." },
+  ];
+  let i = 0, root = null, opened = null;
+  const visible = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(el).visibility !== "hidden"; };
+  function close() {
+    if (opened) { try { $("#layers").hidden = true; } catch {} opened = null; }
+    root?.remove(); root = null; try { localStorage.setItem("toured", "1"); } catch {}
+  }
+  function show(dir = 1) {
+    if (opened) { try { $("#layers").hidden = true; } catch {} opened = null; }
+    let st = STEPS[i];
+    // skip parts that aren't on screen right now (e.g. weather before it loads)
+    while (st && st.s && !st.open && !visible(document.querySelector(st.s))) { i += dir; st = STEPS[i]; }
+    if (!st) return close();
+    if (st.open) { const b = document.querySelector(st.open); if (b) { b.click(); opened = st.open; } }
+    const el = st.s ? document.querySelector(st.s) : null, hole = root.querySelector(".hole"), tip = root.querySelector(".tip");
+    if (el && el.closest(".chips")) try { el.scrollIntoView({ inline: "center", block: "nearest" }); } catch {} // chip row scrolls sideways
+    const go = () => {
+      if (el && visible(el)) {
+        const r = el.getBoundingClientRect(), pad = 6;
+        hole.classList.remove("none");
+        Object.assign(hole.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+        const below = r.top + r.height / 2 < innerHeight / 2;
+        tip.style.top = below ? `${Math.min(innerHeight - 220, r.bottom + 18)}px` : `${Math.max(12, r.top - 18 - tip.offsetHeight)}px`;
+      } else { hole.classList.add("none"); tip.style.top = `${Math.max(60, innerHeight * 0.3)}px`; }
+    };
+    const n = STEPS.length;
+    tip.innerHTML = `<h3><span>${st.e || ""}</span>${esc(st.t)}</h3><p>${esc(st.x)}</p>
+      <div class="row"><span class="n">${i + 1} of ${n}</span>${i < n - 1 ? '<button type="button" class="skip">Skip</button>' : ""}${i > 0 ? '<button type="button" class="back">Back</button>' : ""}<button type="button" class="go">${i === n - 1 ? "Start driving" : "Next"}</button></div>`;
+    tip.querySelector(".go").onclick = () => { if (i >= n - 1) return close(); i++; show(1); };
+    tip.querySelector(".back") && (tip.querySelector(".back").onclick = () => { i = Math.max(0, i - 1); show(-1); });
+    tip.querySelector(".skip") && (tip.querySelector(".skip").onclick = close);
+    requestAnimationFrame(() => requestAnimationFrame(go));
+  }
+  window.startTour = function (force) {
+    let done = false; try { done = localStorage.getItem("toured") === "1"; } catch {}
+    if ((done && !force) || root) return;
+    try { closeSheet(); exitSearch(); } catch {}
+    root = document.createElement("div"); root.id = "tour"; root.setAttribute("role", "dialog"); root.setAttribute("aria-label", "Tour of Rova");
+    root.innerHTML = '<div class="hole none"></div><div class="tip" aria-live="polite"></div>';
+    root.addEventListener("click", (e) => { if (e.target === root) e.stopPropagation(); }, true);
+    document.body.append(root); i = 0; show(1);
+    addEventListener("resize", () => root && show(0), { once: true });
+  };
+})();
 
 // ================= START =================
 paintSaved();
