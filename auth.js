@@ -52,7 +52,9 @@ const pub = (u) => {
   const data = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith("_"))); // _billing, _push: server-owned
   return { email: u.email, plan: PLANS.includes(u.plan) ? u.plan : "free", data, since: u.created_at,
     billing: b ? { status: b.status || null, ends: b.ends || null, cars: b.cars || null } : null,
-    truck: !!(TRUCK_ON.has(all._truck?.status) || isComp(u)), truckEnds: all._truck?.ends || null };
+    truck: !!(TRUCK_ON.has(all._truck?.status) || TRUCK_ON.has(all._tfleet?.status) || TRUCK_ON.has(all._tmember?.status) || isComp(u)), truckEnds: all._truck?.ends || null,
+    truckFleet: all._tfleet ? { seats: all._tfleet.seats || 0, used: (all._tfleet.members || []).length, status: all._tfleet.status } : null,
+    truckCompany: all._tmember?.owner ? { company: all._tmember.company || null, on: TRUCK_ON.has(all._tmember.status) } : null };
 };
 
 // Who's calling? Used by other features later (plan limits).

@@ -3776,7 +3776,7 @@ function signedOut() {
   for (const k of SYNC) try { localStorage.removeItem(k); } catch {}
   location.reload();
 }
-const PLAN_NAME = { free: "Free", bronze: "Bronze", silver: "Silver", gold: "Gold", fleet: "Fleet", protruck: "Pro Truck", protruck_yr: "Pro Truck (yearly)" };
+const PLAN_NAME = { free: "Free", bronze: "Bronze", silver: "Silver", gold: "Gold", fleet: "Fleet", protruck: "Pro Truck", protruck_yr: "Pro Truck (yearly)", protruck_fleet: "Pro Truck for companies" };
 function acctRow() {
   return account
     ? `<button class="acct" type="button" id="acctBtn"><span class="av">${esc(account.email[0].toUpperCase())}</span><span style="min-width:0;flex:1"><span style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(account.email)}</span><small>${PLAN_NAME[account.plan]} plan · synced</small></span></button>`
@@ -3802,6 +3802,8 @@ function accountSheet(mode) {
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Rova points</span><b>${ico("star", 16)}${points()}</b></div>
       <div class="row" style="align-items:center;justify-content:space-between"><span class="muted">Plan${account.billing?.cars ? ` · ${account.billing.cars} cars` : ""}${account.billing?.ends ? ` · ends ${new Date(account.billing.ends * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}</span><span class="plan">${PLAN_NAME[account.plan]}</span></div>
       ${account.plan === "free" ? '<button class="btn primary" type="button" id="plansBtn">See plans</button>' : '<button class="btn" type="button" id="manageBtn">Manage plan · change or cancel</button><button class="btn" type="button" id="plansBtn">Compare plans</button>'}
+      ${account.truckFleet ? `<button class="btn" type="button" id="tfBtn">🚚 My truck fleet · ${account.truckFleet.used} of ${account.truckFleet.seats} drivers</button>` : ""}
+      ${account.truckCompany ? `<button class="btn" type="button" id="tcBtn">🚚 Pro Truck from ${esc(account.truckCompany.company || "your company")}${account.truckCompany.on ? "" : " (paused)"}</button>` : ""}
       <div class="alert go"><b>Synced</b>Your plates, tickets, alerts you've cleared, parked car and settings are saved to your account.</div>
       <button class="btn" type="button" id="outBtn">Sign out</button>
       <p class="note">Signing out removes your saved info from this phone. It stays in your account.</p>
@@ -3811,6 +3813,8 @@ function accountSheet(mode) {
     wireAcct();
     if ($("#plansBtn")) $("#plansBtn").onclick = () => plansSheet();
     if ($("#manageBtn")) $("#manageBtn").onclick = () => managePlan();
+    if ($("#tfBtn")) $("#tfBtn").onclick = () => truckFleetSheet();
+    if ($("#tcBtn")) $("#tcBtn").onclick = () => truckCompanySheet();
     $("#delBtn").onclick = deleteSheet;
     if ($("#pushTest")) $("#pushTest").onclick = testPush;
     $("#outBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }).catch(() => {}); signedOut(); };
@@ -4070,10 +4074,61 @@ function proTruckSheet(after) {
     </ul>
     <button type="button" class="planpick best" data-pt="protruck"><span><b>Monthly</b><small>Cancel anytime</small></span><em>$12.99<small>/mo</small></em></button>
     <button type="button" class="planpick" data-pt="protruck_yr"><span><b>Yearly</b><small>2 months free</small></span><em>$129.99<small>/yr</small></em></button>
+    <div class="lhead" style="margin-top:6px">Run a company?</div>
+    <button type="button" class="planpick" data-pt="protruck_fleet"><span><b>Pro Truck for companies</b><small>Pick how many trucks at checkout. Drivers join with your code, you never share a login. $10.99/truck at 10+</small></span><em>$12.99<small>/truck</small></em></button>
+    <button class="btn" type="button" id="ptJoin">I drive for a company: enter its code</button>
     <p class="note">Pro Truck adds to any plan, including Free. Routes are guidance: posted signs and permits always win. ${LEGAL_LINKS}</p>
     <button class="btn" type="button" id="ptLater">${after ? "Drive as a car instead" : "Not now"}</button>`, "upgrade");
   document.querySelectorAll("[data-pt]").forEach((b) => (b.onclick = () => startUpgrade(b.dataset.pt, null)));
   $("#ptLater").onclick = () => { closeSheet(); if (after) { truckTrip = false; paintTruckLayer(); after(); } };
+  $("#ptJoin").onclick = () => joinTruckCompany(after);
+}
+// A driver joins their company's Pro Truck with the 8-letter code
+function joinTruckCompany(after) {
+  if (!account) {
+    openSheet("Create your free account first", `<div class="alert warn"><b>One step first</b>Your company's Pro Truck is tied to your own Rova account, so it works on any phone you sign in on.</div><button class="btn primary" type="button" id="upAcct">Create account or sign in</button>`, "upgrade");
+    $("#upAcct").onclick = () => accountSheet(); return;
+  }
+  openSheet("Join your company", `
+    <p class="muted" style="margin:0">Enter the code your company gave you. You get truck routes on your own phone, and your company pays.</p>
+    <input class="inp" id="tcCode" maxlength="9" autocapitalize="characters" autocomplete="off" placeholder="8-letter code, e.g. K7TR4QXM" style="text-transform:uppercase;letter-spacing:2px;font-weight:700">
+    <div id="tcMsg"></div>
+    <button class="btn primary" type="button" id="tcGo">Join</button>`, "upgrade");
+  $("#tcGo").onclick = () => {
+    $("#tcGo").disabled = true;
+    api("/api/billing/truckfleet/join", { method: "POST", body: JSON.stringify({ code: $("#tcCode").value }) }).then((j) => api("/api/me").then((m) => {
+      account = m.user; paintMe?.(); store.set("truckTrialLeft", null);
+      openSheet("You're in", `<div class="alert go"><b>Truck routes are on</b>Pro Truck from ${esc(j.company || "your company")}. Pick Truck when you get directions.</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
+      $("#ok").onclick = () => { closeSheet(); if (after) { truckTrip = true; paintTruckLayer(); after(); } };
+    })).catch((e) => { $("#tcGo").disabled = false; $("#tcMsg").innerHTML = `<div class="alert stop"><b>Couldn't join</b>${esc(e.message)}</div>`; });
+  };
+}
+// Driver: which company covers them; leave
+function truckCompanySheet() {
+  const c = account?.truckCompany; if (!c) return;
+  openSheet("Pro Truck from your company", `<div class="alert ${c.on ? "go" : "warn"}"><b>${esc(c.company || "Your company")}</b>${c.on ? "Pays for your truck routes." : "Their plan is paused, so truck routes are off for now."}</div>
+    <button class="btn" type="button" id="tcLeave">Leave this company</button>`, "account");
+  $("#tcLeave").onclick = () => api("/api/billing/truckfleet/leave", { method: "POST", body: "{}" }).then(() => api("/api/me")).then((m) => { account = m.user; paintMe?.(); closeSheet(); }).catch((e) => alert2(e.message));
+}
+// Owner: share the code, see who joined, remove drivers, add trucks
+function truckFleetSheet() {
+  openSheet("My truck fleet", '<p class="muted" style="margin:0">Loading…</p>', "account");
+  api("/api/billing/truckfleet").then((f) => {
+    const msg = `Join my company's Rova Pro Truck: open Rova, tap Truck, then "I drive for a company" and enter code ${f.code}. ${location.origin}`;
+    openSheet("My truck fleet", `
+      <div class="alert ${["active", "trialing", "past_due"].includes(f.status) ? "go" : "warn"}"><b>${f.members.length} of ${f.seats} driver spots used</b>${f.seats - f.members.length > 0 ? `${f.seats - f.members.length} open. ` : "All spots taken. "}Add trucks from Manage plan.</div>
+      <div class="muted">Your drivers' code</div>
+      <div style="display:flex;gap:10px;align-items:center"><span style="font:800 28px/1 var(--body);letter-spacing:4px">${esc(f.code)}</span><button class="btn" type="button" id="tfShare" style="margin:0">Share</button></div>
+      <div class="muted" style="margin-top:6px">Drivers</div>
+      ${f.members.length ? f.members.map((m) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(m.email)}</span><button class="btn" type="button" data-rm="${esc(m.id)}" style="margin:0;padding:6px 12px">Remove</button></div>`).join("") : '<p class="note" style="margin:0">No drivers yet. Share the code above.</p>'}
+      <button class="btn" type="button" id="tfManage">Manage plan · add or remove trucks</button>
+      <button class="btn" type="button" id="tfCode">Make a new code</button>
+      <p class="note">A new code stops the old one from working. Drivers who already joined stay. You have truck routes too.</p>`, "account");
+    $("#tfShare").onclick = () => { if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else navigator.clipboard?.writeText(msg).then(() => popMsg("Code copied", "Paste it to your drivers.", "📋")); };
+    $("#tfManage").onclick = () => managePlan();
+    $("#tfCode").onclick = () => api("/api/billing/truckfleet/newcode", { method: "POST", body: "{}" }).then(() => truckFleetSheet()).catch((e) => alert2(e.message));
+    document.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => api("/api/billing/truckfleet/remove", { method: "POST", body: JSON.stringify({ id: b.dataset.rm }) }).then(() => truckFleetSheet()).catch((e) => alert2(e.message))));
+  }).catch((e) => openSheet("My truck fleet", `<div class="alert stop"><b>Couldn't load</b>${esc(e.message)}</div>`, "account"));
 }
 function plansSheet() {
   openSheet("Rova plans", `
@@ -4100,7 +4155,7 @@ function afterCheckout() {
     account = j.user; paintMe();
     if (want.startsWith("protruck") ? account.truck : account.plan !== "free") {
       openSheet(`${want.startsWith("protruck") ? "Pro Truck" : PLAN_NAME[account.plan]} is on`, `<div class="alert go"><b>You're all set</b>Thanks for supporting Rova. Your plan works on every phone you sign in on.</div><button class="btn primary" type="button" id="ok">Let's go</button>`, "upgrade");
-      $("#ok").onclick = () => { closeSheet(); resumeUpgrade(); };
+      $("#ok").onclick = () => { closeSheet(); if (want === "protruck_fleet") truckFleetSheet(); else resumeUpgrade(); };
     } else if (++n < 15) setTimeout(poll, 2000);
     else { openSheet("Almost there", `<div class="alert warn"><b>Still confirming your payment</b>Your plan will switch on by itself shortly. Pull down to refresh in a minute.</div><button class="btn primary" type="button" id="ok">OK</button>`, "upgrade"); $("#ok").onclick = () => closeSheet(); }
   }).catch(() => (++n < 15 ? setTimeout(poll, 2000) : null));
