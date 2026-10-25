@@ -60,7 +60,15 @@ body.navigating #credit{bottom:calc(var(--safeB) + 96px)}
 .results button:first-child{border-top:0}
 .results .t{font-weight:600}.results .s{color:var(--muted);font-size:13px}
 .chips{display:flex;gap:8px;padding-bottom:4px;overflow-x:auto;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
-.chips .chip{flex:0 0 auto}.chip.wx{flex:0 0 auto}.chip.wx i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-left:2px}
+.chips .chip{flex:0 0 auto}
+/* weather + air quality: small round badge under the map buttons (ring color = air quality) */
+.fab.wxb{top:calc(var(--safeT) + 212px);flex-direction:column;gap:0;line-height:1;color:#EEF3F8;font:700 14px var(--body);display:flex;align-items:center;justify-content:center}
+.fab.wxb[hidden]{display:none}
+.fab.wxb .e{font-size:18px;line-height:1.05}
+.fab.wxb{box-shadow:0 0 0 3px var(--aqi,#1e8e3e),0 2px 6px rgba(0,0,0,.4),0 6px 16px rgba(0,0,0,.25)}
+body.s2030 .fab.wxb{top:calc(var(--safeT) + 144px);background:rgba(14,20,28,.92)}
+body:not(.s2030) .fab.wxb{background:#303134}
+body.navigating .fab.wxb,body.routing .fab.wxb,body.searching .fab.wxb{display:none!important}
 .qmic{border:0;background:none;color:#8ab4f8;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;padding:0}
 .qmic.on{background:rgba(234,67,53,.18);color:#ea4335;animation:micpulse 1s ease-in-out infinite alternate}
 @keyframes micpulse{from{box-shadow:0 0 0 0 rgba(234,67,53,.35)}to{box-shadow:0 0 0 8px rgba(234,67,53,0)}}
@@ -618,7 +626,6 @@ body.s2030 .me,body.s2030 .meDot{filter:drop-shadow(0 0 10px rgba(92,225,230,.75
     <button class="chip" type="button" data-saved="home"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 11h2.8v9h5.2v-6h3v6h5.2v-9h2.8z" fill="#8ab4f8"/></svg><span>Home</span></button>
     <button class="chip" type="button" data-saved="work"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4z" fill="#8ab4f8"/></svg><span>Work</span></button>
     <button class="chip" type="button" id="nearbyChip"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#8ab4f8" stroke-width="2.4"/><path d="m15.5 15.5 5 5" stroke="#8ab4f8" stroke-width="2.4" stroke-linecap="round"/></svg><span>Nearby</span></button>
-    <button class="chip wx" type="button" id="wxChip" hidden></button>
   </div>
   <button id="shieldPill" type="button" hidden><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span></span></button>
 </div>
@@ -654,6 +661,7 @@ body.s2030 .me,body.s2030 .meDot{filter:drop-shadow(0 0 10px rgba(92,225,230,.75
 <button class="fab" id="recenter" type="button"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16.5 4 21z" fill="currentColor"/></svg>Re-center</button>
 <button id="tixPill" type="button"><i></i><span></span></button>
 <section id="moment" aria-live="polite" hidden></section>
+<button class="fab wxb" id="wxChip" type="button" hidden></button>
 <button class="fab" id="timeBtn" type="button" aria-label="Curb time machine: see parking at another time" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
 <section id="timeBar" aria-label="Curb time machine" hidden></section>
 <div id="curbKey" aria-label="Curb colors"><span><b style="background:#1e8e3e"></b>Park</span><span><b style="background:#f29900"></b>Meter / limit</span><span><b style="background:#d93025"></b>No parking</span><span><b style="background:#9aa0a6"></b>Check signs</span></div>
@@ -1650,7 +1658,8 @@ async function loadWx(force) {
     const cur = w.current; if (!cur) return;
     wxNow = { t: Math.round(cur.temperature_2m), code: cur.weather_code, wind: Math.round(cur.wind_speed_10m || 0), rain: Math.max(0, ...(w.hourly?.precipitation_probability || [0])), aqi: q.current?.us_aqi != null ? Math.round(q.current.us_aqi) : null }; wxAt = Date.now();
     const [, e] = wxOf(wxNow.code), chip = $("#wxChip");
-    chip.innerHTML = `${e} ${wxNow.t}°${wxNow.aqi != null ? ` · AQI ${wxNow.aqi}<i style="background:${aqiOf(wxNow.aqi)[0]}"></i>` : ""}`;
+    chip.innerHTML = `<span class="e">${e}</span><span>${wxNow.t}°</span>`;
+    chip.style.setProperty("--aqi", wxNow.aqi != null ? aqiOf(wxNow.aqi)[0] : "rgba(255,255,255,.15)");
     chip.setAttribute("aria-label", `${wxOf(wxNow.code)[2]}, ${wxNow.t} degrees${wxNow.aqi != null ? `, air quality ${wxNow.aqi}` : ""}`); chip.hidden = false;
   } catch {}
 }
@@ -4308,7 +4317,7 @@ function resumeUpgrade() {
     { s: "#meBtn", e: "👤", t: "Your account", x: "Sign in so your plates, parked car and plan follow you to any phone." },
     { s: '[data-saved="home"]', e: "🏠", t: "Home and Work", x: "Save them once, then one tap gives you directions, with the drive time shown right on the button." },
     { s: "#nearbyChip", e: "📍", t: "Nearby", x: "Gas, parking garages, coffee, food, EV charging and car washes around you." },
-    { s: "#wxChip", e: "🌦️", t: "Weather and air", x: "The temperature and air quality where you are. Tap it for rain chances and wind." },
+    { s: "#wxChip", e: "🌦️", t: "Weather and air", x: "The temperature where you are. The ring color is the air quality: green good, yellow moderate, orange or red unhealthy. Tap it for rain chances, wind and the air quality number." },
     { s: "#shieldPill", e: "🛡️", t: "Ticket Shield", x: "Add your plate and Rova watches for new tickets, warns you before late fees, booting or towing, and helps you dispute." },
     { s: "#layers", open: "#layersBtn", e: "🗺️", t: "Map layers", x: "Turn on and off: live traffic, parking curbs, speed and red-light cameras, tickets, Rovers (other drivers), dark mode, the Rova 2030 or Classic look, and your truck." },
     { s: "#timeBtn", e: "🕒", t: "Curb time machine", x: "See which curbs will be legal later: tonight, tomorrow morning, before street cleaning." },
